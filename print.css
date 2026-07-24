@@ -1,0 +1,108 @@
+/* ============================================================
+   PRINT — every view exports cleanly to PDF (PowerPoint-ready)
+   Landscape, color-accurate, no app chrome.
+   ============================================================ */
+
+.print-only { display: none; }
+
+/* print header band (hidden on screen) */
+.print-head { display: none; }
+
+@media print {
+  @page { size: A4 landscape; margin: 12mm 12mm 14mm; }
+
+  html, body { background: #fff !important; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+  /* strip app chrome */
+  .sidebar, .topbar, .filterbar, .no-print, .scrim { display: none !important; }
+
+  /* unlock all the scroll containers so nothing is clipped */
+  html, body, #root, .app, .main, .view-scroll, .view-pad, .view-wide,
+  .org-wrap, .gantt, .pj-root {
+    height: auto !important; max-height: none !important;
+    overflow: visible !important; display: block !important;
+  }
+  .app { display: block !important; }
+  .main { width: 100% !important; }
+  .view-scroll { flex: none !important; }
+
+  /* print header */
+  .print-head { display: flex !important; align-items: flex-end; justify-content: space-between;
+    border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 16px; }
+  .print-head-l { display: flex; align-items: baseline; gap: 12px; }
+  .print-brand { font-family: var(--font-serif); font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+  .print-proj { font-size: 13px; color: #333; }
+  .print-head-r { text-align: right; }
+  .print-view { display: block; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #555; }
+  .print-date { display: block; font-size: 12px; color: #777; }
+
+  /* generic: avoid awkward breaks */
+  .panel, .kcard, .sh-card, .risk-card, .find-card, .cat-card, .dep-card,
+  .dash-panel, .stat, .org-node, .bc-section, .person-group, .act-group {
+    break-inside: avoid; page-break-inside: avoid;
+  }
+  .dash-panel, .act-group, .bc-section, .pj-program { margin-bottom: 16px !important; }
+
+  /* ---- Dashboard ---- */
+  .dash { max-width: 100% !important; padding: 0 !important; }
+  .dash-hero { padding: 0 0 18px !important; }
+  .dash-title { font-size: 30px !important; }
+  .dash-cols { grid-template-columns: 1fr 1fr !important; }
+  .dash-quick { display: none !important; }
+
+  /* ---- Kanban: keep three columns, show every card ---- */
+  .kanban { padding: 0 !important; gap: 10px !important; min-height: 0 !important; }
+  .kcol { background: #fafafa !important; border: 1px solid #ddd !important; break-inside: avoid; }
+  .kadd { display: none !important; }
+
+  /* ---- Action list ---- */
+  .act-table { box-shadow: none !important; }
+  .act-row, .act-head { padding: 8px 12px !important; }
+
+  /* ---- Timeline: print full width, scaled by the print dialog ---- */
+  .gantt { border: 1px solid #ddd !important; }
+  .gantt-inner { width: auto !important; }
+  .gantt-label { position: static !important; background: #fff !important; }
+  .gantt-header { position: static !important; }
+
+  /* ---- Org chart: render the whole canvas ---- */
+  .org-canvas { transform: none !important; }
+  .org-node { box-shadow: none !important; border: 1px solid #ccc !important; }
+  .org-actions, .org-grip { display: none !important; }
+
+  /* ---- Catalogue ---- */
+  .cat-drop { display: none !important; }
+  .cat-card { break-inside: avoid; }
+
+  /* ---- Stakeholders / risks / findings: multi-column flow ---- */
+  .sh-grid, .find-grid, .cat-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .risk-layout { grid-template-columns: 1fr 260px !important; }
+  .risk-side, .sh-matrix-wrap { break-inside: avoid; }
+
+  /* ---- Business case already styled; tighten ---- */
+  .bc-doc { max-width: 100% !important; padding: 0 !important; }
+  .bc-foot { display: none !important; }
+  .bc-persp-grid, .bc-effects, .bc-twocol { break-inside: avoid; }
+  .bc-effect, .bc-persp, .bc-risk, .scope-col { break-inside: avoid; }
+
+  /* ---- Scope + assessment ---- */
+  .asis { box-shadow: none !important; }
+  .asis-row { break-inside: avoid; }
+  .asis-cell-now { background: #f5f5f7 !important; }
+  .asis-cell-tobe { background: #f0edfb !important; }
+  .scope-col { box-shadow: none !important; }
+  .scope-add, .asis-del, .scope-item .chip-x { display: none !important; }
+
+  /* ---- Plans (comms + change) ---- */
+  .plan-table { min-width: 0 !important; box-shadow: none !important; break-inside: auto; }
+  .plan-row, .chg-row, .chg-group { break-inside: avoid; }
+  .plan-head, .chg-head { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  .bullet-add, .chg-addrow, .plan-del, .bullet-row .chip-x, .chg-rail-actions { display: none !important; }
+  .chg-table { box-shadow: none !important; }
+
+  /* buttons/links shouldn't show as interactive */
+  .pj-open, .pj-card-actions, .quick-arrow { display: none !important; }
+  .pj-program { border: none !important; padding: 0 !important; }
+  .pj-grid { grid-template-columns: repeat(3, 1fr) !important; }
+}
