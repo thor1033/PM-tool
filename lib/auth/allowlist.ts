@@ -6,7 +6,10 @@
  * Configure via `ALLOWED_EMAILS` (comma-separated). When unset it falls back to
  * the sole owner account so the app is locked down by default.
  */
-const DEFAULT_ALLOWED = ["thoralexanderbjesimonsen@gmail.com"];
+const DEFAULT_ALLOWED = [
+  "thoralexanderbjesimonsen@gmail.com",
+  "ditlevbj@gmail.com",
+];
 
 function allowedEmails(): string[] {
   const raw = process.env.ALLOWED_EMAILS;
