@@ -14,6 +14,9 @@ COPY . .
 # Next reads NEXT_PUBLIC_* at build time; provide a build-time placeholder that
 # is overridden at runtime by the deploy environment.
 ENV NEXT_TELEMETRY_DISABLED=1
+# Emit `.next/standalone` (server.js) for the runner stage below. This is the
+# ONLY build that should set this — Vercel must not, or its router 404s.
+ENV BUILD_STANDALONE=1
 RUN npm run build
 
 # ---- runner ----
