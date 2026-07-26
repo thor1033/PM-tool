@@ -15,6 +15,11 @@ const authProxy = authkitProxy({
       "/sign-up",
       "/sign-out",
       "/access-denied",
+      // API routes must be covered by the middleware (below) so `withAuth`
+      // works inside route handlers, but they must NOT be redirected to the
+      // WorkOS sign-in page when unauthenticated — the route's own guard
+      // (`requireApiAuth`) returns a JSON 401 instead. path-to-regexp glob.
+      "/api/:path*",
     ],
   },
 });
@@ -28,6 +33,9 @@ export default function proxy(req: NextRequest, event: NextFetchEvent) {
 
 export const config = {
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|woff2?|ico)$).*)",
+    // Note: `/api` is intentionally NOT excluded — AuthKit must run on API
+    // routes so `withAuth`/`getAuthContext` can read the session there. Those
+    // routes are listed in `unauthenticatedPaths` so they aren't redirected.
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|woff2?|ico)$).*)",
   ],
 };
