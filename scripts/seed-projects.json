@@ -1,0 +1,1388 @@
+{
+  "atlas": true,
+  "version": 2,
+  "projects": [
+    {
+      "id": "prj_4lfycmo",
+      "color": "purple",
+      "parentId": null,
+      "createdAt": 1780910825458,
+      "updatedAt": 1782984425458,
+      "meta": {
+        "project": "Helios Platform Modernisation",
+        "code": "PRJ-2026-014"
+      },
+      "tasks": [
+        {
+          "id": "t_b5zqbgf",
+          "tags": [
+            "tg_ux"
+          ],
+          "priority": "med",
+          "assignees": [
+            "Maya Rossi"
+          ],
+          "desc": "Run interviews with department leads to map current pain points and system usage.",
+          "phase": "ph_disc",
+          "category": "ct_enable",
+          "start": "2026-01-06",
+          "end": "2026-01-17",
+          "deps": [],
+          "title": "Stakeholder discovery interviews",
+          "status": "done"
+        },
+        {
+          "id": "t_tz9bj3v",
+          "tags": [
+            "tg_data",
+            "tg_be"
+          ],
+          "priority": "high",
+          "assignees": [
+            "Dev Patel"
+          ],
+          "desc": "Document the existing schema, identify orphaned tables and PII fields requiring special handling.",
+          "phase": "ph_disc",
+          "category": "ct_migr",
+          "start": "2026-01-13",
+          "end": "2026-01-28",
+          "deps": [],
+          "title": "Audit legacy data schema",
+          "status": "done"
+        },
+        {
+          "id": "t_x06oaj8",
+          "tags": [
+            "tg_infra",
+            "tg_be"
+          ],
+          "priority": "high",
+          "assignees": [
+            "Dev Patel"
+          ],
+          "desc": "Produce the reference architecture covering services, data flow and the cloud landing zone.",
+          "phase": "ph_design",
+          "category": "ct_plat",
+          "start": "2026-02-02",
+          "end": "2026-02-20",
+          "deps": [
+            {
+              "id": "d_lt7y54a",
+              "type": "task",
+              "refId": "t_tz9bj3v"
+            },
+            {
+              "id": "d_wd96vxc",
+              "type": "task",
+              "refId": "t_b5zqbgf"
+            }
+          ],
+          "title": "Define target architecture",
+          "status": "inprogress"
+        },
+        {
+          "id": "t_1wxvt8v",
+          "tags": [
+            "tg_ux",
+            "tg_fe"
+          ],
+          "priority": "med",
+          "assignees": [
+            "Maya Rossi"
+          ],
+          "desc": "Establish tokens, core components and accessibility baseline for the new portal.",
+          "phase": "ph_design",
+          "category": "ct_plat",
+          "start": "2026-02-09",
+          "end": "2026-03-06",
+          "deps": [],
+          "title": "Design system & component library",
+          "status": "inprogress"
+        },
+        {
+          "id": "t_oepqatn",
+          "tags": [
+            "tg_sec"
+          ],
+          "priority": "high",
+          "assignees": [
+            "Sam Kaur"
+          ],
+          "desc": "Threat-model the proposed architecture; produce a register of controls and residual risks.",
+          "phase": "ph_design",
+          "category": "ct_compl",
+          "start": "2026-02-23",
+          "end": "2026-03-06",
+          "deps": [],
+          "title": "Security & threat model review",
+          "status": "inprogress"
+        },
+        {
+          "id": "t_nonrrik",
+          "tags": [
+            "tg_be",
+            "tg_sec"
+          ],
+          "priority": "high",
+          "assignees": [
+            "Dev Patel"
+          ],
+          "desc": "SSO + role-based access, session handling and audit logging.",
+          "phase": "ph_build",
+          "category": "ct_plat",
+          "start": "2026-03-09",
+          "end": "2026-03-27",
+          "deps": [
+            {
+              "id": "d_btt38x9",
+              "type": "task",
+              "refId": "t_x06oaj8"
+            },
+            {
+              "id": "d_smt4nou",
+              "type": "external",
+              "label": "Identity-provider licence",
+              "scope": "Vendor — Oktagon Inc."
+            }
+          ],
+          "title": "Build authentication service",
+          "status": "backlog"
+        },
+        {
+          "id": "t_dya5ohs",
+          "tags": [
+            "tg_data"
+          ],
+          "priority": "high",
+          "assignees": [
+            "Dev Patel"
+          ],
+          "desc": "ETL pipeline with validation, dry-run and rollback plan for the customer dataset.",
+          "phase": "ph_build",
+          "category": "ct_migr",
+          "start": "2026-03-16",
+          "end": "2026-04-10",
+          "deps": [
+            {
+              "id": "d_i3osm6s",
+              "type": "task",
+              "refId": "t_tz9bj3v"
+            }
+          ],
+          "title": "Migrate customer records",
+          "status": "backlog"
+        },
+        {
+          "id": "t_wp96967",
+          "tags": [
+            "tg_fe",
+            "tg_ux"
+          ],
+          "priority": "med",
+          "assignees": [
+            "Lina Meyer"
+          ],
+          "desc": "Implement dashboard, search and record-detail flows against the new API.",
+          "phase": "ph_build",
+          "category": "ct_plat",
+          "start": "2026-03-23",
+          "end": "2026-04-24",
+          "deps": [
+            {
+              "id": "d_r0zijtp",
+              "type": "task",
+              "refId": "t_nonrrik"
+            },
+            {
+              "id": "d_w0ixlv3",
+              "type": "task",
+              "refId": "t_1wxvt8v"
+            }
+          ],
+          "title": "Portal frontend — core flows",
+          "status": "backlog"
+        },
+        {
+          "id": "t_rx93v7s",
+          "tags": [
+            "tg_infra"
+          ],
+          "priority": "med",
+          "assignees": [
+            "Sam Kaur"
+          ],
+          "desc": "IaC for networking, monitoring and the CI/CD release pipeline.",
+          "phase": "ph_build",
+          "category": "ct_plat",
+          "start": "2026-04-06",
+          "end": "2026-04-20",
+          "deps": [
+            {
+              "id": "d_d9nnpbh",
+              "type": "external",
+              "label": "Cloud account approval",
+              "scope": "Finance Office"
+            }
+          ],
+          "title": "Provision production landing zone",
+          "status": "backlog"
+        },
+        {
+          "id": "t_3yytm9m",
+          "tags": [
+            "tg_ux",
+            "tg_docs"
+          ],
+          "priority": "med",
+          "assignees": [
+            "Maya Rossi"
+          ],
+          "desc": "Coordinate UAT with pilot departments, triage findings and sign-off.",
+          "phase": "ph_launch",
+          "category": "ct_enable",
+          "start": "2026-04-27",
+          "end": "2026-05-08",
+          "deps": [
+            {
+              "id": "d_86qmxos",
+              "type": "task",
+              "refId": "t_wp96967"
+            },
+            {
+              "id": "d_ekp7kln",
+              "type": "external",
+              "label": "Pilot users released",
+              "scope": "Other project — CRM Sunset"
+            }
+          ],
+          "title": "User acceptance testing",
+          "status": "backlog"
+        },
+        {
+          "id": "t_7lh1btq",
+          "tags": [
+            "tg_infra",
+            "tg_docs"
+          ],
+          "priority": "high",
+          "assignees": [
+            "Sam Kaur"
+          ],
+          "desc": "Final cutover plan, comms, rollback criteria and hypercare schedule.",
+          "phase": "ph_launch",
+          "category": "ct_migr",
+          "start": "2026-05-11",
+          "end": "2026-05-22",
+          "deps": [],
+          "title": "Cutover & go-live runbook",
+          "status": "backlog"
+        },
+        {
+          "id": "t_hll9lsw",
+          "tags": [
+            "tg_docs"
+          ],
+          "priority": "low",
+          "assignees": [
+            "Lina Meyer"
+          ],
+          "desc": "Quick-start guides, recorded walkthroughs and an admin handbook.",
+          "phase": "ph_launch",
+          "category": "ct_enable",
+          "start": "2026-05-04",
+          "end": "2026-05-20",
+          "deps": [],
+          "title": "Training & enablement materials",
+          "status": "backlog"
+        }
+      ],
+      "members": [
+        {
+          "id": "mem_you",
+          "name": "You",
+          "role": "Project Manager",
+          "email": "",
+          "color": "blue"
+        },
+        {
+          "id": "mem_marcus",
+          "name": "Marcus Lindqvist",
+          "role": "Project Owner",
+          "email": "m.lindqvist@company.example",
+          "color": "indigo"
+        },
+        {
+          "id": "mem_helen",
+          "name": "Helen Vos",
+          "role": "Executive Sponsor",
+          "email": "h.vos@company.example",
+          "color": "purple"
+        },
+        {
+          "id": "mem_dev",
+          "name": "Dev Patel",
+          "role": "Tech Lead",
+          "email": "d.patel@company.example",
+          "color": "teal"
+        },
+        {
+          "id": "mem_maya",
+          "name": "Maya Rossi",
+          "role": "Design Lead",
+          "email": "m.rossi@company.example",
+          "color": "pink"
+        },
+        {
+          "id": "mem_sam",
+          "name": "Sam Kaur",
+          "role": "Infra & Security",
+          "email": "s.kaur@company.example",
+          "color": "green"
+        },
+        {
+          "id": "mem_lina",
+          "name": "Lina Meyer",
+          "role": "Frontend Engineer",
+          "email": "l.meyer@company.example",
+          "color": "amber"
+        },
+        {
+          "id": "mem_priya",
+          "name": "Priya Nadar",
+          "role": "Compliance Lead",
+          "email": "p.nadar@company.example",
+          "color": "red"
+        },
+        {
+          "id": "mem_tom",
+          "name": "Tom Berger",
+          "role": "Customer Service Lead",
+          "email": "t.berger@company.example",
+          "color": "blue"
+        }
+      ],
+      "stakeholders": [
+        {
+          "id": "s_1b7a3cb",
+          "name": "Helen Vos",
+          "title": "VP, Operations",
+          "role": "Executive Sponsor",
+          "responsibility": "Owns the business case, unblocks funding and resolves cross-department conflicts.",
+          "influence": "high",
+          "interest": "high",
+          "contact": "h.vos@company.example"
+        },
+        {
+          "id": "s_45gfv98",
+          "name": "Marcus Lindqvist",
+          "title": "Head of IT",
+          "role": "Project Owner",
+          "responsibility": "Accountable for delivery, scope and the technical decision record.",
+          "influence": "high",
+          "interest": "high",
+          "contact": "m.lindqvist@company.example"
+        },
+        {
+          "id": "s_k147liz",
+          "name": "Priya Nadar",
+          "title": "Compliance Lead",
+          "role": "Advisor",
+          "responsibility": "Signs off on data handling, retention and regulatory controls.",
+          "influence": "med",
+          "interest": "high",
+          "contact": "p.nadar@company.example"
+        },
+        {
+          "id": "s_9rxr05x",
+          "name": "Tom Berger",
+          "title": "Customer Service Lead",
+          "role": "Key User",
+          "responsibility": "Represents frontline users; coordinates UAT and adoption in the call centre.",
+          "influence": "med",
+          "interest": "high",
+          "contact": "t.berger@company.example"
+        },
+        {
+          "id": "s_mgull1u",
+          "name": "Finance Office",
+          "title": "Budget Control",
+          "role": "Gatekeeper",
+          "responsibility": "Approves spend against milestones and tracks benefit realisation.",
+          "influence": "med",
+          "interest": "med",
+          "contact": "finance@company.example"
+        }
+      ],
+      "risks": [
+        {
+          "id": "r_f7dp1mu",
+          "title": "Legacy data quality worse than expected",
+          "likelihood": "high",
+          "impact": "high",
+          "mitigation": "Early profiling sprint; phased migration with validation gates and a rollback snapshot.",
+          "owner": "Dev Patel",
+          "status": "open",
+          "taskIds": [
+            "t_tz9bj3v",
+            "t_dya5ohs"
+          ]
+        },
+        {
+          "id": "r_0addnif",
+          "title": "Key user availability during UAT",
+          "likelihood": "med",
+          "impact": "high",
+          "mitigation": "Book UAT windows now; secure backfill cover with department leads in writing.",
+          "owner": "Maya Rossi",
+          "status": "open",
+          "taskIds": [
+            "t_3yytm9m"
+          ]
+        },
+        {
+          "id": "r_gxgovyn",
+          "title": "Compliance sign-off delays go-live",
+          "likelihood": "med",
+          "impact": "high",
+          "mitigation": "Engage Compliance from Design phase; maintain a live controls register.",
+          "owner": "Sam Kaur",
+          "status": "monitoring",
+          "taskIds": [
+            "t_oepqatn"
+          ]
+        },
+        {
+          "id": "r_dytq7px",
+          "title": "Scope creep from adjacent teams",
+          "likelihood": "high",
+          "impact": "med",
+          "mitigation": "Strict change-control board; park requests in a phase-2 backlog.",
+          "owner": "Marcus L.",
+          "status": "open",
+          "taskIds": []
+        },
+        {
+          "id": "r_2ddxf6m",
+          "title": "Cloud cost overrun",
+          "likelihood": "low",
+          "impact": "med",
+          "mitigation": "Budget alerts and right-sizing review at end of Build phase.",
+          "owner": "Sam Kaur",
+          "status": "monitoring",
+          "taskIds": []
+        }
+      ],
+      "findings": [
+        {
+          "id": "f_ef6q9a3",
+          "title": "62% of support tickets stem from manual data entry",
+          "category": "ct_enable",
+          "summary": "Process analysis of 1,200 tickets shows the majority are caused by duplicate or mistyped records in the legacy system. Automation here yields the largest support reduction.",
+          "source": "Support analytics, Q4"
+        },
+        {
+          "id": "f_qa60hps",
+          "title": "Three shadow spreadsheets hold authoritative data",
+          "category": "ct_migr",
+          "summary": "Critical pricing and entitlement data lives outside the system of record. These must be ingested or the migration will lose authoritative state.",
+          "source": "Discovery interviews"
+        },
+        {
+          "id": "f_8uv99xg",
+          "title": "No single sign-on across tools",
+          "category": "ct_compl",
+          "summary": "Users maintain 4–6 separate logins. SSO is both a security win and the most requested usability improvement.",
+          "source": "User survey, n=84"
+        },
+        {
+          "id": "f_443bsgr",
+          "title": "Peak load is 4× average at month-end",
+          "category": "ct_plat",
+          "summary": "Reporting and reconciliation create predictable spikes. Target architecture must autoscale to avoid the current month-end slowdowns.",
+          "source": "Infra telemetry"
+        }
+      ],
+      "org": [
+        {
+          "id": "o_sponsor",
+          "name": "Helen Vos",
+          "role": "Executive Sponsor",
+          "parent": null,
+          "note": "Steering committee chair",
+          "accent": "purple"
+        },
+        {
+          "id": "o_owner",
+          "name": "Marcus Lindqvist",
+          "role": "Project Owner",
+          "parent": "o_sponsor",
+          "note": "Single point of accountability",
+          "accent": "indigo"
+        },
+        {
+          "id": "o_pm",
+          "name": "You",
+          "role": "Project Manager",
+          "parent": "o_owner",
+          "note": "Day-to-day delivery & this tool",
+          "accent": "blue"
+        },
+        {
+          "id": "o_tech",
+          "name": "Dev Patel",
+          "role": "Tech Lead",
+          "parent": "o_pm",
+          "note": "Architecture & backend",
+          "accent": "teal"
+        },
+        {
+          "id": "o_design",
+          "name": "Maya Rossi",
+          "role": "Design Lead",
+          "parent": "o_pm",
+          "note": "UX & enablement",
+          "accent": "pink"
+        },
+        {
+          "id": "o_infra",
+          "name": "Sam Kaur",
+          "role": "Infra & Security",
+          "parent": "o_tech",
+          "note": "Landing zone, CI/CD, controls",
+          "accent": "green"
+        },
+        {
+          "id": "o_fe",
+          "name": "Lina Meyer",
+          "role": "Frontend Engineer",
+          "parent": "o_tech",
+          "note": "Portal & components",
+          "accent": "amber"
+        }
+      ],
+      "products": [
+        {
+          "id": "p_uqm4rjc",
+          "name": "Discovery Report",
+          "type": "pdf",
+          "fileId": null,
+          "taskIds": [
+            "t_b5zqbgf"
+          ],
+          "phase": "ph_disc",
+          "date": "2026-01-20",
+          "note": "Synthesis of interviews and current-state analysis.",
+          "placeholder": true
+        },
+        {
+          "id": "p_c7hy52i",
+          "name": "Target Architecture Diagram",
+          "type": "image",
+          "fileId": null,
+          "taskIds": [
+            "t_x06oaj8"
+          ],
+          "phase": "ph_design",
+          "date": "2026-02-22",
+          "note": "Reference architecture, v0.9.",
+          "placeholder": true
+        },
+        {
+          "id": "PROD_MIGPLAN",
+          "name": "Migration Plan.xlsx",
+          "type": "excel",
+          "fileId": null,
+          "taskIds": [
+            "t_tz9bj3v",
+            "t_dya5ohs"
+          ],
+          "phase": "ph_design",
+          "date": "2026-02-28",
+          "note": "Table-by-table mapping and sequencing.",
+          "placeholder": true
+        }
+      ],
+      "businessCase": {
+        "purpose": "Replace the end-of-life legacy customer platform with a secure, scalable portal that consolidates fragmented tools into a single system of record.",
+        "problem": "The current platform is unsupported, has no single sign-on, and depends on manual data entry that drives the majority of support tickets. Authoritative data lives in uncontrolled spreadsheets, creating compliance and continuity risk.",
+        "perspOurs": "For IT, the legacy platform is an unsupported continuity and compliance liability that absorbs a disproportionate share of the support budget.",
+        "perspUsers": "Frontline users juggle four to six separate logins and re-key data by hand — slow, error-prone and the top source of frustration in surveys.",
+        "perspStakeholders": "Compliance cannot evidence current data-retention controls, while Operations sees month-end slowdowns erode service levels.",
+        "worsening": "Every quarter more authoritative data drifts into uncontrolled spreadsheets, and the unsupported platform steadily raises the probability of an unplanned outage.",
+        "opportunities": "Consolidating the tools behind single sign-on is the most requested usability win and unlocks the automation that removes the largest category of support tickets.",
+        "outcomes": [
+          "Reduce data-entry support tickets by 50% within two quarters of go-live.",
+          "Achieve single sign-on across all customer-facing tools.",
+          "Bring all authoritative data under a governed system of record.",
+          "Eliminate month-end performance degradation through autoscaling."
+        ],
+        "effProcess": "Manual data-entry steps are replaced by validated intake. A new data-governance procedure (QMS / Cortex document) defines ownership, retention and the change-control path.",
+        "effSystem": "A new portal with SSO, a governed system of record, a validated migration pipeline and autoscaling infrastructure — plus a reusable component library and admin templates.",
+        "effBehaviour": "Frontline users work from a single portal and trust it as the source of truth; admins manage access and data through governed workflows instead of spreadsheets.",
+        "effLeadership": "Data-ownership accountability is set at department-lead level, the steering committee governs scope, and all key users complete enablement training before go-live.",
+        "financial": [
+          {
+            "label": "Programme cost (one-off)",
+            "value": "€480,000",
+            "note": "Build, migration, licensing"
+          },
+          {
+            "label": "Annual run cost",
+            "value": "€120,000",
+            "note": "Cloud + support, replaces €165k legacy"
+          },
+          {
+            "label": "Annual saving",
+            "value": "€210,000",
+            "note": "Support effort + legacy retirement"
+          },
+          {
+            "label": "Payback period",
+            "value": "~2.4 years",
+            "note": "Excluding risk-avoidance value"
+          }
+        ],
+        "justification": "Beyond the direct saving, the legacy platform is a continuity and compliance liability: it is unsupported and cannot meet current data-retention obligations. Doing nothing increases the probability of an unplanned outage and a regulatory finding. The proposed programme is the lowest-risk path that also delivers measurable efficiency gains.",
+        "effective": "Delivery is phased — Discovery, Design, Build, Launch — with a go/no-go gate at the end of each phase. Benefits are tracked against the four target outcomes, reviewed monthly by the steering committee with the Finance Office validating realised savings."
+      },
+      "scope": {
+        "inScope": [
+          "Migration of the customer records dataset to the new system of record",
+          "Single sign-on across all customer-facing tools",
+          "New portal core flows: dashboard, search and record detail",
+          "Production landing zone, monitoring and CI/CD pipeline",
+          "UAT with pilot departments and go-live"
+        ],
+        "outScope": [
+          "Finance / ERP integration (deferred to phase 2)",
+          "Native mobile applications",
+          "Archive data older than seven years",
+          "External partner portals",
+          "Decommissioning of unrelated legacy systems"
+        ]
+      },
+      "assessment": [
+        {
+          "id": "as_4g3vckn",
+          "area": "Identity & access",
+          "asIs": "4–6 separate logins per user; no single sign-on.",
+          "toBe": "One single sign-on across every customer-facing tool."
+        },
+        {
+          "id": "as_g5u6qih",
+          "area": "Data ownership",
+          "asIs": "Authoritative data spread across uncontrolled spreadsheets.",
+          "toBe": "One governed system of record with clear ownership."
+        },
+        {
+          "id": "as_tnmhbrh",
+          "area": "Support load",
+          "asIs": "Majority of tickets caused by manual data entry.",
+          "toBe": "50% fewer data-entry tickets via validated intake."
+        },
+        {
+          "id": "as_58w4evo",
+          "area": "Performance",
+          "asIs": "Month-end slowdowns at ~4× average load.",
+          "toBe": "Autoscaling removes month-end degradation."
+        },
+        {
+          "id": "as_2bh679k",
+          "area": "Platform support",
+          "asIs": "Legacy platform end-of-life and unsupported.",
+          "toBe": "Supported, patched cloud platform."
+        }
+      ],
+      "commPlan": [
+        {
+          "id": "cm_4zv6qei",
+          "audience": "All platform users",
+          "purpose": "Explain what is changing and how to work the new way.",
+          "messages": [
+            "Users move from the legacy task planner to the new portal",
+            "What the new flow looks like day-to-day",
+            "Where to find support material and who to ask"
+          ],
+          "channels": [
+            "Email",
+            "Intranet"
+          ],
+          "timing": "Before go-live (≤ 1 week)",
+          "owner": "Maya Rossi",
+          "deliverables": [
+            "Launch email (drafted — needs sponsor input)",
+            "Quick-start guide"
+          ]
+        },
+        {
+          "id": "cm_pi3k46s",
+          "audience": "All employees",
+          "purpose": "Inform everyone that the new system reduces request processing time.",
+          "messages": [
+            "A new platform is live",
+            "The benefit — faster, more reliable service",
+            "Where to find it (via the portal)",
+            "Where support material lives"
+          ],
+          "channels": [
+            "Intranet article",
+            "Info screens"
+          ],
+          "timing": "Launch week",
+          "owner": "Lina Meyer",
+          "deliverables": [
+            "Intranet article (done)",
+            "Portal guide link",
+            "Info-screen slide (sent)"
+          ]
+        },
+        {
+          "id": "cm_82pj9wt",
+          "audience": "Leadership team",
+          "purpose": "Ensure leaders actively and visibly champion the change.",
+          "messages": [
+            "The change and its benefit (faster processing)",
+            "Why we are doing it now",
+            "Where to find it",
+            "Where support material lives"
+          ],
+          "channels": [
+            "Email",
+            "Monthly leadership meeting"
+          ],
+          "timing": "Launch week",
+          "owner": "Marcus Lindqvist",
+          "deliverables": [
+            "Approved comms",
+            "Leadership update deck"
+          ]
+        },
+        {
+          "id": "cm_oqsvqlm",
+          "audience": "Senior management",
+          "purpose": "Inform of the change and ownership of processing-time delays.",
+          "messages": [
+            "Summary of discovery findings",
+            "Executive summary of what changes",
+            "A tool that lets us set and track KPIs",
+            "One-page summary of the new process"
+          ],
+          "channels": [
+            "Email",
+            "Meeting"
+          ],
+          "timing": "Post-launch, at the general meeting",
+          "owner": "Helen Vos",
+          "deliverables": [
+            "Presented slides"
+          ]
+        }
+      ],
+      "changePlan": {
+        "groups": [
+          {
+            "id": "cg_zi76v47",
+            "label": "Delivery team",
+            "accent": "indigo",
+            "rows": [
+              {
+                "id": "cr_sd0pz2t",
+                "component": "Training package",
+                "description": "WHY the change, today vs. tomorrow, roles & responsibilities, how to use the new portal, retiring the old planner, practical exercises with dashboards and task types.",
+                "deliverables": [
+                  "Slide deck (why + how)",
+                  "User guides (new workflow)",
+                  "Training material"
+                ],
+                "owner": "Maya Rossi"
+              },
+              {
+                "id": "cr_k4oznh4",
+                "component": "New-joiner package",
+                "description": "Page on the portal with all flows and training for new employees' onboarding.",
+                "deliverables": [
+                  "User onboarding page"
+                ],
+                "owner": "Lina Meyer"
+              },
+              {
+                "id": "cr_6cijiec",
+                "component": "Management follow-up",
+                "description": "Managers reinforce new behaviour through routines & KPIs, communication discipline and dashboards to secure team readiness.",
+                "deliverables": [
+                  "Check-in meeting plan",
+                  "Behaviour reinforcement guidance",
+                  "Dashboard usage guide"
+                ],
+                "owner": "Sam Kaur"
+              },
+              {
+                "id": "cr_4tt25qb",
+                "component": "Post-go-live support",
+                "description": "Monthly feedback review → fix → roll out, plus refresher training.",
+                "deliverables": [
+                  "Feedback analysis",
+                  "Continuous improvement log",
+                  "Ownership map (who handles what)"
+                ],
+                "owner": "Maya Rossi"
+              }
+            ]
+          },
+          {
+            "id": "cg_iqxcv80",
+            "label": "Organisation-wide",
+            "accent": "teal",
+            "rows": [
+              {
+                "id": "cr_3s50qwg",
+                "component": "All-staff communication",
+                "description": "Inform the organisation of the new system and ways of working.",
+                "deliverables": [
+                  "Change announcement (intranet news)",
+                  "User-friendly portal for easy adoption"
+                ],
+                "owner": "Lina Meyer"
+              },
+              {
+                "id": "cr_ftwrfuy",
+                "component": "Stakeholder communication",
+                "description": "Department managers, SMEs and requesters — organisation-wide messaging.",
+                "deliverables": [
+                  "Change announcement (email, webinars)",
+                  "Stakeholder-specific message packs",
+                  "Change timeline"
+                ],
+                "owner": "Marcus Lindqvist"
+              },
+              {
+                "id": "cr_rz0y4tg",
+                "component": "Feedback loop",
+                "description": "Mechanism for reporting issues and proposing improvements.",
+                "deliverables": [
+                  "Feedback form / template",
+                  "'You said → we did' updates"
+                ],
+                "owner": "Maya Rossi"
+              }
+            ]
+          }
+        ]
+      },
+      "milestones": [
+        {
+          "id": "ms_fnaetcy",
+          "title": "Discovery sign-off",
+          "type": "milestone",
+          "date": "2026-01-30",
+          "category": "ct_enable",
+          "note": "Steering committee confirms discovery findings and greenlights Design."
+        },
+        {
+          "id": "ms_ngarveh",
+          "title": "Architecture gate",
+          "type": "gate",
+          "date": "2026-02-24",
+          "category": "ct_plat",
+          "note": "Go/no-go: target architecture must pass security and cost review before Build starts."
+        },
+        {
+          "id": "ms_fiamen8",
+          "title": "Migration dry-run pass",
+          "type": "milestone",
+          "date": "2026-04-06",
+          "category": "ct_migr",
+          "note": "ETL pipeline completes a full dry-run with < 2 % exception rate."
+        },
+        {
+          "id": "ms_x13nrqm",
+          "title": "UAT gate",
+          "type": "gate",
+          "date": "2026-05-09",
+          "category": "ct_enable",
+          "note": "Go/no-go: UAT findings must be triaged and critical issues resolved before cutover planning."
+        },
+        {
+          "id": "ms_3fnlvg8",
+          "title": "Go-live",
+          "type": "milestone",
+          "date": "2026-05-25",
+          "category": "ct_plat",
+          "note": "Production cutover and hypercare begin."
+        }
+      ],
+      "glossary": [
+        {
+          "id": "gl_sso",
+          "term": "SSO",
+          "definition": "Single sign-on — one login that authenticates the user across all customer-facing tools."
+        },
+        {
+          "id": "gl_etl",
+          "term": "ETL",
+          "definition": "Extract, Transform, Load — the pipeline that moves data from the legacy system into the new system of record."
+        },
+        {
+          "id": "gl_uat",
+          "term": "UAT",
+          "definition": "User Acceptance Testing — pilot users exercise the system end-to-end and sign off before go-live."
+        },
+        {
+          "id": "gl_cicd",
+          "term": "CI/CD",
+          "definition": "Continuous Integration and Continuous Deployment — the automated build, test and release pipeline."
+        },
+        {
+          "id": "gl_qms",
+          "term": "QMS",
+          "definition": "Quality Management System — the controlled set of procedures that govern how we work."
+        },
+        {
+          "id": "gl_cortex",
+          "term": "Cortex",
+          "definition": "The internal document management system where governed procedures and policies live."
+        },
+        {
+          "id": "gl_hypercare",
+          "term": "hypercare",
+          "definition": "The intensive support window immediately after go-live where the project team is on standby to triage issues fast."
+        },
+        {
+          "id": "gl_landingzone",
+          "term": "landing zone",
+          "definition": "A pre-configured, governed cloud environment (networking, identity, monitoring) ready to host workloads."
+        }
+      ],
+      "tags": [
+        {
+          "id": "tg_fe",
+          "label": "Frontend",
+          "color": "blue"
+        },
+        {
+          "id": "tg_be",
+          "label": "Backend",
+          "color": "indigo"
+        },
+        {
+          "id": "tg_infra",
+          "label": "Infra",
+          "color": "teal"
+        },
+        {
+          "id": "tg_sec",
+          "label": "Security",
+          "color": "red"
+        },
+        {
+          "id": "tg_ux",
+          "label": "UX",
+          "color": "pink"
+        },
+        {
+          "id": "tg_data",
+          "label": "Data",
+          "color": "amber"
+        },
+        {
+          "id": "tg_docs",
+          "label": "Docs",
+          "color": "green"
+        }
+      ],
+      "phases": [
+        {
+          "id": "ph_disc",
+          "label": "Discovery",
+          "color": "teal"
+        },
+        {
+          "id": "ph_design",
+          "label": "Design",
+          "color": "pink"
+        },
+        {
+          "id": "ph_build",
+          "label": "Build",
+          "color": "blue"
+        },
+        {
+          "id": "ph_launch",
+          "label": "Launch",
+          "color": "amber"
+        }
+      ],
+      "categories": []
+    },
+    {
+      "id": "prj_ch87g2u",
+      "color": "indigo",
+      "parentId": "prj_4lfycmo",
+      "createdAt": 1783330025459,
+      "updatedAt": 1784194025459,
+      "meta": {
+        "project": "Customer Data Migration",
+        "code": ""
+      },
+      "tasks": [
+        {
+          "id": "t_z0vfrk7",
+          "tags": [
+            "tg_data"
+          ],
+          "priority": "high",
+          "assignees": [
+            "Dev Patel"
+          ],
+          "desc": "",
+          "phase": "ph_disc",
+          "category": "ct_migr",
+          "start": "2026-02-02",
+          "end": "2026-02-13",
+          "deps": [],
+          "title": "Profile legacy data quality",
+          "status": "done"
+        },
+        {
+          "id": "t_nce7lvo",
+          "tags": [
+            "tg_data",
+            "tg_be"
+          ],
+          "priority": "high",
+          "assignees": [
+            "Dev Patel",
+            "Lina Meyer"
+          ],
+          "desc": "",
+          "phase": "ph_design",
+          "category": "ct_migr",
+          "start": "2026-02-16",
+          "end": "2026-03-06",
+          "deps": [],
+          "title": "Build ETL mapping spec",
+          "status": "inprogress"
+        },
+        {
+          "id": "t_2yt8l6e",
+          "tags": [
+            "tg_data"
+          ],
+          "priority": "med",
+          "assignees": [
+            "Dev Patel"
+          ],
+          "desc": "",
+          "phase": "ph_build",
+          "category": "ct_migr",
+          "start": "2026-03-09",
+          "end": "2026-03-27",
+          "deps": [],
+          "title": "Dry-run migration in staging",
+          "status": "backlog"
+        },
+        {
+          "id": "t_lt01hmr",
+          "tags": [
+            "tg_docs"
+          ],
+          "priority": "med",
+          "assignees": [
+            "Sam Kaur"
+          ],
+          "desc": "",
+          "phase": "ph_launch",
+          "category": "ct_compl",
+          "start": "2026-03-30",
+          "end": "2026-04-10",
+          "deps": [],
+          "title": "Reconciliation & sign-off report",
+          "status": "backlog"
+        }
+      ],
+      "members": [
+        {
+          "id": "mem_dev2",
+          "name": "Dev Patel",
+          "role": "Migration Lead",
+          "email": "",
+          "color": "teal"
+        },
+        {
+          "id": "mem_lina2",
+          "name": "Lina Meyer",
+          "role": "Data Engineer",
+          "email": "",
+          "color": "amber"
+        }
+      ],
+      "stakeholders": [],
+      "risks": [
+        {
+          "id": "r_8v9v130",
+          "title": "Source data exceeds validation tolerance",
+          "likelihood": "high",
+          "impact": "high",
+          "mitigation": "Tighten cleansing rules; gate cutover on a <2% exception rate.",
+          "owner": "Dev Patel",
+          "status": "open",
+          "taskIds": [
+            "t_z0vfrk7",
+            "t_2yt8l6e"
+          ]
+        }
+      ],
+      "findings": [],
+      "org": [
+        {
+          "id": "o_lead",
+          "name": "Dev Patel",
+          "role": "Migration Lead",
+          "parent": null,
+          "note": "Owns the data workstream",
+          "accent": "teal"
+        },
+        {
+          "id": "o_eng",
+          "name": "Lina Meyer",
+          "role": "Data Engineer",
+          "parent": "o_lead",
+          "note": "ETL & validation",
+          "accent": "amber"
+        }
+      ],
+      "products": [],
+      "businessCase": {
+        "purpose": "",
+        "problem": "",
+        "perspOurs": "",
+        "perspUsers": "",
+        "perspStakeholders": "",
+        "worsening": "",
+        "opportunities": "",
+        "outcomes": [],
+        "effProcess": "",
+        "effSystem": "",
+        "effBehaviour": "",
+        "effLeadership": "",
+        "financial": [
+          {
+            "label": "Programme cost (one-off)",
+            "value": "",
+            "note": ""
+          },
+          {
+            "label": "Annual run cost",
+            "value": "",
+            "note": ""
+          },
+          {
+            "label": "Annual saving",
+            "value": "",
+            "note": ""
+          },
+          {
+            "label": "Payback period",
+            "value": "",
+            "note": ""
+          }
+        ],
+        "justification": "",
+        "effective": ""
+      },
+      "scope": {
+        "inScope": [],
+        "outScope": []
+      },
+      "assessment": [],
+      "commPlan": [],
+      "changePlan": {
+        "groups": []
+      },
+      "milestones": [],
+      "tags": [],
+      "phases": [],
+      "categories": []
+    },
+    {
+      "id": "prj_qfj3tp1",
+      "color": "teal",
+      "parentId": null,
+      "createdAt": 1784021225459,
+      "updatedAt": 1784539625459,
+      "meta": {
+        "project": "Intranet Refresh",
+        "code": "PRJ-2026-021"
+      },
+      "tasks": [
+        {
+          "id": "t_elvjl7z",
+          "tags": [
+            "tg_docs"
+          ],
+          "priority": "med",
+          "assignees": [
+            "Noah Frank"
+          ],
+          "desc": "",
+          "phase": "ph_disc",
+          "category": "ct_enable",
+          "start": "2026-02-02",
+          "end": "2026-02-13",
+          "deps": [],
+          "title": "Content audit of current intranet",
+          "status": "done"
+        },
+        {
+          "id": "t_n7kejqs",
+          "tags": [
+            "tg_ux"
+          ],
+          "priority": "high",
+          "assignees": [
+            "Aïsha Bello"
+          ],
+          "desc": "",
+          "phase": "ph_design",
+          "category": "ct_plat",
+          "start": "2026-02-16",
+          "end": "2026-02-27",
+          "deps": [],
+          "title": "Information architecture workshop",
+          "status": "inprogress"
+        },
+        {
+          "id": "t_vxaqbmn",
+          "tags": [
+            "tg_be"
+          ],
+          "priority": "med",
+          "assignees": [
+            "Noah Frank"
+          ],
+          "desc": "",
+          "phase": "ph_build",
+          "category": "ct_plat",
+          "start": "2026-03-09",
+          "end": "2026-03-20",
+          "deps": [],
+          "title": "Search relevance tuning",
+          "status": "backlog"
+        },
+        {
+          "id": "t_swq7po1",
+          "tags": [
+            "tg_docs"
+          ],
+          "priority": "low",
+          "assignees": [
+            "Aïsha Bello"
+          ],
+          "desc": "",
+          "phase": "ph_launch",
+          "category": "ct_enable",
+          "start": "2026-03-23",
+          "end": "2026-04-03",
+          "deps": [],
+          "title": "Editor onboarding guide",
+          "status": "backlog"
+        }
+      ],
+      "members": [
+        {
+          "id": "mem_aisha",
+          "name": "Aïsha Bello",
+          "role": "Content Lead",
+          "email": "",
+          "color": "teal"
+        }
+      ],
+      "stakeholders": [],
+      "risks": [
+        {
+          "id": "r_sr6l4t6",
+          "title": "Low editor adoption after launch",
+          "likelihood": "med",
+          "impact": "med",
+          "mitigation": "Champions programme and office hours in first month.",
+          "owner": "Aïsha Bello",
+          "status": "open",
+          "taskIds": [
+            "t_swq7po1"
+          ]
+        }
+      ],
+      "findings": [],
+      "org": [
+        {
+          "id": "o_owner",
+          "name": "Aïsha Bello",
+          "role": "Project Owner",
+          "parent": null,
+          "note": "Comms & internal tooling",
+          "accent": "indigo"
+        },
+        {
+          "id": "o_eng",
+          "name": "Noah Frank",
+          "role": "Engineer",
+          "parent": "o_owner",
+          "note": "Build & search",
+          "accent": "teal"
+        }
+      ],
+      "products": [],
+      "businessCase": {
+        "purpose": "",
+        "problem": "",
+        "perspOurs": "",
+        "perspUsers": "",
+        "perspStakeholders": "",
+        "worsening": "",
+        "opportunities": "",
+        "outcomes": [],
+        "effProcess": "",
+        "effSystem": "",
+        "effBehaviour": "",
+        "effLeadership": "",
+        "financial": [
+          {
+            "label": "Programme cost (one-off)",
+            "value": "",
+            "note": ""
+          },
+          {
+            "label": "Annual run cost",
+            "value": "",
+            "note": ""
+          },
+          {
+            "label": "Annual saving",
+            "value": "",
+            "note": ""
+          },
+          {
+            "label": "Payback period",
+            "value": "",
+            "note": ""
+          }
+        ],
+        "justification": "",
+        "effective": ""
+      },
+      "scope": {
+        "inScope": [],
+        "outScope": []
+      },
+      "assessment": [],
+      "commPlan": [],
+      "changePlan": {
+        "groups": []
+      },
+      "milestones": [],
+      "tags": [],
+      "phases": [],
+      "categories": []
+    }
+  ]
+}
