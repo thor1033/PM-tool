@@ -92,3 +92,15 @@ export async function askJSON<T = unknown>(
     return null;
   }
 }
+
+/** Same contract as `askJSON`, but rethrows instead of swallowing the error —
+ *  for callers (like the plan route) that need to tell "the API call itself
+ *  failed" apart from "the model responded but with nothing usable", so a
+ *  bad/missing API key surfaces as a real error instead of a silent no-op. */
+export async function askJSONOrThrow<T = unknown>(
+  prompt: string,
+  opts?: { maxTokens?: number; model?: string },
+): Promise<T | null> {
+  const out = await complete(prompt, opts);
+  return stripJSON<T>(out);
+}

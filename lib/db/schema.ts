@@ -61,6 +61,10 @@ export const projects = pgTable(
     orgChart: jsonb("org_chart").default([]).notNull(),
     glossary: jsonb("glossary").default([]).notNull(),
     kpis: jsonb("kpis").default([]).notNull(),
+    financials: jsonb("financials").default({}).notNull(),
+    forecast: jsonb("forecast").default({ bufferPct: 15, weighting: "duration" }).notNull(),
+    startup: jsonb("startup").default({}).notNull(),
+    settings: jsonb("settings").default({}).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -82,6 +86,9 @@ export const tasks = pgTable(
     status: text("status").default("backlog").notNull(),
     phase: text("phase"),
     category: text("category"),
+    /** Non-track provenance for tasks spun up from comms/change-management
+     *  flows — the List view pins these into their own synthetic groups. */
+    origin: text("origin"),
     priority: text("priority").default("med").notNull(),
     description: text("description").default("").notNull(),
     start: text("start").default("").notNull(),
@@ -90,6 +97,9 @@ export const tasks = pgTable(
     tags: jsonb("tags").$type<string[]>().default([]).notNull(),
     assignees: jsonb("assignees").$type<string[]>().default([]).notNull(),
     deps: jsonb("deps").$type<TaskDep[]>().default([]).notNull(),
+    parentId: text("parent_id"),
+    comments: jsonb("comments").$type<TaskComment[]>().default([]).notNull(),
+    custom: jsonb("custom").$type<Record<string, unknown>>().default({}).notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.projectId, t.id] }),
@@ -153,6 +163,8 @@ export const members = pgTable(
     role: text("role").default("").notNull(),
     email: text("email").default("").notNull(),
     color: text("color").default("blue").notNull(),
+    capacityHours: integer("capacity_hours").default(30).notNull(),
+    availability: jsonb("availability").$type<Record<string, number>>().default({}).notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.projectId, t.id] }),
@@ -222,6 +234,28 @@ export const milestones = pgTable(
   ],
 );
 
+/** Externally-owned inputs a task can depend on (dep.type === "ext"). */
+export const externals = pgTable(
+  "externals",
+  {
+    orgId: uuid("org_id").notNull(),
+    projectId: uuid("project_id")
+      .references(() => projects.id, { onDelete: "cascade" })
+      .notNull(),
+    id: text("id").notNull(),
+    title: text("title").default("").notNull(),
+    party: text("party").default("").notNull(),
+    owner: text("owner").default("").notNull(),
+    due: text("due").default("").notNull(),
+    status: text("status").default("pending").notNull(),
+    note: text("note").default("").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.projectId, t.id] }),
+    index("externals_project_idx").on(t.projectId),
+  ],
+);
+
 // ---------- taxonomy (per-project tags / phases / categories) ----------
 export const tags = pgTable(
   "tags",
@@ -266,12 +300,23 @@ export const categories = pgTable(
 );
 
 // ---------- types ----------
+/** A task dependency: an internal task/deliverable, a registered external
+ *  input, or a free-text external note. `refId` points at the referenced
+ *  entity's app-string id for the internal/registered kinds. */
 export type TaskDep = {
   id: string;
-  type: "task" | "external";
+  type: "task" | "deliverable" | "ext" | "external";
   refId?: string;
   label?: string;
   scope?: string;
+};
+
+export type TaskComment = {
+  id: string;
+  author: string;
+  color?: string;
+  text: string;
+  ts: number;
 };
 
 export type Organization = InferSelectModel<typeof organizations>;
@@ -287,6 +332,28 @@ export type Milestone = InferSelectModel<typeof milestones>;
 export type Tag = InferSelectModel<typeof tags>;
 export type Phase = InferSelectModel<typeof phases>;
 export type Category = InferSelectModel<typeof categories>;
+export type External = InferSelectModel<typeof externals>;
+export type Activity = InferSelectModel<typeof activity>;
+
+// ---------- audit / activity (append-only; dedicated route in P5) ----------
+export const activity = pgTable(
+  "activity",
+  {
+    orgId: uuid("org_id").notNull(),
+    projectId: uuid("project_id")
+      .references(() => projects.id, { onDelete: "cascade" })
+      .notNull(),
+    id: text("id").notNull(),
+    ts: timestamp("ts", { withTimezone: true }).defaultNow().notNull(),
+    kind: text("kind").default("edit").notNull(),
+    text: text("text").notNull(),
+    actor: text("actor").default("").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.projectId, t.id] }),
+    index("activity_project_idx").on(t.projectId),
+  ],
+);
 
 /** All per-project entity tables, keyed by the section name used in the app. */
 export const entityTables = {
@@ -300,4 +367,5 @@ export const entityTables = {
   tags,
   phases,
   categories,
+  externals,
 } as const;

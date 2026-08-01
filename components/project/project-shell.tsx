@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
-import { ChevronsUpDown, ArrowLeft, Check } from "lucide-react";
+import { useState } from "react";
+import { ChevronsUpDown, ArrowLeft, Check, ChevronDown, Star } from "lucide-react";
 import { PROJECT_NAV } from "@/lib/nav";
-import { useProject, useProjects } from "@/lib/api/hooks";
+import { useProject, useProjects, useUpdateProject } from "@/lib/api/hooks";
 import { accent } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+
+const GROUP_LABELS: Record<string, string> = {
+  overview: "Overview",
+  strategy: "Strategy",
+  delivery: "Delivery",
+};
 
 export function ProjectShell({ children }: { children: React.ReactNode }) {
   const params = useParams<{ id: string }>();
@@ -24,9 +32,74 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data, isLoading } = useProject(id);
   const { data: allProjects } = useProjects();
+  const updateProject = useUpdateProject(id);
 
   const project = data?.project;
   const activeSlug = pathname.split("/")[3] ?? "dashboard";
+
+  const settings = (project?.settings as Record<string, unknown> | undefined) ?? {};
+  const navFavs: string[] = Array.isArray(settings.navFavs) ? (settings.navFavs as string[]) : [];
+
+  const activeItem = PROJECT_NAV.find((n) => n.slug === activeSlug);
+  const activeGroup = activeItem?.group;
+
+  const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({
+    overview: activeGroup === "overview",
+    strategy: activeGroup === "strategy",
+    delivery: activeGroup === "delivery",
+  });
+
+  function toggleFav(slug: string) {
+    if (!project) return;
+    const next = navFavs.includes(slug)
+      ? navFavs.filter((s) => s !== slug)
+      : [...navFavs, slug];
+    updateProject.mutate({ settings: { ...settings, navFavs: next } });
+  }
+
+  const pinned = PROJECT_NAV.filter((n) => !n.group);
+  const favItems = PROJECT_NAV.filter((n) => n.group && navFavs.includes(n.slug));
+  const groups = (["overview", "strategy", "delivery"] as const).map((key) => ({
+    key,
+    label: GROUP_LABELS[key],
+    items: PROJECT_NAV.filter((n) => n.group === key),
+  }));
+
+  function NavLink({ item, indent = false }: { item: (typeof PROJECT_NAV)[number]; indent?: boolean }) {
+    const active = activeSlug === item.slug;
+    const Icon = item.icon;
+    const isFav = navFavs.includes(item.slug);
+    return (
+      <div className="group/ni flex items-center">
+        <Link
+          href={`/projects/${id}/${item.slug}`}
+          className={cn(
+            "flex flex-1 items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-[7px] text-[13.5px] font-medium transition",
+            indent && "pl-4",
+            active
+              ? "bg-foreground text-background"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground",
+          )}
+        >
+          <Icon className={cn("size-[16px] shrink-0", active ? "opacity-100" : "opacity-80")} />
+          {item.label}
+        </Link>
+        {item.group && (
+          <button
+            onClick={() => toggleFav(item.slug)}
+            className={cn(
+              "ml-0.5 rounded p-1 opacity-0 transition group-hover/ni:opacity-100",
+              isFav ? "text-[var(--t-amber)] opacity-100" : "text-muted-foreground hover:text-[var(--t-amber)]",
+              active && !isFav && "text-background/70 hover:text-[var(--t-amber)]",
+            )}
+            title={isFav ? "Unpin" : "Pin to top"}
+          >
+            <Star className="size-3" fill={isFav ? "currentColor" : "none"} />
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-7xl gap-6 px-4 py-6">
@@ -77,25 +150,47 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
         </DropdownMenu>
 
         <nav className="space-y-0.5">
-          {PROJECT_NAV.map((item) => {
-            const Icon = item.icon;
-            const active = activeSlug === item.slug;
-            return (
-              <Link
-                key={item.slug}
-                href={`/projects/${id}/${item.slug}`}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition",
-                  active
-                    ? "bg-primary/10 text-primary font-medium"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                <Icon className="size-4" />
-                {item.label}
-              </Link>
-            );
-          })}
+          {/* Always-visible pinned items */}
+          {pinned.map((item) => (
+            <NavLink key={item.slug} item={item} />
+          ))}
+
+          {/* Favourites pinned to top */}
+          {favItems.length > 0 && (
+            <div className="mt-3 border-t pt-3">
+              <p className="eyebrow mb-1.5 px-2.5">Pinned</p>
+              {favItems.map((item) => (
+                <NavLink key={`fav-${item.slug}`} item={item} />
+              ))}
+            </div>
+          )}
+
+          {/* Collapsible groups */}
+          {groups.map((g) => (
+            <Collapsible
+              key={g.key}
+              open={groupOpen[g.key]}
+              onOpenChange={(v) => setGroupOpen((s) => ({ ...s, [g.key]: v }))}
+              className="mt-3"
+            >
+              <CollapsibleTrigger asChild>
+                <button className="eyebrow flex w-full items-center justify-between rounded-md px-2.5 py-1.5 transition hover:bg-muted hover:text-muted-foreground">
+                  {g.label}
+                  <ChevronDown
+                    className={cn(
+                      "size-3 transition-transform",
+                      groupOpen[g.key] && "rotate-180",
+                    )}
+                  />
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-0.5 pb-1">
+                {g.items.map((item) => (
+                  <NavLink key={item.slug} item={item} indent />
+                ))}
+              </CollapsibleContent>
+            </Collapsible>
+          ))}
         </nav>
       </aside>
 

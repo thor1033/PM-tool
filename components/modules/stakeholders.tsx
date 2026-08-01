@@ -12,6 +12,7 @@ import {
 import type { Stakeholder } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ModuleHeader, EmptyState } from "@/components/project/ui";
+import { GlossaryText } from "@/components/project/glossary-text";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -166,6 +167,7 @@ export function StakeholdersModule({ projectId }: { projectId: string }) {
   );
   if (!data) return null;
   const items = data.stakeholders;
+  const glossary = (data.project.glossary as { id: string; term: string; definition: string }[]) ?? [];
 
   return (
     <div>
@@ -236,7 +238,7 @@ export function StakeholdersModule({ projectId }: { projectId: string }) {
               </div>
               {s.responsibility && (
                 <p className="text-muted-foreground mt-2 text-sm">
-                  {s.responsibility}
+                  <GlossaryText text={s.responsibility} terms={glossary} />
                 </p>
               )}
               {s.contact && (

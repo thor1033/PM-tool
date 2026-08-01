@@ -10,9 +10,11 @@ import type {
   Tag,
   Phase,
   Category,
+  External,
+  Activity,
 } from "@/lib/db/schema";
 
-export type { Project, Task, Risk, Stakeholder, Member, Finding, Product, Milestone, Tag, Phase, Category };
+export type { Project, Task, Risk, Stakeholder, Member, Finding, Product, Milestone, Tag, Phase, Category, External, Activity };
 
 /** Everything needed to render a single project's module pages. */
 export interface WorkingSet {
@@ -27,6 +29,8 @@ export interface WorkingSet {
   tags: Tag[];
   phases: Phase[];
   categories: Category[];
+  externals: External[];
+  activity: Activity[];
 }
 
 /** Summary row for the projects list. */

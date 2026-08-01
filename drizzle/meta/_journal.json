@@ -15,6 +15,27 @@
       "when": 1785057953402,
       "tag": "0001_rls_pgvector",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785186336092,
+      "tag": "0002_sharp_ultimates",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785599278467,
+      "tag": "0003_dry_dark_phoenix",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785599654243,
+      "tag": "0004_hesitant_marten_broadcloak",
+      "breakpoints": true
     }
   ]
 }

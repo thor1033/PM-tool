@@ -15,13 +15,23 @@ import { PlansModule } from "@/components/modules/plans";
 import { KpisModule } from "@/components/modules/kpis";
 import { TaxonomyModule } from "@/components/modules/taxonomy";
 import { GlossaryModule } from "@/components/modules/glossary";
+import { PlanModule } from "@/components/modules/plan";
+import { ActionsModule } from "@/components/modules/actions";
+import { AuditModule } from "@/components/modules/audit";
+import { WorkspaceModule } from "@/components/modules/workspace";
+import { StrategyModule } from "@/components/modules/strategy";
+import { FeaturesModule } from "@/components/modules/features";
+import { CapacityModule } from "@/components/modules/capacity";
+import { FinancialsModule } from "@/components/modules/financials";
+import { ForecastModule } from "@/components/modules/forecast";
 
 const MODULES: Record<
   string,
   React.ComponentType<{ projectId: string }>
 > = {
   dashboard: DashboardModule,
-  board: BoardModule,
+  actions: ActionsModule,
+  board: ActionsModule, // legacy slug — redirect to ActionsModule
   "business-case": BusinessCaseModule,
   scope: ScopeModule,
   preanalysis: PreAnalysisModule,
@@ -33,6 +43,14 @@ const MODULES: Record<
   kpis: KpisModule,
   taxonomy: TaxonomyModule,
   glossary: GlossaryModule,
+  workspace: WorkspaceModule,
+  audit: AuditModule,
+  strategy: StrategyModule,
+  features: FeaturesModule,
+  capacity: CapacityModule,
+  financials: FinancialsModule,
+  forecast: ForecastModule,
+  plan: PlanModule,
 };
 
 export function ModuleView({

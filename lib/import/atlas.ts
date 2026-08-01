@@ -22,6 +22,7 @@ const {
   tags,
   phases,
   categories,
+  externals,
 } = schema;
 
 // Permissive shape — import data originates outside our control.
@@ -40,6 +41,7 @@ export interface AtlasProject {
   findings?: Any[];
   products?: Any[];
   milestones?: Any[];
+  externals?: Any[];
   tags?: Any[];
   phases?: Any[];
   categories?: Any[];
@@ -51,6 +53,10 @@ export interface AtlasProject {
   changePlan?: unknown;
   glossary?: unknown;
   kpis?: unknown;
+  financials?: unknown;
+  forecast?: unknown;
+  startup?: unknown;
+  settings?: unknown;
 }
 
 export interface AtlasWorkspace {
@@ -97,6 +103,10 @@ export async function insertWorkspace(
       orgChart: (p.org ?? []) as object,
       glossary: (p.glossary ?? []) as object,
       kpis: (p.kpis ?? []) as object,
+      financials: (p.financials ?? {}) as object,
+      forecast: (p.forecast ?? { bufferPct: 15, weighting: "duration" }) as object,
+      startup: (p.startup ?? {}) as object,
+      settings: (p.settings ?? {}) as object,
       createdAt: ts(p.createdAt),
       updatedAt: ts(p.updatedAt),
     });
@@ -145,6 +155,11 @@ async function insertChildren(
     tags: strList(t.tags),
     assignees: strList(t.assignees),
     deps: arr(t.deps) as never,
+    parentId: strOrNull(t.parentId),
+    comments: arr(t.comments) as never,
+    custom: (t.custom && typeof t.custom === "object" && !Array.isArray(t.custom)
+      ? t.custom
+      : {}) as never,
   }));
   if (taskRows.length) await tx.insert(tasks).values(taskRows);
 
@@ -182,6 +197,10 @@ async function insertChildren(
     role: str(m.role),
     email: str(m.email),
     color: str(m.color, "blue"),
+    capacityHours: typeof m.capacityHours === "number" ? m.capacityHours : 30,
+    availability: (m.availability && typeof m.availability === "object" && !Array.isArray(m.availability)
+      ? m.availability
+      : {}) as never,
   }));
   if (memberRows.length) await tx.insert(members).values(memberRows);
 
@@ -219,6 +238,18 @@ async function insertChildren(
     note: str(ms.note),
   }));
   if (milestoneRows.length) await tx.insert(milestones).values(milestoneRows);
+
+  const externalRows = arr(p.externals).map((e) => ({
+    ...base,
+    id: str(e.id) || `ext_${randomUUID().slice(0, 8)}`,
+    title: str(e.title),
+    party: str(e.party),
+    owner: str(e.owner),
+    due: str(e.due),
+    status: str(e.status, "pending"),
+    note: str(e.note),
+  }));
+  if (externalRows.length) await tx.insert(externals).values(externalRows);
 
   const tagRows = arr(p.tags).map((t) => ({
     ...base,

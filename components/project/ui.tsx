@@ -3,20 +3,25 @@
 import { cn } from "@/lib/utils";
 
 export function ModuleHeader({
+  eyebrow,
   title,
   description,
   actions,
 }: {
+  eyebrow?: string;
   title: string;
   description?: string;
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 flex items-start justify-between gap-4">
+    <div className="mb-7 flex items-start justify-between gap-4 border-b pb-5">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        {eyebrow ? <p className="eyebrow mb-2">{eyebrow}</p> : null}
+        <h1 className="font-serif-display text-[28px] leading-tight font-medium tracking-tight">
+          {title}
+        </h1>
         {description ? (
-          <p className="text-muted-foreground mt-1 text-sm">{description}</p>
+          <p className="text-muted-foreground mt-1.5 text-sm">{description}</p>
         ) : null}
       </div>
       {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
@@ -63,9 +68,9 @@ export function SectionCard({
   className?: string;
 }) {
   return (
-    <div className={cn("rounded-xl border p-5", className)}>
+    <div className={cn("bg-card shadow-xs rounded-2xl border p-5", className)}>
       {title ? (
-        <h3 className="mb-3 text-sm font-semibold tracking-tight">{title}</h3>
+        <h3 className="mb-3 text-[13px] font-bold tracking-tight">{title}</h3>
       ) : null}
       {children}
     </div>

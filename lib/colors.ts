@@ -1,5 +1,11 @@
-/* Accent color names used across the legacy app (tags, phases, members,
-   projects, org nodes) → Tailwind utility classes. */
+/* Accent color names used across the app (tags, phases, members, projects,
+   org nodes, tracks) → Tailwind utility classes.
+
+   Values are wired to the Atlas 8-hue track palette (`--t-*` custom
+   properties set in app/globals.css, oklch L≈.64 C≈.10-.16, one hue per
+   name) via Tailwind v4 arbitrary values, so `accent(name)` renders the
+   exact hues from the reference design system rather than generic
+   Tailwind color steps. */
 
 export type Accent =
   | "blue"
@@ -23,14 +29,54 @@ export const ACCENTS: Accent[] = [
 ];
 
 const MAP: Record<string, { bg: string; text: string; dot: string; soft: string }> = {
-  blue: { bg: "bg-blue-500", text: "text-blue-700 dark:text-blue-300", dot: "bg-blue-500", soft: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200" },
-  indigo: { bg: "bg-indigo-500", text: "text-indigo-700 dark:text-indigo-300", dot: "bg-indigo-500", soft: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200" },
-  teal: { bg: "bg-teal-500", text: "text-teal-700 dark:text-teal-300", dot: "bg-teal-500", soft: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-200" },
-  green: { bg: "bg-green-500", text: "text-green-700 dark:text-green-300", dot: "bg-green-500", soft: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200" },
-  amber: { bg: "bg-amber-500", text: "text-amber-700 dark:text-amber-300", dot: "bg-amber-500", soft: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200" },
-  red: { bg: "bg-red-500", text: "text-red-700 dark:text-red-300", dot: "bg-red-500", soft: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200" },
-  pink: { bg: "bg-pink-500", text: "text-pink-700 dark:text-pink-300", dot: "bg-pink-500", soft: "bg-pink-100 text-pink-800 dark:bg-pink-950 dark:text-pink-200" },
-  purple: { bg: "bg-purple-500", text: "text-purple-700 dark:text-purple-300", dot: "bg-purple-500", soft: "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-200" },
+  blue: {
+    bg: "bg-[var(--t-blue)]",
+    text: "text-[var(--t-blue)]",
+    dot: "bg-[var(--t-blue)]",
+    soft: "bg-[color-mix(in_oklch,var(--t-blue)_14%,var(--panel))] text-[color-mix(in_oklch,var(--t-blue)_70%,var(--ink))]",
+  },
+  indigo: {
+    bg: "bg-[var(--t-indigo)]",
+    text: "text-[var(--t-indigo)]",
+    dot: "bg-[var(--t-indigo)]",
+    soft: "bg-[color-mix(in_oklch,var(--t-indigo)_14%,var(--panel))] text-[color-mix(in_oklch,var(--t-indigo)_70%,var(--ink))]",
+  },
+  teal: {
+    bg: "bg-[var(--t-teal)]",
+    text: "text-[var(--t-teal)]",
+    dot: "bg-[var(--t-teal)]",
+    soft: "bg-[color-mix(in_oklch,var(--t-teal)_14%,var(--panel))] text-[color-mix(in_oklch,var(--t-teal)_70%,var(--ink))]",
+  },
+  green: {
+    bg: "bg-[var(--t-green)]",
+    text: "text-[var(--t-green)]",
+    dot: "bg-[var(--t-green)]",
+    soft: "bg-[color-mix(in_oklch,var(--t-green)_14%,var(--panel))] text-[color-mix(in_oklch,var(--t-green)_70%,var(--ink))]",
+  },
+  amber: {
+    bg: "bg-[var(--t-amber)]",
+    text: "text-[var(--t-amber)]",
+    dot: "bg-[var(--t-amber)]",
+    soft: "bg-[color-mix(in_oklch,var(--t-amber)_14%,var(--panel))] text-[color-mix(in_oklch,var(--t-amber)_70%,var(--ink))]",
+  },
+  red: {
+    bg: "bg-[var(--t-red)]",
+    text: "text-[var(--t-red)]",
+    dot: "bg-[var(--t-red)]",
+    soft: "bg-[color-mix(in_oklch,var(--t-red)_14%,var(--panel))] text-[color-mix(in_oklch,var(--t-red)_70%,var(--ink))]",
+  },
+  pink: {
+    bg: "bg-[var(--t-pink)]",
+    text: "text-[var(--t-pink)]",
+    dot: "bg-[var(--t-pink)]",
+    soft: "bg-[color-mix(in_oklch,var(--t-pink)_14%,var(--panel))] text-[color-mix(in_oklch,var(--t-pink)_70%,var(--ink))]",
+  },
+  purple: {
+    bg: "bg-[var(--t-purple)]",
+    text: "text-[var(--t-purple)]",
+    dot: "bg-[var(--t-purple)]",
+    soft: "bg-[color-mix(in_oklch,var(--t-purple)_14%,var(--panel))] text-[color-mix(in_oklch,var(--t-purple)_70%,var(--ink))]",
+  },
 };
 
 const FALLBACK = MAP.indigo;
@@ -43,4 +89,10 @@ export function accentFromString(seed: string): Accent {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
   return ACCENTS[h % ACCENTS.length];
+}
+
+/** Raw CSS var for a track/tag hue — for inline styles (SVG strokes, charts). */
+export function accentVar(name: string | null | undefined): string {
+  const key = name && MAP[name] ? name : "indigo";
+  return `var(--t-${key})`;
 }

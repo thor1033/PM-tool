@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import {
   useMutation,
   useQuery,
@@ -211,4 +212,134 @@ export function useDeleteEntity(projectId: string, entity: EntityName) {
       qc.invalidateQueries({ queryKey: projectsKey });
     },
   });
+}
+
+// ---------- member mutations with task cascade ----------
+
+export function useDeleteMember(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string; name: string }) =>
+      apiFetch(`/api/projects/${projectId}/members/${id}`, { method: "DELETE" }),
+    onMutate: async ({ id, name }) => {
+      await qc.cancelQueries({ queryKey: projectKey(projectId) });
+      const previous = qc.getQueryData<WorkingSet>(projectKey(projectId));
+      patchWorkingSet(qc, projectId, (ws) => ({
+        ...ws,
+        members: ws.members.filter((m) => m.id !== id),
+        tasks: ws.tasks.map((t) =>
+          (t.assignees ?? []).includes(name)
+            ? { ...t, assignees: t.assignees.filter((a) => a !== name) }
+            : t,
+        ),
+      }));
+      return { previous };
+    },
+    onError: (_e, _vars, ctx) => {
+      if (ctx?.previous) qc.setQueryData(projectKey(projectId), ctx.previous);
+    },
+    onSuccess: (_data, { name }) => {
+      // cascade to server: patch any tasks that still have this member name
+      const ws = qc.getQueryData<WorkingSet>(projectKey(projectId));
+      if (!ws) return;
+      const affected = ws.tasks.filter((t) => (t.assignees ?? []).includes(name));
+      affected.forEach((t) => {
+        apiFetch(`/api/projects/${projectId}/tasks/${t.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ assignees: t.assignees.filter((a) => a !== name) }),
+        }).catch(() => {});
+      });
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: projectKey(projectId) }),
+  });
+}
+
+export function useUpdateMember(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; oldName: string; data: Record<string, unknown> }) =>
+      apiFetch(`/api/projects/${projectId}/members/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    onMutate: async ({ id, oldName, data }) => {
+      await qc.cancelQueries({ queryKey: projectKey(projectId) });
+      const previous = qc.getQueryData<WorkingSet>(projectKey(projectId));
+      const newName = typeof data.name === "string" ? data.name : oldName;
+      patchWorkingSet(qc, projectId, (ws) => ({
+        ...ws,
+        members: ws.members.map((m) => (m.id === id ? { ...m, ...data } : m)),
+        tasks: newName !== oldName
+          ? ws.tasks.map((t) =>
+              (t.assignees ?? []).includes(oldName)
+                ? { ...t, assignees: t.assignees.map((a) => (a === oldName ? newName : a)) }
+                : t,
+            )
+          : ws.tasks,
+      }));
+      return { previous };
+    },
+    onError: (_e, _vars, ctx) => {
+      if (ctx?.previous) qc.setQueryData(projectKey(projectId), ctx.previous);
+    },
+    onSuccess: (_data, { oldName, data }) => {
+      const newName = typeof data.name === "string" ? data.name : null;
+      if (!newName || newName === oldName) return;
+      const ws = qc.getQueryData<WorkingSet>(projectKey(projectId));
+      if (!ws) return;
+      const affected = ws.tasks.filter((t) => (t.assignees ?? []).includes(oldName));
+      affected.forEach((t) => {
+        apiFetch(`/api/projects/${projectId}/tasks/${t.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            assignees: t.assignees.map((a) => (a === oldName ? newName : a)),
+          }),
+        }).catch(() => {});
+      });
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: projectKey(projectId) }),
+  });
+}
+
+// ---------- audit trail ----------
+
+const auditKey = (projectId: string) => ["audit", projectId] as const;
+
+export function useAudit(projectId: string) {
+  return useQuery({
+    queryKey: auditKey(projectId),
+    queryFn: () => apiFetch<{ id: string; ts: string; kind: string; text: string; actor: string }[]>(
+      `/api/projects/${projectId}/audit`,
+    ),
+    enabled: !!projectId,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useLogActivity(projectId: string) {
+  const qc = useQueryClient();
+  const recent = useRef<Map<string, number>>(new Map());
+
+  const mutation = useMutation({
+    mutationFn: (entry: { kind?: string; text: string; actor?: string; key?: string }) =>
+      apiFetch<{ id: string }>(`/api/projects/${projectId}/audit`, {
+        method: "POST",
+        body: JSON.stringify(entry),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: auditKey(projectId) });
+    },
+  });
+
+  function log(text: string, opts?: { kind?: string; actor?: string; key?: string }) {
+    const key = opts?.key;
+    if (key) {
+      const lastTs = recent.current.get(key) ?? 0;
+      if (Date.now() - lastTs < 300_000) return; // coalesce: skip within 5-min window
+      recent.current.set(key, Date.now());
+    }
+    mutation.mutate({ text, kind: opts?.kind ?? "edit", actor: opts?.actor ?? "", key });
+  }
+
+  return log;
 }

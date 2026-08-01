@@ -18,6 +18,8 @@ const {
   tags,
   phases,
   categories,
+  externals,
+  activity,
 } = schema;
 
 type Tx = Parameters<Parameters<typeof withTenant<unknown>>[1]>[0];
@@ -95,6 +97,15 @@ export async function getWorkingSet(
       .select()
       .from(categories)
       .where(eq(categories.projectId, projectId));
+    const ex = await tx
+      .select()
+      .from(externals)
+      .where(eq(externals.projectId, projectId));
+    const act = await tx
+      .select()
+      .from(activity)
+      .where(eq(activity.projectId, projectId))
+      .orderBy(desc(activity.ts));
     return {
       project,
       tasks: t,
@@ -107,6 +118,8 @@ export async function getWorkingSet(
       tags: tg,
       phases: ph,
       categories: ct,
+      externals: ex,
+      activity: act,
     };
   });
 }

@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
   // Emit a self-contained server bundle so the app can ship as a small Docker
@@ -12,6 +13,12 @@ const nextConfig: NextConfig = {
   // (set in the Dockerfile). Default = off, so any host other than our Docker
   // build (Vercel, `next start`, etc.) gets normal output.
   output: process.env.BUILD_STANDALONE ? "standalone" : undefined,
+
+  // Pin Turbopack's workspace root to this project directory so it doesn't
+  // get confused by a stray package-lock.json in the user's home folder.
+  turbopack: {
+    root: path.resolve(__dirname),
+  },
 };
 
 export default nextConfig;

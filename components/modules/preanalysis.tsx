@@ -12,6 +12,7 @@ import {
 } from "@/lib/api/hooks";
 import type { Finding } from "@/lib/types";
 import { ModuleHeader, SectionCard } from "@/components/project/ui";
+import { GlossaryText } from "@/components/project/glossary-text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -98,6 +99,7 @@ export function PreAnalysisModule({ projectId }: { projectId: string }) {
   if (!data) return null;
   const findings = data.findings;
   const assessment = (data.project.assessment as Assessment[]) ?? [];
+  const glossary = (data.project.glossary as { id: string; term: string; definition: string }[]) ?? [];
 
   function commitAssessment(next: Assessment[]) {
     update.mutate(
@@ -148,7 +150,9 @@ export function PreAnalysisModule({ projectId }: { projectId: string }) {
                   </div>
                 </div>
                 {f.summary && (
-                  <p className="text-muted-foreground mt-1 text-sm">{f.summary}</p>
+                  <p className="text-muted-foreground mt-1 text-sm">
+                    <GlossaryText text={f.summary} terms={glossary} />
+                  </p>
                 )}
                 {f.source && (
                   <p className="text-muted-foreground mt-2 text-xs italic">

@@ -14,6 +14,7 @@ const taskSchema = z
     status: z.string(),
     phase: z.string().nullable(),
     category: z.string().nullable(),
+    origin: z.string().nullable(),
     priority: z.string(),
     description: z.string(),
     start: z.string(),
@@ -22,6 +23,20 @@ const taskSchema = z
     tags: strArr,
     assignees: strArr,
     deps: z.array(z.any()),
+    parentId: z.string().nullable(),
+    comments: z.array(z.any()),
+    custom: z.record(z.string(), z.any()),
+  })
+  .partial();
+
+const externalSchema = z
+  .object({
+    title: z.string(),
+    party: z.string(),
+    owner: z.string(),
+    due: z.string(),
+    status: z.string(),
+    note: z.string(),
   })
   .partial();
 
@@ -55,6 +70,8 @@ const memberSchema = z
     role: z.string(),
     email: z.string(),
     color: z.string(),
+    capacityHours: z.number(),
+    availability: z.record(z.string(), z.number()),
   })
   .partial();
 
@@ -112,6 +129,7 @@ export const entityConfig = {
   tags: { table: schema.tags, prefix: "tg", schema: taxonomySchema },
   phases: { table: schema.phases, prefix: "ph", schema: taxonomySchema },
   categories: { table: schema.categories, prefix: "ct", schema: taxonomySchema },
+  externals: { table: schema.externals, prefix: "ext", schema: externalSchema },
 } as const;
 
 export type EntityName = keyof typeof entityConfig;
@@ -139,5 +157,9 @@ export const projectDocSchema = z
     orgChart: z.any(),
     glossary: z.any(),
     kpis: z.any(),
+    financials: z.any(),
+    forecast: z.any(),
+    startup: z.any(),
+    settings: z.any(),
   })
   .partial();
