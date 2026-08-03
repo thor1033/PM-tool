@@ -6,12 +6,13 @@ import { addMonths, format } from "date-fns";
 import { Flag, Target, GitBranch } from "lucide-react";
 import { useUpdateEntity, useUpdateProject } from "@/lib/api/hooks";
 import type { Task, WorkingSet, Milestone } from "@/lib/types";
-import { daysBetween, fmtD } from "@/lib/tasks";
+import { daysBetween, fmtD, sequenceTasks } from "@/lib/tasks";
 import { accentVar } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import type { SortMode } from "@/components/modules/actions/shared";
 
-const DAYW = 13; // px per day, matches the reference's density
+const DAYW = 15; // px per day, matches the reference's density
 
 interface Baseline {
   at: number;
@@ -19,9 +20,9 @@ interface Baseline {
 }
 
 export function TimelineView({
-  ws, projectId, filtered, onEdit, onEditMilestone,
+  ws, projectId, filtered, sort, onEdit, onEditMilestone,
 }: {
-  ws: WorkingSet; projectId: string; filtered: Task[]; onEdit: (t: Task) => void;
+  ws: WorkingSet; projectId: string; filtered: Task[]; sort: SortMode; onEdit: (t: Task) => void;
   onEditMilestone: (m: Milestone) => void;
 }) {
   const updateTask = useUpdateEntity(projectId, "tasks");
@@ -81,7 +82,7 @@ export function TimelineView({
     return (
       <div className="flex flex-col items-center rounded-[var(--radius-lg)] border border-dashed p-16 text-center">
         <GitBranch className="text-muted-foreground/40 mb-3 size-8" />
-        <p className="font-serif-display text-[17px] font-medium">No dated actions yet</p>
+        <p className="font-serif-display text-[17px] font-medium">No dated tasks yet</p>
         <p className="text-muted-foreground mt-1 text-sm">Add start and end dates to tasks to see them on the timeline.</p>
       </div>
     );
@@ -136,12 +137,18 @@ export function TimelineView({
   });
   ws.categories.forEach((c) => {
     const tasks = bycat.get(c.id);
-    if (tasks?.length) groups.push({ id: c.id, label: c.label, color: c.color, tasks });
+    if (tasks?.length) groups.push({ id: c.id, label: c.label, color: c.color, tasks: sort === "sequence" ? sequenceTasks(tasks) : tasks });
   });
   const noTrack = bycat.get("_none");
-  if (noTrack?.length) groups.push({ id: "_none", label: "No track", color: null, tasks: noTrack });
+  if (noTrack?.length) groups.push({ id: "_none", label: "No track", color: null, tasks: sort === "sequence" ? sequenceTasks(noTrack) : noTrack });
+  // "Sequence" also reorders the track rows themselves by their earliest
+  // task date, so the whole gantt reads top-to-bottom in delivery order
+  // instead of category-creation order.
+  if (sort === "sequence") {
+    groups.sort((a, b) => (a.tasks[0]?.start || "9999").localeCompare(b.tasks[0]?.start || "9999"));
+  }
 
-  const ROW_H = 42, HDR_H = 38, TRACK_H = 34;
+  const ROW_H = 48, HDR_H = 44, TRACK_H = 40;
   const taskLayout = new Map<string, { rowY: number; barLeft: number; barWidth: number }>();
   let yCursor = HDR_H;
   groups.forEach((g) => {
@@ -183,34 +190,34 @@ export function TimelineView({
     });
   });
 
-  const LABEL_W = 220;
+  const LABEL_W = 250;
 
   return (
     <div>
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-4 flex items-center gap-2.5">
         {baseline ? (
           <>
-            <span className="text-muted-foreground inline-flex items-center gap-1.5 text-xs">
+            <span className="text-muted-foreground inline-flex items-center gap-1.5 text-[13px]">
               <span className="inline-block h-[7px] w-[22px] rounded-sm border" style={{ background: "repeating-linear-gradient(90deg, var(--ink-ghost) 0 4px, transparent 4px 7px)" }} />
               Baseline set {new Date(baseline.at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
             </span>
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={setBaseline}>Update</Button>
-            <Button variant="ghost" size="sm" className="h-7 text-xs text-[var(--t-red)]" onClick={clearBaseline}>Clear</Button>
+            <Button variant="ghost" size="sm" className="h-8 text-[13px]" onClick={setBaseline}>Update</Button>
+            <Button variant="ghost" size="sm" className="h-8 text-[13px] text-[var(--t-red)]" onClick={clearBaseline}>Clear</Button>
           </>
         ) : (
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={setBaseline} title="Snapshot today's dates to compare slippage against later">
-            <Flag className="size-3" /> Set baseline
+          <Button variant="outline" size="sm" className="h-8 text-[13px]" onClick={setBaseline} title="Snapshot today's dates to compare slippage against later">
+            <Flag className="size-3.5" /> Set baseline
           </Button>
         )}
         <div className="flex-1" />
         <Button
           variant={showCP ? "default" : "outline"}
           size="sm"
-          className="h-7 text-xs"
+          className="h-8 text-[13px]"
           onClick={() => setShowCP((v) => !v)}
           title="Highlight the longest dependency chain"
         >
-          <Target className="size-3" /> Critical path
+          <Target className="size-3.5" /> Critical path
         </Button>
       </div>
 
@@ -250,18 +257,18 @@ export function TimelineView({
 
           {/* Header */}
           <div className="flex border-b bg-[var(--paper-2)]" style={{ height: HDR_H }}>
-            <div className="text-muted-foreground shrink-0 border-r px-3 py-2 font-mono text-[10.5px] font-medium uppercase tracking-wide" style={{ width: LABEL_W }}>
-              Category / Action
+            <div className="text-muted-foreground shrink-0 border-r px-4 py-2.5 font-mono text-[11.5px] font-medium uppercase tracking-wide" style={{ width: LABEL_W }}>
+              Track / Task
             </div>
             <div className="relative flex-1" style={{ width: totalW }}>
               {months.map((m, i) => (
-                <div key={i} className="text-muted-foreground absolute top-0 border-l px-2 py-2 font-mono text-[11px]" style={{ left: m.left, width: m.width, overflow: "hidden", whiteSpace: "nowrap" }}>
+                <div key={i} className="text-muted-foreground absolute top-0 border-l px-2.5 py-2.5 font-mono text-[12px]" style={{ left: m.left, width: m.width, overflow: "hidden", whiteSpace: "nowrap" }}>
                   {m.label}
                 </div>
               ))}
               {todayLeft !== null && (
                 <div className="border-primary absolute bottom-0 top-0 z-10 border-l-[2.5px]" style={{ left: todayLeft }}>
-                  <span className="bg-primary text-primary-foreground absolute top-1 whitespace-nowrap rounded px-1 font-mono text-[9px] font-bold">Today</span>
+                  <span className="bg-primary text-primary-foreground absolute top-1 whitespace-nowrap rounded px-1.5 font-mono text-[10px] font-bold">Today</span>
                 </div>
               )}
               {datedMs.map((ms) => {
@@ -270,10 +277,10 @@ export function TimelineView({
                 const col = cat ? accentVar(cat.color) : "var(--accent-c)";
                 return ms.type === "gate" ? (
                   <div key={ms.id} onClick={() => onEditMilestone(ms)} className="absolute bottom-0 top-0 z-20 cursor-pointer border-l-[2.5px] border-[var(--t-red)]" style={{ left }} title={`${ms.title} (gate) — ${fmtD(ms.date)}`}>
-                    <span className="absolute top-1 whitespace-nowrap rounded bg-[oklch(1_0_0/0.85)] px-1 font-mono text-[8.5px] font-bold uppercase tracking-wide text-[var(--t-red)]">Gate</span>
+                    <span className="absolute top-1 whitespace-nowrap rounded bg-[oklch(1_0_0/0.85)] px-1.5 font-mono text-[9.5px] font-bold uppercase tracking-wide text-[var(--t-red)]">Gate</span>
                   </div>
                 ) : (
-                  <div key={ms.id} onClick={() => onEditMilestone(ms)} className="absolute top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 cursor-pointer text-[15px] transition hover:scale-125" style={{ left, color: col }} title={`${ms.title} — ${fmtD(ms.date)}`}>
+                  <div key={ms.id} onClick={() => onEditMilestone(ms)} className="absolute top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 cursor-pointer text-[17px] transition hover:scale-125" style={{ left, color: col }} title={`${ms.title} — ${fmtD(ms.date)}`}>
                     ◆
                   </div>
                 );
@@ -287,9 +294,9 @@ export function TimelineView({
             return (
               <div key={g.id}>
                 <div className="flex border-b" style={{ height: TRACK_H, background: g.color ? `color-mix(in oklch, ${col} 10%, var(--panel))` : "var(--paper-2)" }}>
-                  <div className="flex shrink-0 items-center gap-1.5 border-r px-3 py-1" style={{ width: LABEL_W }}>
-                    <span className="size-2 shrink-0 rounded-full" style={{ background: col }} />
-                    <span className="eyebrow" style={g.color ? { color: col } : undefined}>{g.label}</span>
+                  <div className="flex shrink-0 items-center gap-2 border-r px-4 py-1" style={{ width: LABEL_W }}>
+                    <span className="size-2.5 shrink-0 rounded-full" style={{ background: col }} />
+                    <span className="eyebrow text-[11.5px]" style={g.color ? { color: col } : undefined}>{g.label}</span>
                   </div>
                   <div className="relative flex-1" style={{ width: totalW }}>
                     {todayLeft !== null && <div className="border-primary/30 absolute inset-y-0 border-l-[1.5px]" style={{ left: todayLeft }} />}
@@ -312,13 +319,13 @@ export function TimelineView({
         </div>
       </div>
 
-      <div className="text-muted-foreground mt-3.5 flex flex-wrap gap-4 text-[11.5px]">
-        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-[18px] rounded-[3px]" style={{ background: "var(--accent-c)" }} /> In progress</span>
-        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-[18px] rounded-[3px] opacity-55" style={{ background: "var(--accent-c)" }} /> Done</span>
-        <span className="inline-flex items-center gap-1.5" style={{ color: "var(--accent-deep)" }}>◆ Milestone</span>
-        <span className="inline-flex items-center gap-1.5 text-[var(--t-red)]">▐ Gate</span>
-        <span className="inline-flex items-center gap-1.5 text-[var(--t-red)]">Dependency block (double-click to inspect)</span>
-        {baseline && <span className="inline-flex items-center gap-1.5"><span className="inline-block h-[6px] w-[18px] rounded-sm bg-[var(--ink-ghost)] opacity-50" /> Baseline</span>}
+      <div className="text-muted-foreground mt-4 flex flex-wrap gap-5 text-[13px]">
+        <span className="inline-flex items-center gap-2"><span className="inline-block h-3 w-5 rounded-[3px]" style={{ background: "var(--accent-c)" }} /> In progress</span>
+        <span className="inline-flex items-center gap-2"><span className="inline-block h-3 w-5 rounded-[3px] opacity-55" style={{ background: "var(--accent-c)" }} /> Done</span>
+        <span className="inline-flex items-center gap-2" style={{ color: "var(--accent-deep)" }}>◆ Milestone</span>
+        <span className="inline-flex items-center gap-2 text-[var(--t-red)]">▐ Gate</span>
+        <span className="inline-flex items-center gap-2 text-[var(--t-red)]">Dependency block (double-click to inspect)</span>
+        {baseline && <span className="inline-flex items-center gap-2"><span className="inline-block h-[7px] w-5 rounded-sm bg-[var(--ink-ghost)] opacity-50" /> Baseline</span>}
       </div>
     </div>
   );
@@ -386,9 +393,9 @@ function GanttRow({
   const isPast = +new Date(task.end) < nowTs;
 
   return (
-    <div className="group flex border-b hover:bg-[var(--paper-2)]" style={{ height: 42 }}>
-      <div className="flex shrink-0 items-center border-r px-3" style={{ width: 220 }}>
-        <button onClick={onEdit} className="hover:text-primary truncate text-left text-xs" title={task.title}>{task.title}</button>
+    <div className="group flex border-b hover:bg-[var(--paper-2)]" style={{ height: 48 }}>
+      <div className="flex shrink-0 items-center border-r px-4" style={{ width: 250 }}>
+        <button onClick={onEdit} className="hover:text-primary truncate text-left text-[13.5px]" title={task.title}>{task.title}</button>
       </div>
       <div className="relative flex-1" style={{ width: totalW }}>
         {todayLeft !== null && <div className="border-primary/20 absolute inset-y-0 border-l-[1.5px]" style={{ left: todayLeft }} />}
@@ -397,7 +404,7 @@ function GanttRow({
         ))}
         {baselineBar && (
           <div
-            className="absolute top-[26px] h-[6px] rounded-sm bg-[var(--ink-ghost)] opacity-50"
+            className="absolute top-[30px] h-[6px] rounded-sm bg-[var(--ink-ghost)] opacity-50"
             style={{
               left: daysBetween(minStr, baselineBar.start) * DAYW,
               width: Math.max(DAYW, daysBetween(baselineBar.start, baselineBar.end) * DAYW),
@@ -408,7 +415,7 @@ function GanttRow({
         <div
           ref={barRef}
           className={cn(
-            "shadow-xs absolute top-2 flex h-[26px] cursor-grab items-center overflow-hidden rounded-[7px] select-none",
+            "shadow-xs absolute top-[9px] flex h-[30px] cursor-grab items-center overflow-hidden rounded-[7px] select-none",
             task.status === "done" && "opacity-55",
             isPast && task.status !== "done" && "opacity-40 grayscale-[0.4]",
             critical && "ring-2 ring-[var(--t-red)]",
@@ -418,7 +425,7 @@ function GanttRow({
           onDoubleClick={onEdit}
           title={`${task.title} · ${fmtD(task.start)} → ${fmtD(task.end)}`}
         >
-          <span className="pointer-events-none absolute inset-0 flex items-center truncate px-2.5 text-[11.5px] font-semibold text-white [text-shadow:0_1px_2px_rgba(0,0,0,.18)]">
+          <span className="pointer-events-none absolute inset-0 flex items-center truncate px-2.5 text-[12.5px] font-semibold text-white [text-shadow:0_1px_2px_rgba(0,0,0,.18)]">
             {visual.width > 44 ? task.title : ""}
           </span>
           <span className="absolute left-0 top-0 h-full w-2 cursor-ew-resize" onPointerDown={(e) => onPointerDown(e, "l")} />

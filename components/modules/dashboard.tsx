@@ -248,7 +248,7 @@ function RoadAhead({
     return (
       <Panel title="Upcoming — the road ahead" className="mb-5">
         <DashEmpty>
-          Nothing scheduled ahead. Add dates to actions or milestones to see the road ahead.
+          Nothing scheduled ahead. Add dates to tasks or milestones to see the road ahead.
         </DashEmpty>
       </Panel>
     );
@@ -585,7 +585,7 @@ export function DashboardModule({ projectId }: { projectId: string }) {
         <Panel
           title={personal ? `${firstName}'s tasks` : "In progress now"}
           action={
-            <PanelLink href={`/projects/${projectId}/actions`} label={personal ? "Actions" : "Board"} />
+            <PanelLink href={`/projects/${projectId}/actions`} label={personal ? "Tasks" : "Board"} />
           }
         >
           {!personal && (

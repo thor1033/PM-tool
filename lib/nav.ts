@@ -38,7 +38,7 @@ export interface NavItem {
 export const PROJECT_NAV: NavItem[] = [
   { slug: "dashboard",  label: "Overview",            icon: LayoutDashboard, hint: "Project health at a glance" },
   { slug: "workspace",  label: "Workspace",            icon: UserCircle,      hint: "Per-person task hub" },
-  { slug: "actions",    label: "Actions & timeline",   icon: ListTodo,        hint: "Tasks, kanban, gantt and calendar" },
+  { slug: "actions",    label: "Tasks",                icon: ListTodo,        hint: "Tasks, kanban, gantt and calendar" },
   { slug: "business-case", label: "Business case",    icon: FileText,        hint: "Why, outcomes and finances",         group: "overview" },
   { slug: "scope",         label: "Scope",            icon: Target,          hint: "In and out of scope",                group: "overview" },
   { slug: "preanalysis",   label: "Pre-analysis",     icon: Microscope,      hint: "Findings and as-is / to-be",         group: "overview" },

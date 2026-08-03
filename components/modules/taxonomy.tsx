@@ -10,11 +10,13 @@ import {
   useDeleteEntity,
 } from "@/lib/api/hooks";
 import type { EntityName } from "@/lib/entities";
+import type { Category, Task } from "@/lib/types";
 import { ACCENTS, accent } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { ModuleHeader, SectionCard } from "@/components/project/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface TaxItem {
   id: string;
@@ -128,6 +130,139 @@ function TaxSection({
   );
 }
 
+// Tracks are mandatory on every task, so — unlike tags/phases — deleting
+// one that's still in use needs a safe reassignment step first, not a bare
+// delete. Everything else about the row (rename, recolor, add) matches
+// TaxSection.
+
+function TrackRow({
+  projectId, cat, tasksIn, otherCategories,
+}: {
+  projectId: string; cat: Category; tasksIn: Task[]; otherCategories: Category[];
+}) {
+  const update = useUpdateEntity(projectId, "categories");
+  const updateTask = useUpdateEntity(projectId, "tasks");
+  const del = useDeleteEntity(projectId, "categories");
+  const [confirming, setConfirming] = useState(false);
+  const [reassignTo, setReassignTo] = useState(otherCategories[0]?.id ?? "");
+  const taskCount = tasksIn.length;
+
+  function startDelete() {
+    if (taskCount === 0) {
+      del.mutate(cat.id, { onError: (e) => toast.error((e as Error).message) });
+      return;
+    }
+    setConfirming(true);
+  }
+
+  function confirmDelete() {
+    if (!reassignTo) return;
+    tasksIn.forEach((t) => updateTask.mutate({ id: t.id, data: { category: reassignTo } }));
+    del.mutate(cat.id, { onError: (e) => toast.error((e as Error).message) });
+    setConfirming(false);
+  }
+
+  return (
+    <div className="rounded-[var(--radius-md)] border bg-[var(--paper-2)] p-2">
+      <div className="flex items-center gap-2">
+        <ColorDots value={cat.color} onChange={(c) => update.mutate({ id: cat.id, data: { color: c } })} />
+        <Input
+          defaultValue={cat.label}
+          onBlur={(e) => {
+            if (e.target.value !== cat.label) update.mutate({ id: cat.id, data: { label: e.target.value } });
+          }}
+          className="h-8"
+        />
+        <Button variant="ghost" size="icon" className="size-8" onClick={startDelete}>
+          <Trash2 className="size-4" />
+        </Button>
+      </div>
+      {confirming && (
+        <div className="mt-2 space-y-2 border-t pt-2">
+          {otherCategories.length === 0 ? (
+            <>
+              <p className="text-xs text-[var(--t-red)]">
+                This is the only track and it has {taskCount} task{taskCount === 1 ? "" : "s"} — create another track first so they have somewhere to go.
+              </p>
+              <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>
+            </>
+          ) : (
+            <>
+              <p className="text-muted-foreground text-xs">
+                {taskCount} task{taskCount === 1 ? "" : "s"} in &ldquo;{cat.label}&rdquo; will move to:
+              </p>
+              <div className="flex items-center gap-2">
+                <Select value={reassignTo} onValueChange={setReassignTo}>
+                  <SelectTrigger className="h-8 flex-1 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {otherCategories.map((c) => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Button size="sm" variant="destructive" onClick={confirmDelete} disabled={!reassignTo}>Move &amp; delete</Button>
+                <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TrackSection({
+  projectId, categories, tasks,
+}: {
+  projectId: string; categories: Category[]; tasks: Task[];
+}) {
+  const create = useCreateEntity(projectId, "categories");
+  const [label, setLabel] = useState("");
+  const [color, setColor] = useState<string>("purple");
+
+  function add() {
+    if (!label.trim()) return;
+    create.mutate(
+      { label: label.trim(), color },
+      { onSuccess: () => setLabel(""), onError: (e) => toast.error((e as Error).message) },
+    );
+  }
+
+  return (
+    <SectionCard title="Tracks">
+      <p className="text-muted-foreground -mt-1 mb-3 text-xs leading-relaxed">
+        Every task belongs to exactly one track — deleting one that&rsquo;s still in use
+        moves its tasks to another track first.
+      </p>
+      <div className="space-y-2">
+        {categories.map((c) => (
+          <TrackRow
+            key={c.id}
+            projectId={projectId}
+            cat={c}
+            tasksIn={tasks.filter((t) => t.category === c.id)}
+            otherCategories={categories.filter((x) => x.id !== c.id)}
+          />
+        ))}
+        {categories.length === 0 && (
+          <p className="text-muted-foreground text-sm">None yet.</p>
+        )}
+      </div>
+      <div className="mt-3 flex items-center gap-2 border-t pt-3">
+        <ColorDots value={color} onChange={setColor} />
+        <Input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+          placeholder="Add…"
+          className="h-8"
+        />
+        <Button size="icon" className="size-8" onClick={add}>
+          <Plus className="size-4" />
+        </Button>
+      </div>
+    </SectionCard>
+  );
+}
+
 export function TaxonomyModule({ projectId }: { projectId: string }) {
   const { data } = useProject(projectId);
   if (!data) return null;
@@ -135,7 +270,7 @@ export function TaxonomyModule({ projectId }: { projectId: string }) {
     <div>
       <ModuleHeader
         title="Taxonomy"
-        description="The tags, phases and categories used across this project."
+        description="The tags, phases and tracks used across this project."
       />
       <div className="grid gap-4 md:grid-cols-3">
         <TaxSection
@@ -152,12 +287,10 @@ export function TaxonomyModule({ projectId }: { projectId: string }) {
           items={data.phases}
           defaultColor="teal"
         />
-        <TaxSection
+        <TrackSection
           projectId={projectId}
-          entity="categories"
-          title="Categories"
-          items={data.categories}
-          defaultColor="purple"
+          categories={data.categories}
+          tasks={data.tasks}
         />
       </div>
     </div>

@@ -14,17 +14,17 @@ export function ModuleHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="mb-7 flex items-start justify-between gap-4 border-b pb-5">
+    <div className="mb-8 flex items-start justify-between gap-4 border-b pb-6">
       <div>
-        {eyebrow ? <p className="eyebrow mb-2">{eyebrow}</p> : null}
-        <h1 className="font-serif-display text-[28px] leading-tight font-medium tracking-tight">
+        {eyebrow ? <p className="eyebrow mb-2 text-[11.5px]">{eyebrow}</p> : null}
+        <h1 className="font-serif-display text-[34px] leading-tight font-medium tracking-tight">
           {title}
         </h1>
         {description ? (
-          <p className="text-muted-foreground mt-1.5 text-sm">{description}</p>
+          <p className="text-muted-foreground mt-2 text-[15px]">{description}</p>
         ) : null}
       </div>
-      {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+      {actions ? <div className="flex items-center gap-2.5">{actions}</div> : null}
     </div>
   );
 }

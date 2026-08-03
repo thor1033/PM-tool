@@ -2,6 +2,157 @@
 
 Tracks new dependencies, deviations, and phase completion status.
 
+## Taxonomy/naming standardization — "Category" → "Track", "Action" → "Task"
+User request: unify vocabulary so the taxonomy grouping is always called a "Track" and work
+items are always called "Tasks," never "Actions," everywhere a user reads it. Also rename the
+module itself: nav label "Actions & timeline" → **"Tasks"** (picked over the user's first
+suggestion, "Task overview," because it read as a near-duplicate of the dashboard's existing
+"Overview" nav item — flagged to the user, who confirmed "Tasks").
+
+**Scope — copy only, no data/routing migration:**
+- Renamed every *user-visible* string: "Category"/"Categories" → "Track"/"Tracks" and
+  "Action(s)" (as a task synonym) → "Task(s)", across `actions.tsx` (header title, "Action
+  list" tab, Filter popover eyebrow, Sort-by option, "Edit categories" button), `list-view.tsx`
+  (toolbar/inline "Add category"/"Add action" controls, undefined-track bucket, hint text),
+  `kanban-view.tsx` (Filter popover eyebrow), `timeline-view.tsx` (empty state, row-label
+  header), `card-modal.tsx` ("create a track first" gate, track-required validation error),
+  `milestone-modal.tsx` (gate/track field label + validation copy), `taxonomy.tsx`
+  (`CategoryRow`/`CategorySection` → `TrackRow`/`TrackSection`, section title, delete-confirm
+  copy, page description), `catalogue.tsx` ("Linked tasks", linked-task counts), `dashboard.tsx`
+  (empty-state copy, panel link label), and `lib/nav.ts` (nav item label).
+- **Deliberately left unchanged** (internal plumbing, not user-facing): the `category` DB
+  column/field, `entityConfig.categories` entity name, `/api/projects/[id]/categories` routes,
+  the `/projects/[id]/actions` URL slug, and file/folder names (`actions.tsx`,
+  `components/modules/actions/*`, `lib/nav.ts`'s `slug: "actions"`). Renaming these would be a
+  schema/routing migration, which wasn't what was asked — only the words users actually read.
+- Deleted `components/project/categories-modal.tsx`: this file was already documented above as
+  retired when "Edit categories" was repointed at the Taxonomy page, but it had never actually
+  been removed from disk and nothing imported it. Removed it for real during this pass's sweep,
+  since a stale unreferenced file with un-renamed "Category" copy in it would otherwise
+  contradict its own file-level rename if ever resurrected.
+- Verified: `tsc --noEmit` clean, `next build` succeeds, dev server serves `/projects/[id]/actions`
+  and `/projects/[id]/taxonomy` with HTTP 200 and no error markers, dev log has no real errors.
+
+## Actions & timeline — reconciled against the exact functional + design spec
+A precise, numbered spec (4-view switcher, header Filter/Sort-by/Edit-categories controls,
+specific localStorage key names) arrived after two prior Actions-module sessions. Did a full
+audit first — most of the spec (task card, milestone/gate editor, Timeline gantt incl. drag/
+resize/baseline/critical-path, Calendar, Kanban's filter+nesting) was already built and
+correct, so this pass **only touched the real deltas**, confirmed with the user before
+building:
+
+1. **Removed the Milestones/Gates tabs** added in the previous session. This spec is explicit
+   about exactly 4 views (List/Kanban/Timeline/Calendar) with gates/milestones living *inside*
+   List (gate bars + milestone strip), Timeline (◆/▐ glyphs + guide lines), and Calendar
+   (markers) — which they already did. Deleted `milestones-view.tsx`/`gates-view.tsx`; nothing
+   else referenced them.
+2. **New header `Filter` popover** (`actions.tsx`) replacing the two plain `<Select>` track/
+   assignee dropdowns: one purple (`bg-primary/10`) button with a count badge when active,
+   opening a popover with two pill groups — "Assigned to" (every member + "Unassigned") and
+   "Category" (every track) — both multi-select, with a "Clear" reset. Same `taskMatchesFilter`
+   under the hood as before; only the control's presentation changed to match the spec/screenshot.
+3. **"Edit categories" now navigates to the existing Taxonomy page** (`/projects/[id]/taxonomy`)
+   instead of opening the bespoke `CategoriesModal` dialog from the previous session — the spec
+   says this button "opens the taxonomy editor (categories, tags, phases)," which is exactly
+   what `TaxonomyModule` already is. Retired `categories-modal.tsx` (deleted; nothing else
+   referenced it) since it's now a strict subset of the taxonomy page.
+   - **Carried the safety fix over, not dropped**: `TaxonomyModule`'s category delete used to
+     be a bare `del.mutate(id)` with no reassignment step — fine before categories were
+     mandatory, wrong after. Gave it the same reassign-before-delete flow the retired modal had
+     (instant delete if the category has zero tasks; otherwise a "move N tasks to → [picker]"
+     step; blocked outright if it's the only category and has tasks). Tags/Phases keep their
+     original bare-delete behavior since nothing requires a task to have one.
+4. **New header `Sort by` dropdown** (Category | Sequence), shared by List and Timeline per
+   spec — replacing List's previous internal 3-way "By track / By date / By dependency" toggle
+   from the prior session, which didn't match this spec's simpler 2-option model.
+   - **"Sequence" = date then dependency, undated last** (`sequenceTasks` in `lib/tasks.ts`,
+     shared by both views so the two never disagree on order): tasks sort by `start` date, then
+     a stabilizing pass pulls any predecessor ahead of its dependent if it would otherwise land
+     later despite an equal/earlier start date; undated tasks sort last. This replaces both the
+     flat date-only sort and the separate dependency-wave grouping from last session — the spec
+     asked for one merged concept, not two.
+   - **List** in Sequence mode renders a flat table (no track grouping) with a "Depends on"
+     column (⛔ open / ✓ done prefixes) and blocked-row tinting — this is now the *only* place
+     that table exists (previously duplicated across a "By date" and "By dependency" view).
+   - **Timeline** in Sequence mode keeps its track-row grouping (a gantt fundamentally needs a
+     Y-position per track) but reorders tasks *within* each track by `sequenceTasks`, and
+     reorders the track rows themselves by each track's earliest task date — so the whole
+     chart reads top-to-bottom in delivery order instead of category-creation order.
+5. **localStorage keys renamed to match the spec exactly**: `atlas.actions.view` →
+   `atlas.actions.mode`; added `atlas.actions.sort`; the per-project collapse-state key changed
+   from `atlas.actions.collapsed.<id>` to `atlas.actions.expanded.<id>`; added
+   `atlas.actions.opensubs.<id>` for the subtask open/closed set, which previously reset on
+   every page load (component-local `useState({})`) — it's now a genuine persisted feature per
+   spec ("open set persisted, atlas.actions.opensubs").
+6. **"Add category" quick-add restored** in List's toolbar (inline name input + Add button)
+   alongside the spec's exact hint copy — "Drag actions between categories to re-bucket them ·
+   order top-to-bottom = sequence" — which had been dropped when the header "Categories" button
+   was added last session.
+
+Everything else — task card (dep editor incl. all 4 dep types + violation banner + conflict
+warning, risk linker, comments), milestone/gate editor, Timeline's drag-move/resize/baseline/
+critical-path/SVG connectors, Calendar's Monday-first grid, Kanban's search+tag-pills+filter-
+popover+nested-subtasks — was already correct against this spec and was **not** touched, per
+the instruction to skip anything already in place.
+
+Verified via the dev server: seeded a fresh project (two categories, a member, a violated
+task-dependency chain), confirmed both `/actions` and `/taxonomy` render with no server errors,
+and re-ran the reassign-then-delete category flow end-to-end through the real API to confirm
+moving the safety logic into `TaxonomyModule` didn't regress it — the category was removed and
+both its tasks landed in the target category with zero orphans.
+
+## Actions: categories default-expanded, "By dependency" view, Milestones/Gates views
+User-requested follow-up on the List view screenshot: categories should stay open unless
+explicitly closed, no task should silently disappear into an unlabelled bucket, dependency
+order should be its own view, and milestones/gates need dedicated project-wide views (not
+just the per-track strip/inline-gate-bar inside List).
+
+- **Categories default expanded** (`list-view.tsx`): flipped `collapsed[g.key] ?? true` →
+  `?? false` in both the render check and the toggle handler. A group only collapses once
+  the user explicitly closes it — that choice is still persisted to `localStorage`
+  (`atlas.actions.collapsed.<projectId>`) exactly as before, so a user's manual collapses
+  survive reloads; only the *default* for never-touched groups changed.
+- **"Undefined category" replaces "Uncategorised"** — a task with no category is a data
+  problem now that categories are mandatory (from the prior session's change), not a normal
+  organizational bucket, so it's styled to read that way: dashed red border, "Data problem"
+  eyebrow instead of "Track", a warning icon, an explanatory line ("every task should belong
+  to one — open each and set a track to clear this"), and no "+" / "Add gate-milestone"
+  affordances (it's not a real track to add work into). Per your answer: this bucket is
+  **not** hidden and orphaned tasks are **not** silently auto-assigned — it only appears when
+  a task genuinely has `category: null`, so it stays visible as something to go fix rather
+  than being swept under the rug either way.
+- **"By dependency" view** — third List sort mode alongside By track / By date
+  (`components/modules/actions/list-view.tsx`, `dependencyWaves`). Tasks are grouped into
+  completion "waves": wave 0 ("Ready now") has no unmet task-dependencies; wave 1 becomes
+  ready once every wave-0 predecessor is done; and so on — a straightforward topological
+  sort over `task`-type deps (a satisfied/`done` predecessor doesn't push the wave). Each row
+  shows what it's still waiting on. Circular dependencies are guarded against (treated as
+  wave 0 rather than infinite-looping) — an edge case the data model allows even though nothing
+  in the UI should normally create one.
+- **Dedicated Milestones view** (`components/modules/actions/milestones-view.tsx`) — every
+  milestone across the whole project (not just one track's strip), ordered by date, each row
+  showing its ◆ glyph, title, note, track chip, and date; past milestones are visually
+  muted. "Add milestone" opens `MilestoneModal` pre-set to milestone type.
+- **Dedicated Gates view** (`components/modules/actions/gates-view.tsx`) — every gate across
+  the project, in the same visual language as the inline gate bar inside List view's track
+  groups (red left-border checkpoint card, "GATE" badge, "everything above must pass"
+  copy) — but flattened across all tracks instead of interleaved into one track's task rows.
+  Overdue gates get a stronger red treatment. "Add gate" opens `MilestoneModal` pre-set to
+  gate type.
+  - `MilestoneModal` gained a `defaultType` prop (`"milestone" | "gate"`) so these two
+    entry points open in the right mode instead of always defaulting to milestone — this
+    didn't exist before since every prior entry point was already track-scoped.
+- **View switcher** grew from List/Timeline/Calendar/Kanban to include Milestones and Gates
+  (6 total). The track/assignee filter bar only shows for the three task-oriented views
+  (List/Timeline/Calendar) — Milestones, Gates, and Kanban each have their own scope/filters
+  and don't share that bar. The header's "Add task" button is similarly scoped to the three
+  task views; Milestones/Gates get their own "Add milestone"/"Add gate" buttons instead.
+- Verified via the dev server against a fresh fixture project: one real category with a
+  two-task dependency chain, a milestone, a gate, and one deliberately uncategorized task —
+  confirmed the working set shape is exactly what each new view's logic expects (undefined-
+  category bucket populated correctly, dependency chain forms two waves, milestone/gate both
+  attached to the category). Page renders with no server errors.
+
 ## Actions: dedicated "Categories" management dialog
 Added `components/project/categories-modal.tsx` and a "Categories" button in
 `ActionsModule`'s header (visible on every view — List/Timeline/Calendar/Kanban), so

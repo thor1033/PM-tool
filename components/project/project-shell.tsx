@@ -74,14 +74,14 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
         <Link
           href={`/projects/${id}/${item.slug}`}
           className={cn(
-            "flex flex-1 items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-[7px] text-[13.5px] font-medium transition",
-            indent && "pl-4",
+            "flex flex-1 items-center gap-3 rounded-[var(--radius-sm)] px-3 py-2.5 text-[15px] font-medium transition",
+            indent && "pl-5",
             active
               ? "bg-foreground text-background"
               : "text-muted-foreground hover:bg-muted hover:text-foreground",
           )}
         >
-          <Icon className={cn("size-[16px] shrink-0", active ? "opacity-100" : "opacity-80")} />
+          <Icon className={cn("size-[18px] shrink-0", active ? "opacity-100" : "opacity-80")} />
           {item.label}
         </Link>
         {item.group && (
@@ -94,7 +94,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
             )}
             title={isFav ? "Unpin" : "Pin to top"}
           >
-            <Star className="size-3" fill={isFav ? "currentColor" : "none"} />
+            <Star className="size-3.5" fill={isFav ? "currentColor" : "none"} />
           </button>
         )}
       </div>
@@ -102,100 +102,102 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl gap-6 px-4 py-6">
-      {/* Sidebar */}
-      <aside className="sticky top-20 hidden h-fit w-56 shrink-0 md:block">
-        <Link
-          href="/projects"
-          className="text-muted-foreground hover:text-foreground mb-3 flex items-center gap-1.5 text-sm"
-        >
-          <ArrowLeft className="size-3.5" /> All projects
-        </Link>
+    <div className="mx-auto flex w-full max-w-[1600px] items-start gap-0 px-0 py-0">
+      {/* Sidebar — pinned, full-height, visually separated panel */}
+      <aside className="bg-card sticky top-16 hidden h-[calc(100dvh-4rem)] w-72 shrink-0 flex-col border-r md:flex">
+        <div className="flex-1 overflow-y-auto p-5">
+          <Link
+            href="/projects"
+            className="text-muted-foreground hover:text-foreground mb-4 flex items-center gap-1.5 text-sm font-medium"
+          >
+            <ArrowLeft className="size-4" /> All projects
+          </Link>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              className="mb-4 h-auto w-full justify-between px-2.5 py-2"
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <span
-                  className={cn(
-                    "size-2.5 shrink-0 rounded-full",
-                    accent(project?.color).dot,
-                  )}
-                />
-                <span className="truncate text-left text-sm font-medium">
-                  {project?.name ?? "Loading…"}
-                </span>
-              </span>
-              <ChevronsUpDown className="text-muted-foreground size-4 shrink-0" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56" align="start">
-            <DropdownMenuLabel>Switch project</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {(allProjects ?? []).map((p) => (
-              <DropdownMenuItem key={p.id} asChild>
-                <Link href={`/projects/${p.id}/${activeSlug}`}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="mb-5 h-auto w-full justify-between px-3 py-2.5"
+              >
+                <span className="flex min-w-0 items-center gap-2.5">
                   <span
-                    className={cn("size-2 rounded-full", accent(p.color).dot)}
-                  />
-                  <span className="truncate">{p.name}</span>
-                  {p.id === id && <Check className="ml-auto size-4" />}
-                </Link>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <nav className="space-y-0.5">
-          {/* Always-visible pinned items */}
-          {pinned.map((item) => (
-            <NavLink key={item.slug} item={item} />
-          ))}
-
-          {/* Favourites pinned to top */}
-          {favItems.length > 0 && (
-            <div className="mt-3 border-t pt-3">
-              <p className="eyebrow mb-1.5 px-2.5">Pinned</p>
-              {favItems.map((item) => (
-                <NavLink key={`fav-${item.slug}`} item={item} />
-              ))}
-            </div>
-          )}
-
-          {/* Collapsible groups */}
-          {groups.map((g) => (
-            <Collapsible
-              key={g.key}
-              open={groupOpen[g.key]}
-              onOpenChange={(v) => setGroupOpen((s) => ({ ...s, [g.key]: v }))}
-              className="mt-3"
-            >
-              <CollapsibleTrigger asChild>
-                <button className="eyebrow flex w-full items-center justify-between rounded-md px-2.5 py-1.5 transition hover:bg-muted hover:text-muted-foreground">
-                  {g.label}
-                  <ChevronDown
                     className={cn(
-                      "size-3 transition-transform",
-                      groupOpen[g.key] && "rotate-180",
+                      "size-3 shrink-0 rounded-full",
+                      accent(project?.color).dot,
                     )}
                   />
-                </button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="space-y-0.5 pb-1">
-                {g.items.map((item) => (
-                  <NavLink key={item.slug} item={item} indent />
+                  <span className="truncate text-left text-[15px] font-semibold">
+                    {project?.name ?? "Loading…"}
+                  </span>
+                </span>
+                <ChevronsUpDown className="text-muted-foreground size-4 shrink-0" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-64" align="start">
+              <DropdownMenuLabel>Switch project</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {(allProjects ?? []).map((p) => (
+                <DropdownMenuItem key={p.id} asChild>
+                  <Link href={`/projects/${p.id}/${activeSlug}`}>
+                    <span
+                      className={cn("size-2 rounded-full", accent(p.color).dot)}
+                    />
+                    <span className="truncate">{p.name}</span>
+                    {p.id === id && <Check className="ml-auto size-4" />}
+                  </Link>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <nav className="space-y-1">
+            {/* Always-visible pinned items */}
+            {pinned.map((item) => (
+              <NavLink key={item.slug} item={item} />
+            ))}
+
+            {/* Favourites pinned to top */}
+            {favItems.length > 0 && (
+              <div className="mt-4 border-t pt-4">
+                <p className="eyebrow mb-2 px-3 text-[11px]">Pinned</p>
+                {favItems.map((item) => (
+                  <NavLink key={`fav-${item.slug}`} item={item} />
                 ))}
-              </CollapsibleContent>
-            </Collapsible>
-          ))}
-        </nav>
+              </div>
+            )}
+
+            {/* Collapsible groups */}
+            {groups.map((g) => (
+              <Collapsible
+                key={g.key}
+                open={groupOpen[g.key]}
+                onOpenChange={(v) => setGroupOpen((s) => ({ ...s, [g.key]: v }))}
+                className="mt-4"
+              >
+                <CollapsibleTrigger asChild>
+                  <button className="eyebrow flex w-full items-center justify-between rounded-md px-3 py-2 text-[11.5px] transition hover:bg-muted hover:text-muted-foreground">
+                    {g.label}
+                    <ChevronDown
+                      className={cn(
+                        "size-3.5 transition-transform",
+                        groupOpen[g.key] && "rotate-180",
+                      )}
+                    />
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-1 pb-1">
+                  {g.items.map((item) => (
+                    <NavLink key={item.slug} item={item} indent />
+                  ))}
+                </CollapsibleContent>
+              </Collapsible>
+            ))}
+          </nav>
+        </div>
       </aside>
 
       {/* Content */}
-      <main className="min-w-0 flex-1">
+      <main className="min-w-0 flex-1 px-6 py-6 lg:px-10 lg:py-8">
         {/* Mobile module switcher */}
         <div className="mb-4 md:hidden">
           <DropdownMenu>

@@ -306,12 +306,12 @@ function RiskLinker({
   );
 }
 
-// ── "create a category first" gate ──────────────────────────────────────────
-// Every task must belong to a category. If a project has none yet, task
+// ── "create a track first" gate ─────────────────────────────────────────────
+// Every task must belong to a track. If a project has none yet, task
 // creation is blocked here until one exists — the modal reopens the normal
 // form immediately afterward.
 
-function CreateCategoryPrompt({
+function CreateTrackPrompt({
   projectId, onCreated,
 }: {
   projectId: string; onCreated: (categoryId: string) => void;
@@ -335,13 +335,13 @@ function CreateCategoryPrompt({
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-sm font-semibold">This project has no categories yet</p>
+        <p className="text-sm font-semibold">This project has no tracks yet</p>
         <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-          Every task belongs to a category (a track) — create the first one to continue.
+          Every task belongs to a track — create the first one to continue.
         </p>
       </div>
       <div className="space-y-1.5">
-        <Label>Category name</Label>
+        <Label>Track name</Label>
         <Input
           value={label}
           onChange={(e) => setLabel(e.target.value)}
@@ -369,7 +369,7 @@ function CreateCategoryPrompt({
         </div>
       </div>
       <Button onClick={submit} disabled={!label.trim() || createCat.isPending} className="w-full">
-        Create category & continue
+        Create track & continue
       </Button>
     </div>
   );
@@ -426,7 +426,7 @@ export function CardModal({
 
   function save() {
     if (form.category === "none") {
-      toast.error("Every task needs a category.");
+      toast.error("Every task needs a track.");
       return;
     }
     const payload = {
@@ -453,14 +453,14 @@ export function CardModal({
     onOpenChange(false);
   }
 
-  // Every task must belong to a category. New tasks in a project with no
-  // categories yet are blocked here until one is created.
+  // Every task must belong to a track. New tasks in a project with no
+  // tracks yet are blocked here until one is created.
   if (!task && ws.categories.length === 0) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader><DialogTitle className="font-serif-display font-medium">New task</DialogTitle></DialogHeader>
-          <CreateCategoryPrompt projectId={projectId} onCreated={(categoryId) => set("category", categoryId)} />
+          <CreateTrackPrompt projectId={projectId} onCreated={(categoryId) => set("category", categoryId)} />
         </DialogContent>
       </Dialog>
     );

@@ -58,15 +58,15 @@ export function CalendarView({
 
   return (
     <div>
-      <div className="mb-4 flex items-center gap-3">
+      <div className="mb-5 flex items-center gap-3">
         <Button variant="outline" size="sm" onClick={() => step(-1)}>←</Button>
-        <span className="font-serif-display min-w-[160px] text-center text-[15px] font-medium">{monthLabel}</span>
+        <span className="font-serif-display min-w-[180px] text-center text-[18px] font-medium">{monthLabel}</span>
         <Button variant="outline" size="sm" onClick={() => step(1)}>→</Button>
         <Button variant="ghost" size="sm" onClick={today}>Today</Button>
       </div>
       <div className="overflow-hidden rounded-[var(--radius-lg)] border">
         <div className="grid grid-cols-7 border-b bg-[var(--paper-2)]">
-          {WD.map((d) => <div key={d} className="text-muted-foreground py-2 text-center font-mono text-[10.5px] font-medium uppercase tracking-wide">{d}</div>)}
+          {WD.map((d) => <div key={d} className="text-muted-foreground py-2.5 text-center font-mono text-[11.5px] font-medium uppercase tracking-wide">{d}</div>)}
         </div>
         {[0, 1, 2, 3, 4, 5].map((week) => (
           <div key={week} className="grid grid-cols-7 border-b last:border-0">
@@ -77,20 +77,20 @@ export function CalendarView({
               const inMonth = day.getMonth() === month;
               const isToday = k === todayKey;
               return (
-                <div key={k} className={cn("min-h-[92px] border-r p-1.5 last:border-0", !inMonth && "bg-[var(--paper-2)]/50")}>
+                <div key={k} className={cn("min-h-[120px] border-r p-2 last:border-0", !inMonth && "bg-[var(--paper-2)]/50")}>
                   <div className={cn(
-                    "mb-1 flex size-5 items-center justify-center rounded-full font-mono text-xs font-medium",
+                    "mb-1.5 flex size-6 items-center justify-center rounded-full font-mono text-[13px] font-medium",
                     isToday ? "bg-primary text-primary-foreground" : !inMonth ? "text-muted-foreground/40" : "text-foreground",
                   )}>
                     {day.getDate()}
                   </div>
-                  <div className="space-y-0.5">
+                  <div className="space-y-1">
                     {mss.map((m) => (
                       <button
                         key={m.id}
                         onClick={() => onEditMilestone(m)}
                         className={cn(
-                          "flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[10px] font-semibold",
+                          "flex w-full items-center gap-1 truncate rounded px-1.5 py-1 text-left text-[11.5px] font-semibold",
                           m.type === "gate" ? "bg-[color-mix(in_oklch,var(--t-red)_14%,var(--panel))] text-[var(--t-red)]" : "bg-[var(--accent-soft)] text-[var(--accent-deep)]",
                         )}
                       >
@@ -104,7 +104,7 @@ export function CalendarView({
                         <button
                           key={t.id}
                           onClick={() => onEdit(t)}
-                          className="w-full truncate rounded px-1 py-0.5 text-left text-[10px] leading-tight"
+                          className="w-full truncate rounded px-1.5 py-1 text-left text-[11.5px] leading-tight"
                           style={{
                             background: overdue ? "color-mix(in oklch, var(--t-red) 14%, var(--panel))" : cat ? `color-mix(in oklch, ${accentVar(cat.color)} 16%, var(--panel))` : "var(--paper-2)",
                             color: overdue ? "var(--t-red)" : cat ? accentVar(cat.color) : "var(--ink-soft)",
@@ -114,7 +114,7 @@ export function CalendarView({
                         </button>
                       );
                     })}
-                    {tasks.length > 3 && <p className="text-muted-foreground pl-1 text-[10px]">+{tasks.length - 3} more</p>}
+                    {tasks.length > 3 && <p className="text-muted-foreground pl-1 text-[11.5px]">+{tasks.length - 3} more</p>}
                   </div>
                 </div>
               );

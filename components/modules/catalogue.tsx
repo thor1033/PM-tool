@@ -223,7 +223,7 @@ function ProductDialog({
           {item && (
             <div className="space-y-2 border-t pt-4">
               <div className="flex items-center justify-between">
-                <Label className="mb-0">Linked actions</Label>
+                <Label className="mb-0">Linked tasks</Label>
                 <div className="relative">
                   <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => setLinkOpen((o) => !o)} disabled={unlinkedTasks.length === 0}>
                     <Plus className="size-3" /> Link
@@ -241,7 +241,7 @@ function ProductDialog({
                   )}
                 </div>
               </div>
-              {linkedTasks.length === 0 && <p className="text-muted-foreground text-xs">No actions reference this deliverable yet.</p>}
+              {linkedTasks.length === 0 && <p className="text-muted-foreground text-xs">No tasks reference this deliverable yet.</p>}
               <div className="space-y-1.5">
                 {linkedTasks.map((t) => (
                   <div key={t.id} className="flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--paper-2)] px-2.5 py-1.5">
@@ -386,7 +386,7 @@ function ProductCard({
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide", a.soft)}>{meta.label}</span>
         {taskCount > 0 && (
-          <span className="text-muted-foreground text-[11px]">{taskCount} linked action{taskCount === 1 ? "" : "s"}</span>
+          <span className="text-muted-foreground text-[11px]">{taskCount} linked task{taskCount === 1 ? "" : "s"}</span>
         )}
       </div>
       {product.note && (

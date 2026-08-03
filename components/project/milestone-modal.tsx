@@ -14,10 +14,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export function MilestoneModal({
-  ws, projectId, milestone, defaultCategoryId, open, onOpenChange,
+  ws, projectId, milestone, defaultCategoryId, defaultType, open, onOpenChange,
 }: {
   ws: WorkingSet; projectId: string; milestone: Milestone | null;
-  defaultCategoryId?: string | null; open: boolean; onOpenChange: (v: boolean) => void;
+  defaultCategoryId?: string | null; defaultType?: "milestone" | "gate";
+  open: boolean; onOpenChange: (v: boolean) => void;
 }) {
   const create = useCreateEntity(projectId, "milestones");
   const update = useUpdateEntity(projectId, "milestones");
@@ -25,7 +26,7 @@ export function MilestoneModal({
 
   const [form, setForm] = useState(() => ({
     title: milestone?.title ?? "",
-    type: milestone?.type ?? "milestone",
+    type: milestone?.type ?? defaultType ?? "milestone",
     date: milestone?.date ?? "",
     category: milestone?.category ?? defaultCategoryId ?? "none",
     note: milestone?.note ?? "",
@@ -35,7 +36,7 @@ export function MilestoneModal({
 
   function save() {
     if (isGate && form.category === "none") {
-      toast.error("A gate validates a category's work — pick the category it gates.");
+      toast.error("A gate validates a track's work — pick the track it gates.");
       return;
     }
     const payload = {
@@ -104,11 +105,11 @@ export function MilestoneModal({
               <Input type="date" value={form.date} onChange={(e) => set("date", e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Category {isGate && <span className="text-[var(--t-red)]">*</span>}</Label>
+              <Label>Track {isGate && <span className="text-[var(--t-red)]">*</span>}</Label>
               <Select value={form.category} onValueChange={(v) => set("category", v)}>
-                <SelectTrigger><SelectValue placeholder="No category" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="No track" /></SelectTrigger>
                 <SelectContent>
-                  {!isGate && <SelectItem value="none">No category</SelectItem>}
+                  {!isGate && <SelectItem value="none">No track</SelectItem>}
                   {ws.categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -116,7 +117,7 @@ export function MilestoneModal({
           </div>
           {isGate && (
             <p className="text-muted-foreground -mt-2 text-xs">
-              A gate validates a category&rsquo;s work — pick the category it gates.
+              A gate validates a track&rsquo;s work — pick the track it gates.
             </p>
           )}
 

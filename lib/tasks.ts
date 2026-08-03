@@ -150,3 +150,38 @@ export function wouldConflict(task: Pick<Task, "start">, other: Task | undefined
   if (!other || other.status === "done" || !task.start || !other.end) return false;
   return new Date(task.start) < new Date(other.end);
 }
+
+// ── "Sequence" ordering (List + Timeline share this) ────────────────────────
+
+/** Orders tasks by start date, then by dependency (predecessors sort before
+ *  their dependents even when dates tie), undated tasks last. This is the
+ *  "Sequence" sort option — the counterpart to grouping by Category. */
+export function sequenceTasks(tasks: Task[]): Task[] {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const dateKey = (t: Task) => t.start || "9999-99-99";
+  const dated = tasks.filter((t) => t.start).sort((a, b) => dateKey(a).localeCompare(dateKey(b)));
+  const undated = tasks.filter((t) => !t.start);
+
+  // Stable-sort the dated group so a predecessor never lands after its
+  // dependent when they share (or nearly share) a start date.
+  const out = [...dated];
+  let moved = true;
+  let guard = 0;
+  while (moved && guard++ < out.length * 2) {
+    moved = false;
+    for (let i = 0; i < out.length; i++) {
+      const t = out[i];
+      (t.deps ?? []).forEach((d) => {
+        if (d.type !== "task" || !d.refId || !byId.has(d.refId)) return;
+        const predIdx = out.findIndex((x) => x.id === d.refId);
+        if (predIdx > i) {
+          // predecessor is after its dependent — swap them forward
+          const [pred] = out.splice(predIdx, 1);
+          out.splice(i, 0, pred);
+          moved = true;
+        }
+      });
+    }
+  }
+  return [...out, ...undated];
+}

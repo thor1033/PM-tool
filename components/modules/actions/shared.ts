@@ -1,17 +1,19 @@
 import type { Task } from "@/lib/db/schema";
 
-/** Filters shared across every Actions view (List · Timeline · Calendar) and
- *  persisted the same way the reference app does. List view's own "By track /
- *  By date" toggle (formerly a separate Sequence view) lives in list-view.tsx. */
+/** Filters shared across every Actions view (List · Kanban · Timeline ·
+ *  Calendar) and persisted the same way the reference app does. */
 export interface ActionsFilters {
   cat: string[];
   who: string[];
 }
 
-export type ActionsView = "list" | "timeline" | "calendar";
+export type ActionsView = "list" | "kanban" | "timeline" | "calendar";
+export type SortMode = "category" | "sequence";
 
-export const VIEW_STORAGE_KEY = "atlas.actions.view";
-export const COLLAPSE_STORAGE_KEY_PREFIX = "atlas.actions.collapsed.";
+export const VIEW_STORAGE_KEY = "atlas.actions.mode";
+export const SORT_STORAGE_KEY = "atlas.actions.sort";
+export const COLLAPSE_STORAGE_KEY_PREFIX = "atlas.actions.expanded.";
+export const OPEN_SUBS_STORAGE_KEY_PREFIX = "atlas.actions.opensubs.";
 
 /** A track group used by the List view, plus the two pinned synthetic groups
  *  (Communications / Change management) the reference app always shows last. */
