@@ -345,14 +345,6 @@ export function ListView({
                     >
                       <Flag className="size-3.5" /> Gate
                     </Button>
-                    <Button
-                      size="sm"
-                      className="h-8 text-[12.5px]"
-                      onClick={() => onEdit(null, g.key)}
-                      title="Add task to this track"
-                    >
-                      <Plus className="size-3.5" /> Task
-                    </Button>
                   </>
                 )}
               </div>
@@ -573,13 +565,9 @@ export function ListView({
                       onDragOver={(e) => { e.preventDefault(); setDragOverRow(`_end_${g.key}`); }}
                       onDragLeave={() => setDragOverRow((r) => (r === `_end_${g.key}` ? null : r))}
                       onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDrop(null, g); }}
-                      className={cn(dragOverRow === `_end_${g.key}` && "border-t-2 border-t-primary")}
+                      className={cn("h-3", dragOverRow === `_end_${g.key}` && "border-t-2 border-t-primary")}
                     >
-                      <td colSpan={7} className="pb-3 pl-16 pt-3">
-                        <button onClick={() => onEdit(null, g.key)} className="text-muted-foreground hover:text-foreground flex items-center gap-2 text-[13.5px]">
-                          <Plus className="size-3.5" /> Add task
-                        </button>
-                      </td>
+                      <td colSpan={7}></td>
                     </tr>
                   )}
                 </tbody>

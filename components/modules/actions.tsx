@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { toast } from "sonner";
-import { Rows3, GitBranch, Calendar, KanbanSquare, Tags, SlidersHorizontal, ArrowUpDown, Layers, Search, X } from "lucide-react";
+import { Rows3, GitBranch, Calendar, KanbanSquare, SlidersHorizontal, ArrowUpDown, Layers, Search, X, Plus, ListTodo } from "lucide-react";
 import { useProject, useCreateEntity } from "@/lib/api/hooks";
 import { taskMatchesFilter, taskIdMap } from "@/lib/tasks";
 import type { Task, Milestone } from "@/lib/types";
@@ -15,7 +14,8 @@ import { MilestoneModal } from "@/components/project/milestone-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ListView } from "@/components/modules/actions/list-view";
-import { TimelineView } from "@/components/modules/actions/timeline-view";
+import { TimelineView, TimelineFilterPopover, TimelineSortPopover, EMPTY_TIMELINE_FILTERS } from "@/components/modules/actions/timeline-view";
+import type { TimelineFilters, TimelineSortMode } from "@/components/modules/actions/timeline-view";
 import { CalendarView } from "@/components/modules/actions/calendar-view";
 import { KanbanView } from "@/components/modules/actions/kanban-view";
 import type { ActionsView, SortMode } from "@/components/modules/actions/shared";
@@ -165,6 +165,39 @@ function SortByDropdown({ sort, onChange }: { sort: SortMode; onChange: (v: Sort
   );
 }
 
+function AddNewDropdown({ onNewTask, onNewTrack }: { onNewTask: () => void; onNewTrack: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function h(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+  return (
+    <div className="relative" ref={ref}>
+      <Button onClick={() => setOpen((o) => !o)}>
+        <Plus className="size-4" /> Add new
+      </Button>
+      {open && (
+        <div className="bg-popover absolute right-0 z-20 mt-1.5 w-48 rounded-[var(--radius-md)] border p-1.5 shadow-lg">
+          <button
+            onClick={() => { setOpen(false); onNewTask(); }}
+            className="hover:bg-muted flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-left text-[14px] transition"
+          >
+            <ListTodo className="size-4" /> New task
+          </button>
+          <button
+            onClick={() => { setOpen(false); onNewTrack(); }}
+            className="hover:bg-muted flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-left text-[14px] transition"
+          >
+            <Layers className="size-4" /> New track
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── module ────────────────────────────────────────────────────────────────────
 
 export function ActionsModule({ projectId }: { projectId: string }) {
@@ -175,6 +208,9 @@ export function ActionsModule({ projectId }: { projectId: string }) {
   const [fCat, setFCat] = useState<string[]>([]);
   const [fWho, setFWho] = useState<string[]>([]);
   const [query, setQuery] = useState("");
+  const [timelineFilters, setTimelineFilters] = useState<TimelineFilters>(EMPTY_TIMELINE_FILTERS);
+  const [timelineSort, setTimelineSort] = useState<TimelineSortMode>("track");
+  const [timelineShowCP, setTimelineShowCP] = useState(false);
   const [taskDialog, setTaskDialog] = useState<{ open: boolean; task: Task | null; defaultCategoryId?: string | null; defaultStatus?: string }>({ open: false, task: null });
   const [msDialog, setMsDialog] = useState<{ open: boolean; milestone: Milestone | null; defaultCategoryId?: string | null; defaultType?: "milestone" | "gate" }>({ open: false, milestone: null });
   const [addingTrack, setAddingTrack] = useState(false);
@@ -231,7 +267,8 @@ export function ActionsModule({ projectId }: { projectId: string }) {
   }
 
   const showSortBy = view === "list";
-  const showGlobalFilter = view !== "timeline";
+  const showGlobalFilter = view !== "timeline" && view !== "calendar";
+  const showSearch = view !== "timeline" && view !== "calendar";
 
   const categoriesCount = ws.categories.length;
   function commitAddTrack() {
@@ -270,31 +307,37 @@ export function ActionsModule({ projectId }: { projectId: string }) {
 
       <div className="mt-2 mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2.5">
-          <div className="relative">
-            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search name or ID…"
-              className="h-10 w-56 pl-9"
-            />
-            {query && (
-              <button
-                onClick={() => setQuery("")}
-                className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2.5 -translate-y-1/2"
-                aria-label="Clear search"
-              >
-                <X className="size-4" />
-              </button>
-            )}
-          </div>
+          {showSearch && (
+            <div className="relative">
+              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search name or ID…"
+                className="h-10 w-56 pl-9"
+              />
+              {query && (
+                <button
+                  onClick={() => setQuery("")}
+                  className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2.5 -translate-y-1/2"
+                  aria-label="Clear search"
+                >
+                  <X className="size-4" />
+                </button>
+              )}
+            </div>
+          )}
           {showGlobalFilter && <FilterPopover ws={ws} fCat={fCat} setFCat={setFCat} fWho={fWho} setFWho={setFWho} />}
           {showSortBy && <SortByDropdown sort={sort} onChange={changeSort} />}
-          <Button variant="outline" asChild>
-            <Link href={`/projects/${projectId}/taxonomy`}>
-              <Tags className="size-4" /> Edit tracks
-            </Link>
-          </Button>
+          {view === "timeline" && (
+            <>
+              <TimelineFilterPopover ws={ws} filters={timelineFilters} setFilters={setTimelineFilters} />
+              <TimelineSortPopover
+                sort={timelineSort} onChange={setTimelineSort}
+                showCP={timelineShowCP} onToggleCP={() => setTimelineShowCP((v) => !v)}
+              />
+            </>
+          )}
         </div>
 
         {view === "list" && (
@@ -316,13 +359,7 @@ export function ActionsModule({ projectId }: { projectId: string }) {
                 <Button variant="ghost" onClick={commitAddTrack} disabled={!newTrackLabel.trim()}>Add</Button>
               </div>
             ) : (
-              <Button
-                variant="outline"
-                className="border-dashed"
-                onClick={() => setAddingTrack(true)}
-              >
-                <Layers className="size-4" /> Add track
-              </Button>
+              <AddNewDropdown onNewTask={() => openTask(null)} onNewTrack={() => setAddingTrack(true)} />
             )}
           </div>
         )}
@@ -336,10 +373,14 @@ export function ActionsModule({ projectId }: { projectId: string }) {
         />
       )}
       {view === "timeline" && (
-        <TimelineView ws={ws} projectId={projectId} filtered={ws.tasks} onEdit={openTask} onEditMilestone={(m) => openMilestone(m)} />
+        <TimelineView
+          ws={ws} projectId={projectId} filtered={ws.tasks}
+          filters={timelineFilters} sort={timelineSort} showCP={timelineShowCP}
+          onEdit={openTask} onEditMilestone={(m) => openMilestone(m)}
+        />
       )}
       {view === "calendar" && (
-        <CalendarView ws={ws} projectId={projectId} filtered={filtered} onEdit={openTask} onEditMilestone={(m) => openMilestone(m)} />
+        <CalendarView ws={ws} projectId={projectId} filtered={ws.tasks} onEdit={openTask} onEditMilestone={(m) => openMilestone(m)} />
       )}
       {view === "kanban" && (
         <KanbanView

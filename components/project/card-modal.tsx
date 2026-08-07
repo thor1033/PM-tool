@@ -11,7 +11,6 @@ import {
 import { resolveDep, wouldConflict, initials, followupChainOf, type ResolvedDep } from "@/lib/tasks";
 import type { Task, WorkingSet } from "@/lib/types";
 import type { TaskComment, TaskDep } from "@/lib/db/schema";
-import { accentVar, ACCENTS } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -305,75 +304,6 @@ function RiskLinker({
   );
 }
 
-// ── "create a track first" gate ─────────────────────────────────────────────
-// Every task must belong to a track. If a project has none yet, task
-// creation is blocked here until one exists — the modal reopens the normal
-// form immediately afterward.
-
-function CreateTrackPrompt({
-  projectId, onCreated,
-}: {
-  projectId: string; onCreated: (categoryId: string) => void;
-}) {
-  const createCat = useCreateEntity(projectId, "categories");
-  const [label, setLabel] = useState("");
-  const [color, setColor] = useState(ACCENTS[0]);
-
-  function submit() {
-    const name = label.trim();
-    if (!name) return;
-    createCat.mutate(
-      { label: name, color },
-      {
-        onSuccess: (row) => onCreated((row as { id: string }).id),
-        onError: (e) => toast.error((e as Error).message),
-      },
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <p className="text-sm font-semibold">This project has no tracks yet</p>
-        <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-          Every task belongs to a track — create the first one to continue.
-        </p>
-      </div>
-      <div className="space-y-1.5">
-        <Label>Track name</Label>
-        <Input
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-          placeholder="e.g. Discovery, Build, Launch"
-          autoFocus
-        />
-      </div>
-      <div className="space-y-1.5">
-        <Label>Color</Label>
-        <div className="flex flex-wrap gap-1.5">
-          {ACCENTS.map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => setColor(c)}
-              title={c}
-              className={cn(
-                "size-6 rounded-full border-2 transition",
-                color === c ? "border-foreground" : "border-transparent",
-              )}
-              style={{ background: accentVar(c) }}
-            />
-          ))}
-        </div>
-      </div>
-      <Button onClick={submit} disabled={!label.trim() || createCat.isPending} className="w-full">
-        Create track & continue
-      </Button>
-    </div>
-  );
-}
-
 // ── main card modal ──────────────────────────────────────────────────────────
 
 export function CardModal({
@@ -468,16 +398,12 @@ export function CardModal({
   }
 
   function save() {
-    if (form.category === "none") {
-      toast.error("Every task needs a track.");
-      return;
-    }
     const payload = {
       title: form.title.trim() || "Untitled task",
       description: form.description,
       status: form.status,
       priority: form.priority,
-      category: form.category,
+      category: form.category === "none" ? null : form.category,
       // Phase/Tags aren't editable from this form anymore — pass through
       // whatever the task already had so save doesn't wipe them.
       phase: activeTask?.phase ?? null,
@@ -504,18 +430,6 @@ export function CardModal({
     onOpenChange(false);
   }
 
-  // Every task must belong to a track. New tasks in a project with no
-  // tracks yet are blocked here until one is created.
-  if (!activeTask && ws.categories.length === 0) {
-    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader><DialogTitle className="font-serif-display font-medium">New task</DialogTitle></DialogHeader>
-          <CreateTrackPrompt projectId={projectId} onCreated={(categoryId) => set("category", categoryId)} />
-        </DialogContent>
-      </Dialog>
-    );
-  }
 
   const chain = activeTask ? followupChainOf(activeTask, ws.tasks) : [];
 
@@ -575,10 +489,11 @@ export function CardModal({
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Track <span className="text-[var(--t-red)]">*</span></Label>
+                <Label>Track</Label>
                 <Select value={form.category} onValueChange={(v) => set("category", v)}>
-                  <SelectTrigger><SelectValue placeholder="Choose a track" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="No track" /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">No track</SelectItem>
                     {ws.categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
                   </SelectContent>
                 </Select>

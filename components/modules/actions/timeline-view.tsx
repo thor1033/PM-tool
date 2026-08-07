@@ -27,7 +27,7 @@ const RANGE_OPTIONS = [
 type RangeId = (typeof RANGE_OPTIONS)[number]["id"];
 const RANGE_KEY = "atlas.actions.timelineRange";
 
-type TimelineSortMode = "track" | "sequence" | "deadline";
+export type TimelineSortMode = "track" | "sequence" | "deadline";
 const SORT_OPTIONS: { id: TimelineSortMode; label: string }[] = [
   { id: "track", label: "Track" },
   { id: "sequence", label: "Sequence" },
@@ -40,12 +40,12 @@ const LABEL_W = 250;
 
 const NO_TRACK_ID = "_none";
 
-interface TimelineFilters {
+export interface TimelineFilters {
   cat: string[];
   from: string;
   to: string;
 }
-const EMPTY_FILTERS: TimelineFilters = { cat: [], from: "", to: "" };
+export const EMPTY_TIMELINE_FILTERS: TimelineFilters = { cat: [], from: "", to: "" };
 
 function useClickOutside(onOutside: () => void) {
   const ref = useRef<HTMLDivElement>(null);
@@ -59,7 +59,7 @@ function useClickOutside(onOutside: () => void) {
 
 // ── Timeline-only filter panel (track + date overlap) ──────────────────────
 
-function TimelineFilterPopover({
+export function TimelineFilterPopover({
   ws, filters, setFilters,
 }: {
   ws: WorkingSet; filters: TimelineFilters; setFilters: (f: TimelineFilters) => void;
@@ -85,7 +85,7 @@ function TimelineFilterPopover({
           <div className="mb-2 flex items-center justify-between">
             <p className="eyebrow">Track</p>
             {count > 0 && (
-              <button onClick={() => setFilters(EMPTY_FILTERS)} className="text-muted-foreground hover:text-foreground text-[12px] font-medium">
+              <button onClick={() => setFilters(EMPTY_TIMELINE_FILTERS)} className="text-muted-foreground hover:text-foreground text-[12px] font-medium">
                 Clear
               </button>
             )}
@@ -135,7 +135,7 @@ function TimelineFilterPopover({
   );
 }
 
-function TimelineSortPopover({
+export function TimelineSortPopover({
   sort, onChange, showCP, onToggleCP,
 }: {
   sort: TimelineSortMode; onChange: (v: TimelineSortMode) => void;
@@ -198,17 +198,16 @@ function TimelineSortPopover({
 }
 
 export function TimelineView({
-  ws, projectId, filtered, onEdit, onEditMilestone,
+  ws, projectId, filtered, filters, sort, showCP, onEdit, onEditMilestone,
 }: {
   ws: WorkingSet; projectId: string; filtered: Task[]; onEdit: (t: Task) => void;
   onEditMilestone: (m: Milestone) => void;
+  filters: TimelineFilters;
+  sort: TimelineSortMode;
+  showCP: boolean;
 }) {
   const updateTask = useUpdateEntity(projectId, "tasks");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [showCP, setShowCP] = useState(false);
-
-  const [filters, setFilters] = useState<TimelineFilters>(EMPTY_FILTERS);
-  const [sort, setSort] = useState<TimelineSortMode>("track");
 
   const [range, setRange] = useState<RangeId>(() => {
     if (typeof window === "undefined") return "1m";
@@ -533,8 +532,6 @@ export function TimelineView({
       <UnscheduledTray tasks={undated} onEdit={onEdit} needsStart />
 
       <div className="relative z-40 mb-2 flex flex-wrap items-center gap-2.5">
-        <TimelineFilterPopover ws={ws} filters={filters} setFilters={setFilters} />
-        <TimelineSortPopover sort={sort} onChange={setSort} showCP={showCP} onToggleCP={() => setShowCP((v) => !v)} />
         <div className="flex-1" />
         <div className="relative">
           <Button
@@ -599,8 +596,8 @@ export function TimelineView({
         <div className="relative" style={{ minWidth: LABEL_W + totalW }}>
           {todayLeft !== null && (
             <>
-              <div className="pointer-events-none absolute bottom-0 top-0 bg-[var(--paper-2)]/60" style={{ left: LABEL_W, width: todayLeft }} />
-              <div className="pointer-events-none absolute bottom-0 top-0 bg-[var(--paper-2)]/60" style={{ left: LABEL_W + todayLeft, width: Math.max(0, totalW - todayLeft) }} />
+              <div className="pointer-events-none absolute bottom-0 top-0 z-0 bg-[var(--paper-2)]/60" style={{ left: LABEL_W, width: todayLeft }} />
+              <div className="pointer-events-none absolute bottom-0 top-0 z-0 bg-[var(--paper-2)]/60" style={{ left: LABEL_W + todayLeft, width: Math.max(0, totalW - todayLeft) }} />
               {/* Today line — runs the full height of the grid, header through the last task row */}
               <div className="border-primary pointer-events-none absolute bottom-0 top-0 z-40 border-l-[2.5px]" style={{ left: LABEL_W + todayLeft }} />
             </>
@@ -642,8 +639,8 @@ export function TimelineView({
           )}
 
           {/* Header — sticky so it stays visible while the grid scrolls vertically past MAX_VISIBLE_ROWS */}
-          <div className="sticky top-0 z-30 flex border-b bg-[var(--paper-2)]" style={{ height: HDR_H }}>
-            <div className="text-muted-foreground shrink-0 border-r px-4 py-2.5 font-mono text-[11.5px] font-medium uppercase tracking-wide" style={{ width: LABEL_W }}>
+          <div className="sticky top-0 z-50 flex border-b bg-[var(--paper-2)]" style={{ height: HDR_H }}>
+            <div className="text-muted-foreground sticky left-0 z-10 shrink-0 border-r bg-[var(--paper-2)] px-4 py-2.5 font-mono text-[11.5px] font-medium uppercase tracking-wide" style={{ width: LABEL_W }}>
               {deadlineMode ? "Task" : "Track / Task"}
             </div>
             <div className="relative flex-1 overflow-hidden" style={{ width: totalW }}>
@@ -709,7 +706,10 @@ export function TimelineView({
               <div key={g.id}>
                 {!deadlineMode && (
                   <div className="flex border-b" style={{ height: TRACK_H, background: g.color ? `color-mix(in oklch, ${col} 10%, var(--panel))` : "var(--paper-2)" }}>
-                    <div className="flex shrink-0 items-center gap-2 border-r px-4 py-1" style={{ width: LABEL_W }}>
+                    <div
+                      className="sticky left-0 z-50 flex shrink-0 items-center gap-2 border-r px-4 py-1"
+                      style={{ width: LABEL_W, background: g.color ? `color-mix(in oklch, ${col} 10%, var(--panel))` : "var(--paper-2)" }}
+                    >
                       <span className="size-2.5 shrink-0 rounded-full" style={{ background: col }} />
                       <span className="eyebrow text-[11.5px]" style={g.color ? { color: col } : undefined}>{g.label}</span>
                     </div>
@@ -852,7 +852,7 @@ function GanttRow({
 
   return (
     <div className="group flex border-b hover:bg-[var(--paper-2)]" style={{ height: 48 }}>
-      <div className="flex shrink-0 items-center gap-2 border-r px-4" style={{ width: 250 }}>
+      <div className="sticky left-0 z-50 flex shrink-0 items-center gap-2 border-r bg-[var(--panel)] px-4 group-hover:bg-[var(--paper-2)]" style={{ width: 250 }}>
         {trackLabel && (
           <span className="text-muted-foreground shrink-0 rounded-full border px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wide">
             {trackLabel}
@@ -945,7 +945,7 @@ function SubGanttRow({
 
   return (
     <div className="flex border-b bg-[var(--paper-2)]/40 hover:bg-[var(--paper-2)]" style={{ height: SUB_ROW_H }}>
-      <div className="flex shrink-0 items-center gap-1.5 border-r pl-8 pr-4" style={{ width: LABEL_W }}>
+      <div className="sticky left-0 z-50 flex shrink-0 items-center gap-1.5 border-r bg-[var(--panel)] pl-8 pr-4" style={{ width: LABEL_W }}>
         <span className="text-muted-foreground/40 text-xs">↳</span>
         <button onClick={onEdit} className="hover:text-primary min-w-0 flex-1 truncate text-left text-[12.5px] text-muted-foreground" title={task.title}>{task.title}</button>
       </div>
