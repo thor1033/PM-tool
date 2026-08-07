@@ -548,6 +548,7 @@ export function PlanModule({ projectId }: { projectId: string }) {
         if (label) applied++;
       }
       await qc.invalidateQueries({ queryKey: ["project", projectId] });
+      await qc.invalidateQueries({ queryKey: ["projects"] });
       toast.success(`Applied ${applied} change${applied === 1 ? "" : "s"}`);
       logActivity(
         `Plan update from chat: ${applied} change${applied === 1 ? "" : "s"} applied`,

@@ -2,6 +2,11 @@
    Kanban board — kept in one place so "blocked"/"dependency block" rules,
    filtering, and small display helpers stay identical across every view. */
 
+import type { LucideIcon } from "lucide-react";
+import {
+  Rocket, Megaphone, ShieldCheck, Wrench, Palette, Database, Users, Globe,
+  Server, TestTube, FileText, BarChart3,
+} from "lucide-react";
 import type { Task, Product, External, TaskDep } from "@/lib/db/schema";
 
 // ── status / priority constants ─────────────────────────────────────────────
@@ -16,6 +21,25 @@ export const PRIO: Record<string, { label: string; var: string }> = {
   high: { label: "High", var: "--t-red" },
   med: { label: "Med", var: "--t-amber" },
   low: { label: "Low", var: "--t-green" },
+};
+
+// ── track icons ──────────────────────────────────────────────────────────────
+
+/** Curated icon set a track can optionally pick in Taxonomy. A track with no
+ *  icon set shows none — there is no default/fallback icon. */
+export const TRACK_ICONS: Record<string, { label: string; Icon: LucideIcon }> = {
+  rocket: { label: "Rocket", Icon: Rocket },
+  megaphone: { label: "Megaphone", Icon: Megaphone },
+  shield: { label: "Shield", Icon: ShieldCheck },
+  wrench: { label: "Wrench", Icon: Wrench },
+  palette: { label: "Palette", Icon: Palette },
+  database: { label: "Database", Icon: Database },
+  users: { label: "Users", Icon: Users },
+  globe: { label: "Globe", Icon: Globe },
+  server: { label: "Server", Icon: Server },
+  test: { label: "Test", Icon: TestTube },
+  doc: { label: "Document", Icon: FileText },
+  chart: { label: "Chart", Icon: BarChart3 },
 };
 
 export function statusVar(id: string): string {
@@ -40,6 +64,21 @@ export function daysBetween(a: string, b: string): number {
 export function fmtD(d: string): string {
   if (!d) return "";
   return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+/** A task's displayed ID is permanent — assigned by creation order (tiebroken
+ *  by the underlying db id) and never recomputed from track/sort/filter
+ *  position, so it keeps its number no matter where the task moves. */
+export function taskIdMap(tasks: Task[]): Map<string, number> {
+  const map = new Map<string, number>();
+  const ordered = [...tasks].sort((a, b) => {
+    const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    if (at !== bt) return at - bt;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+  ordered.forEach((t, i) => map.set(t.id, i + 1));
+  return map;
 }
 
 // ── filtering ────────────────────────────────────────────────────────────────
@@ -106,6 +145,18 @@ export function resolveDep(
     };
   }
 
+  if (dep.type === "followup") {
+    // Provenance, not a dependency — callers should filter these out before
+    // reaching here (see depsOf), but resolve to something inert rather than
+    // silently falling through to the free-text "external" case below.
+    const t = lookups.tasks.find((x) => x.id === dep.refId);
+    return {
+      id: dep.id, type: dep.type, icon: "task",
+      name: t ? t.title : "(removed task)",
+      scope: "Follow-up of", external: false, blocked: false, violated: false,
+    };
+  }
+
   if (dep.type === "ext") {
     const e = lookups.externals.find((x) => x.id === dep.refId);
     if (!e) {
@@ -140,7 +191,53 @@ export function depsOf(
   task: Pick<Task, "deps" | "start">,
   lookups: { tasks: Task[]; products: Product[]; externals: External[] },
 ): ResolvedDep[] {
-  return (task.deps ?? []).map((d) => resolveDep(d, task, lookups));
+  // "followup" is provenance, not a blocking dependency — never surfaced in
+  // the dependency/blocking UI, only via followupChainOf.
+  return (task.deps ?? []).filter((d) => d.type !== "followup").map((d) => resolveDep(d, task, lookups));
+}
+
+// ── follow-up lineage ────────────────────────────────────────────────────────
+
+export interface FollowupChainNode {
+  id: string;
+  title: string;
+  status: string;
+  /** This node's position relative to the task the chain was built for. */
+  direction: "before" | "self" | "after";
+}
+
+/** Walks a task's full follow-up lineage in both directions: what it was
+ *  spun off from (backward, via its own `followup` dep), and what's been
+ *  spun off from it (forward, via other tasks' `followup` deps pointing at
+ *  this one). Cycle-safe — a malformed chain just stops instead of looping. */
+export function followupChainOf(task: Task, allTasks: Task[]): FollowupChainNode[] {
+  const byId = new Map(allTasks.map((t) => [t.id, t]));
+  const before: FollowupChainNode[] = [];
+  const seen = new Set<string>([task.id]);
+
+  let cur = task;
+  while (true) {
+    const dep = (cur.deps ?? []).find((d) => d.type === "followup");
+    const prev = dep?.refId ? byId.get(dep.refId) : undefined;
+    if (!prev || seen.has(prev.id)) break;
+    before.unshift({ id: prev.id, title: prev.title, status: prev.status, direction: "before" });
+    seen.add(prev.id);
+    cur = prev;
+  }
+
+  const after: FollowupChainNode[] = [];
+  seen.clear();
+  seen.add(task.id);
+  let curId = task.id;
+  while (true) {
+    const next = allTasks.find((t) => !seen.has(t.id) && (t.deps ?? []).some((d) => d.type === "followup" && d.refId === curId));
+    if (!next) break;
+    after.push({ id: next.id, title: next.title, status: next.status, direction: "after" });
+    seen.add(next.id);
+    curId = next.id;
+  }
+
+  return [...before, { id: task.id, title: task.title, status: task.status, direction: "self" }, ...after];
 }
 
 /** Would adding `otherId` as a task-dependency of `task` create an immediate

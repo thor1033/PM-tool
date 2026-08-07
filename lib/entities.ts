@@ -114,6 +114,14 @@ const taxonomySchema = z
   })
   .partial();
 
+const categorySchema = z
+  .object({
+    label: z.string(),
+    color: z.string(),
+    icon: z.string().nullable(),
+  })
+  .partial();
+
 export const entityConfig = {
   tasks: { table: schema.tasks, prefix: "t", schema: taskSchema },
   risks: { table: schema.risks, prefix: "r", schema: riskSchema },
@@ -128,7 +136,7 @@ export const entityConfig = {
   milestones: { table: schema.milestones, prefix: "ms", schema: milestoneSchema },
   tags: { table: schema.tags, prefix: "tg", schema: taxonomySchema },
   phases: { table: schema.phases, prefix: "ph", schema: taxonomySchema },
-  categories: { table: schema.categories, prefix: "ct", schema: taxonomySchema },
+  categories: { table: schema.categories, prefix: "ct", schema: categorySchema },
   externals: { table: schema.externals, prefix: "ext", schema: externalSchema },
 } as const;
 

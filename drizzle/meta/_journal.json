@@ -36,6 +36,20 @@
       "when": 1785599654243,
       "tag": "0004_hesitant_marten_broadcloak",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786092561307,
+      "tag": "0005_pink_lyja",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786111206091,
+      "tag": "0006_great_robbie_robertson",
+      "breakpoints": true
     }
   ]
 }

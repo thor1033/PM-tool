@@ -102,7 +102,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[1600px] items-start gap-0 px-0 py-0">
+    <div className="mx-auto flex w-full max-w-[1920px] items-start gap-0 px-0 py-0">
       {/* Sidebar — pinned, full-height, visually separated panel */}
       <aside className="bg-card sticky top-16 hidden h-[calc(100dvh-4rem)] w-72 shrink-0 flex-col border-r md:flex">
         <div className="flex-1 overflow-y-auto p-5">

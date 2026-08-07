@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, X } from "lucide-react";
 import {
   useProject,
   useCreateEntity,
@@ -12,11 +12,50 @@ import {
 import type { EntityName } from "@/lib/entities";
 import type { Category, Task } from "@/lib/types";
 import { ACCENTS, accent } from "@/lib/colors";
+import { TRACK_ICONS } from "@/lib/tasks";
 import { cn } from "@/lib/utils";
 import { ModuleHeader, SectionCard } from "@/components/project/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+function IconPicker({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (v: string | null) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <button
+        type="button"
+        onClick={() => onChange(null)}
+        title="No icon"
+        className={cn(
+          "text-muted-foreground hover:text-foreground flex size-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border text-[10px]",
+          !value && "border-primary bg-primary/10 text-primary",
+        )}
+      >
+        <X className="size-3.5" />
+      </button>
+      {Object.entries(TRACK_ICONS).map(([key, { label, Icon }]) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => onChange(key)}
+          title={label}
+          className={cn(
+            "text-muted-foreground hover:text-foreground flex size-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border",
+            value === key && "border-primary bg-primary/10 text-primary",
+          )}
+        >
+          <Icon className="size-3.5" />
+        </button>
+      ))}
+    </div>
+  );
+}
 
 interface TaxItem {
   id: string;
@@ -176,6 +215,9 @@ function TrackRow({
         <Button variant="ghost" size="icon" className="size-8" onClick={startDelete}>
           <Trash2 className="size-4" />
         </Button>
+      </div>
+      <div className="mt-2 border-t pt-2">
+        <IconPicker value={cat.icon} onChange={(icon) => update.mutate({ id: cat.id, data: { icon } })} />
       </div>
       {confirming && (
         <div className="mt-2 space-y-2 border-t pt-2">

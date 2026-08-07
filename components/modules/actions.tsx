@@ -2,16 +2,18 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Plus, Rows3, GitBranch, Calendar, KanbanSquare, Tags, SlidersHorizontal, ArrowUpDown } from "lucide-react";
-import { useProject } from "@/lib/api/hooks";
-import { taskMatchesFilter } from "@/lib/tasks";
+import { toast } from "sonner";
+import { Rows3, GitBranch, Calendar, KanbanSquare, Tags, SlidersHorizontal, ArrowUpDown, Layers, Search, X } from "lucide-react";
+import { useProject, useCreateEntity } from "@/lib/api/hooks";
+import { taskMatchesFilter, taskIdMap } from "@/lib/tasks";
 import type { Task, Milestone } from "@/lib/types";
-import { accentVar } from "@/lib/colors";
+import { accentVar, ACCENTS } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { ModuleHeader } from "@/components/project/ui";
 import { CardModal } from "@/components/project/card-modal";
 import { MilestoneModal } from "@/components/project/milestone-modal";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ListView } from "@/components/modules/actions/list-view";
 import { TimelineView } from "@/components/modules/actions/timeline-view";
 import { CalendarView } from "@/components/modules/actions/calendar-view";
@@ -129,6 +131,10 @@ function SortByDropdown({ sort, onChange }: { sort: SortMode; onChange: (v: Sort
   const OPTIONS: { id: SortMode; label: string }[] = [
     { id: "category", label: "Track" },
     { id: "sequence", label: "Sequence" },
+    { id: "dueDate", label: "Due date" },
+    { id: "priority", label: "Priority" },
+    { id: "status", label: "Status" },
+    { id: "owner", label: "Owner" },
   ];
   return (
     <div className="relative" ref={ref}>
@@ -163,12 +169,16 @@ function SortByDropdown({ sort, onChange }: { sort: SortMode; onChange: (v: Sort
 
 export function ActionsModule({ projectId }: { projectId: string }) {
   const { data: ws } = useProject(projectId);
+  const createCat = useCreateEntity(projectId, "categories");
   const [view, setView] = useState<View>("list");
   const [sort, setSort] = useState<SortMode>("category");
   const [fCat, setFCat] = useState<string[]>([]);
   const [fWho, setFWho] = useState<string[]>([]);
+  const [query, setQuery] = useState("");
   const [taskDialog, setTaskDialog] = useState<{ open: boolean; task: Task | null; defaultCategoryId?: string | null; defaultStatus?: string }>({ open: false, task: null });
   const [msDialog, setMsDialog] = useState<{ open: boolean; milestone: Milestone | null; defaultCategoryId?: string | null; defaultType?: "milestone" | "gate" }>({ open: false, milestone: null });
+  const [addingTrack, setAddingTrack] = useState(false);
+  const [newTrackLabel, setNewTrackLabel] = useState("");
 
   // remembers the last-used view (atlas.actions.mode) and sort (atlas.actions.sort)
   useEffect(() => {
@@ -176,7 +186,8 @@ export function ActionsModule({ projectId }: { projectId: string }) {
       const savedView = localStorage.getItem(VIEW_STORAGE_KEY) as View | null;
       if (savedView && VIEWS.some((v) => v.id === savedView)) setView(savedView);
       const savedSort = localStorage.getItem(SORT_STORAGE_KEY) as SortMode | null;
-      if (savedSort === "category" || savedSort === "sequence") setSort(savedSort);
+      const validSorts: SortMode[] = ["category", "sequence", "dueDate", "priority", "status", "owner"];
+      if (savedSort && validSorts.includes(savedSort)) setSort(savedSort);
     } catch {
       // ignore
     }
@@ -190,86 +201,149 @@ export function ActionsModule({ projectId }: { projectId: string }) {
     try { localStorage.setItem(SORT_STORAGE_KEY, v); } catch { /* ignore */ }
   }
 
-  if (!ws) return null;
+  // Search matches the task's permanent ID (see taskIdMap), its title, or
+  const tasks = useMemo(() => ws?.tasks ?? [], [ws]);
+  const idMap = useMemo(() => taskIdMap(tasks), [tasks]);
+  const q = query.trim().toLowerCase();
+  const matchesQuery = useMemo(() => (t: Task) => {
+    if (!q) return true;
+    if (t.title.toLowerCase().includes(q)) return true;
+    const id = idMap.get(t.id);
+    if (id !== undefined && (String(id) === q || `#${id}` === q)) return true;
+    return false;
+  }, [q, idMap]);
 
   // Dependency lookups always resolve against the FULL task list — filtering
   // only changes what's rendered, never whether a block resolves correctly.
   const filtered = useMemo(
-    () => ws.tasks.filter((t) => taskMatchesFilter(t, fCat, fWho)),
-    [ws.tasks, fCat, fWho],
+    () => tasks.filter((t) => taskMatchesFilter(t, fCat, fWho) && matchesQuery(t)),
+    [tasks, fCat, fWho, matchesQuery],
   );
-  const hasActiveFilter = fCat.length > 0 || fWho.length > 0;
+  const hasActiveFilter = fCat.length > 0 || fWho.length > 0 || q.length > 0;
+
+  if (!ws) return null;
 
   function openTask(t: Task | null, defaultCategoryId?: string | null, defaultStatus?: string) {
     setTaskDialog({ open: true, task: t, defaultCategoryId, defaultStatus });
   }
-  function openMilestone(m: Milestone | null, defaultCategoryId?: string | null) {
-    setMsDialog({ open: true, milestone: m, defaultCategoryId });
+  function openMilestone(m: Milestone | null, defaultCategoryId?: string | null, defaultType?: "milestone" | "gate") {
+    setMsDialog({ open: true, milestone: m, defaultCategoryId, defaultType });
   }
 
-  const showSortBy = view === "list" || view === "timeline";
+  const showSortBy = view === "list";
+  const showGlobalFilter = view !== "timeline";
+
+  const categoriesCount = ws.categories.length;
+  function commitAddTrack() {
+    const name = newTrackLabel.trim();
+    if (!name) return;
+    createCat.mutate(
+      { label: name, color: ACCENTS[categoriesCount % ACCENTS.length] },
+      { onError: (e) => toast.error((e as Error).message) },
+    );
+    setNewTrackLabel("");
+    setAddingTrack(false);
+  }
 
   return (
     <div>
-      <ModuleHeader
-        eyebrow="Delivery"
-        title="Tasks"
-        description="Plan of work by phase"
-        actions={
-          <>
-            <FilterPopover ws={ws} fCat={fCat} setFCat={setFCat} fWho={fWho} setFWho={setFWho} />
-            <Button variant="outline" asChild>
-              <Link href={`/projects/${projectId}/taxonomy`}>
-                <Tags className="size-4" /> Edit tracks
-              </Link>
-            </Button>
-            {showSortBy && <SortByDropdown sort={sort} onChange={changeSort} />}
-          </>
-        }
-      />
+      <ModuleHeader eyebrow="Delivery" title="Tasks" />
 
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1 rounded-[var(--radius-sm)] border bg-[var(--paper-2)] p-1.5">
-          {VIEWS.map((v) => {
-            const Icon = v.icon;
-            const active = view === v.id;
-            return (
+      <div className="mb-5 flex gap-1 rounded-[var(--radius-sm)] border bg-[var(--paper-2)] p-1.5">
+        {VIEWS.map((v) => {
+          const Icon = v.icon;
+          const active = view === v.id;
+          return (
+            <button
+              key={v.id}
+              onClick={() => changeView(v.id)}
+              className={cn(
+                "flex items-center gap-2 rounded-[6px] px-4 py-2 text-[13.5px] font-semibold transition",
+                active ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Icon className="size-4" /> {v.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-2 mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="relative">
+            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search name or ID…"
+              className="h-10 w-56 pl-9"
+            />
+            {query && (
               <button
-                key={v.id}
-                onClick={() => changeView(v.id)}
-                className={cn(
-                  "flex items-center gap-2 rounded-[6px] px-4 py-2 text-[13.5px] font-semibold transition",
-                  active ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground",
-                )}
+                onClick={() => setQuery("")}
+                className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2.5 -translate-y-1/2"
+                aria-label="Clear search"
               >
-                <Icon className="size-4" /> {v.label}
+                <X className="size-4" />
               </button>
-            );
-          })}
+            )}
+          </div>
+          {showGlobalFilter && <FilterPopover ws={ws} fCat={fCat} setFCat={setFCat} fWho={fWho} setFWho={setFWho} />}
+          {showSortBy && <SortByDropdown sort={sort} onChange={changeSort} />}
+          <Button variant="outline" asChild>
+            <Link href={`/projects/${projectId}/taxonomy`}>
+              <Tags className="size-4" /> Edit tracks
+            </Link>
+          </Button>
         </div>
 
-        {view !== "kanban" && (
-          <Button onClick={() => openTask(null)}>
-            <Plus className="size-4" /> Add task
-          </Button>
+        {view === "list" && (
+          <div className="flex flex-wrap items-center gap-2.5">
+            {addingTrack ? (
+              <div className="flex items-center gap-1.5">
+                <Input
+                  autoFocus
+                  value={newTrackLabel}
+                  onChange={(e) => setNewTrackLabel(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitAddTrack();
+                    if (e.key === "Escape") { setAddingTrack(false); setNewTrackLabel(""); }
+                  }}
+                  onBlur={() => { if (!newTrackLabel.trim()) setAddingTrack(false); }}
+                  placeholder="Track name…"
+                  className="h-9 w-44 text-[14px]"
+                />
+                <Button variant="ghost" onClick={commitAddTrack} disabled={!newTrackLabel.trim()}>Add</Button>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                className="border-dashed"
+                onClick={() => setAddingTrack(true)}
+              >
+                <Layers className="size-4" /> Add track
+              </Button>
+            )}
+          </div>
         )}
       </div>
 
       {view === "list" && (
         <ListView
           ws={ws} projectId={projectId} filtered={filtered} hasActiveFilter={hasActiveFilter} sort={sort}
+          fCat={fCat} setFCat={setFCat}
           onEdit={openTask} onEditMilestone={openMilestone}
         />
       )}
       {view === "timeline" && (
-        <TimelineView ws={ws} projectId={projectId} filtered={filtered} sort={sort} onEdit={openTask} onEditMilestone={(m) => openMilestone(m)} />
+        <TimelineView ws={ws} projectId={projectId} filtered={ws.tasks} onEdit={openTask} onEditMilestone={(m) => openMilestone(m)} />
       )}
       {view === "calendar" && (
-        <CalendarView ws={ws} filtered={filtered} onEdit={openTask} onEditMilestone={(m) => openMilestone(m)} />
+        <CalendarView ws={ws} projectId={projectId} filtered={filtered} onEdit={openTask} onEditMilestone={(m) => openMilestone(m)} />
       )}
       {view === "kanban" && (
         <KanbanView
-          ws={ws} projectId={projectId}
+          ws={ws} projectId={projectId} filtered={filtered}
           onOpen={(t) => openTask(t)}
           onNew={(status) => openTask(null, undefined, status)}
         />

@@ -182,7 +182,10 @@ export function useUpdateEntity(projectId: string, entity: EntityName) {
     onError: (_e, _vars, ctx) => {
       if (ctx?.previous) qc.setQueryData(projectKey(projectId), ctx.previous);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: projectKey(projectId) }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: projectKey(projectId) });
+      qc.invalidateQueries({ queryKey: projectsKey });
+    },
   });
 }
 

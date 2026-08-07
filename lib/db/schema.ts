@@ -100,6 +100,7 @@ export const tasks = pgTable(
     parentId: text("parent_id"),
     comments: jsonb("comments").$type<TaskComment[]>().default([]).notNull(),
     custom: jsonb("custom").$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.projectId, t.id] }),
@@ -295,6 +296,9 @@ export const categories = pgTable(
     id: text("id").notNull(),
     label: text("label").default("").notNull(),
     color: text("color").default("purple").notNull(),
+    /** Optional key into the curated track-icon set (see TRACK_ICONS) — a
+     *  track with no icon shows none, it never falls back to a default. */
+    icon: text("icon"),
   },
   (t) => [primaryKey({ columns: [t.projectId, t.id] })],
 );
@@ -302,10 +306,14 @@ export const categories = pgTable(
 // ---------- types ----------
 /** A task dependency: an internal task/deliverable, a registered external
  *  input, or a free-text external note. `refId` points at the referenced
- *  entity's app-string id for the internal/registered kinds. */
+ *  entity's app-string id for the internal/registered kinds.
+ *
+ *  `"followup"` is provenance, not a dependency — `refId` points at the task
+ *  this one was spun off from. It's excluded from blocking/scheduling logic
+ *  (resolveDep/depsOf/sequenceTasks) and only used to trace lineage. */
 export type TaskDep = {
   id: string;
-  type: "task" | "deliverable" | "ext" | "external";
+  type: "task" | "deliverable" | "ext" | "external" | "followup";
   refId?: string;
   label?: string;
   scope?: string;
