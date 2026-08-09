@@ -8,7 +8,7 @@ export interface ActionsFilters {
 }
 
 export type ActionsView = "list" | "kanban" | "timeline" | "calendar";
-export type SortMode = "category" | "sequence" | "dueDate" | "priority" | "status" | "owner";
+export type SortMode = "category" | "upcoming" | "status" | "owner";
 
 export const VIEW_STORAGE_KEY = "atlas.actions.mode";
 export const SORT_STORAGE_KEY = "atlas.actions.sort";

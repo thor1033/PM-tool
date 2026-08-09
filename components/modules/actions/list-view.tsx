@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Plus, Trash2, Pencil, ChevronRight, ChevronDown, MessageSquare, GripVertical, Flag, Milestone as MilestoneIcon,
@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useCreateEntity, useUpdateEntity, useDeleteEntity } from "@/lib/api/hooks";
 import type { Task, WorkingSet, Milestone } from "@/lib/types";
-import { depsOf, statusVar, fmtD, sequenceTasks, taskIdMap, COLUMNS, TRACK_ICONS } from "@/lib/tasks";
+import { depsOf, statusVar, fmtD, daysBetween, taskIdMap, COLUMNS, TRACK_ICONS } from "@/lib/tasks";
 import { accent, accentVar } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +18,6 @@ import { Input } from "@/components/ui/input";
 import { COLLAPSE_STORAGE_KEY_PREFIX, OPEN_SUBS_STORAGE_KEY_PREFIX } from "@/components/modules/actions/shared";
 import type { SortMode } from "@/components/modules/actions/shared";
 
-const PRIO_RANK: Record<string, number> = { high: 0, med: 1, low: 2 };
 const STATUS_RANK: Record<string, number> = Object.fromEntries(COLUMNS.map((c, i) => [c.id, i]));
 
 function ownerOf(t: Task): string {
@@ -28,8 +27,6 @@ function ownerOf(t: Task): string {
 
 /** Comparators for the flat (non-Track) sort modes — undated/unset values always sort last. */
 const FLAT_SORTERS: Partial<Record<SortMode, (a: Task, b: Task) => number>> = {
-  dueDate: (a, b) => (a.end || "9999-99-99").localeCompare(b.end || "9999-99-99"),
-  priority: (a, b) => (PRIO_RANK[a.priority] ?? 99) - (PRIO_RANK[b.priority] ?? 99),
   status: (a, b) => (STATUS_RANK[a.status] ?? 99) - (STATUS_RANK[b.status] ?? 99),
   owner: (a, b) => {
     const ao = ownerOf(a), bo = ownerOf(b);
@@ -121,22 +118,24 @@ export function ListView({
     });
   }
 
-  // "Sequence" — a flat, ungrouped list ordered by date then dependency,
-  // undated tasks last. Dependency relationships still resolve and blocked
-  // rows are flagged even though grouping by track is gone in this mode.
-  const sequenced = useMemo(() => {
-    const topLevel = filtered.filter((t) => !t.parentId);
-    return sequenceTasks(topLevel);
-  }, [filtered]);
-
-  // Name / Due date / Priority / Status / Owner — flat sort modes, reusing
-  // the same "no track grouping" list as Sequence, just ordered differently.
+  // Status / Owner — flat sort modes, reusing the same "no track grouping"
+  // list as Sequence, just ordered differently.
   const flatSorted = useMemo(() => {
     const cmp = FLAT_SORTERS[sort];
     if (!cmp) return [];
     const topLevel = filtered.filter((t) => !t.parentId);
     return [...topLevel].sort(cmp);
   }, [filtered, sort]);
+
+  // "Upcoming deadlines" — a forward-looking list across every track, soonest
+  // first. Finished work, anything without an end date, and anything already
+  // past due are all dropped, so what's left is only what's still ahead.
+  const upcoming = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return filtered
+      .filter((t) => !t.parentId && t.end && t.status !== "done" && t.end >= today)
+      .sort((a, b) => a.end.localeCompare(b.end));
+  }, [filtered]);
 
   // Categories default to expanded — a group only collapses once the user
   // explicitly closes it (and that choice is what's persisted).
@@ -193,8 +192,20 @@ export function ListView({
     return out;
   }, [filtered, ws.categories, hasActiveFilter]);
 
+  // Grouped once per render instead of re-filtering the full task list for
+  // every parent row — that per-row filter turned quadratic as task counts grew.
+  const subtasksByParent = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    filtered.forEach((t) => {
+      if (!t.parentId) return;
+      const arr = map.get(t.parentId) ?? [];
+      arr.push(t);
+      map.set(t.parentId, arr);
+    });
+    return map;
+  }, [filtered]);
   function subtasksOf(parentId: string) {
-    return filtered.filter((t) => t.parentId === parentId);
+    return subtasksByParent.get(parentId) ?? [];
   }
 
   // drag & drop: reorder within a group / move across groups (re-bucket)
@@ -232,11 +243,11 @@ export function ListView({
 
   // Built from the full unfiltered task list (not `groups`) so numbering
   // never shifts under a filter. Must run unconditionally (before the
-  // "sequence" sort early-return) to satisfy the Rules of Hooks.
+  // flat-sort early-returns below) to satisfy the Rules of Hooks.
   const seqByTaskId = useMemo(() => taskIdMap(ws.tasks), [ws.tasks]);
 
-  if (sort === "sequence") {
-    return <SequenceList ws={ws} tasks={sequenced} onEdit={onEdit} />;
+  if (sort === "upcoming") {
+    return <SequenceList ws={ws} tasks={upcoming} onEdit={onEdit} showDueIn emptyLabel="Nothing due from today onward." />;
   }
   if (FLAT_SORTERS[sort]) {
     return <SequenceList ws={ws} tasks={flatSorted} onEdit={onEdit} />;
@@ -353,7 +364,7 @@ export function ListView({
             <CollapsibleContent>
               {isUndefined && (
                 <p className="px-3 pb-2 pt-2.5 text-[13px] text-[var(--t-red)]">
-                  These tasks have no track — every task should belong to one. Open each and set a track to clear this.
+                  These tasks have no track set.
                 </p>
               )}
               {/* Milestone strip */}
@@ -501,9 +512,8 @@ export function ListView({
                     const followupOfId = (t.deps ?? []).find((d) => d.type === "followup")?.refId;
                     const originSeq = followupOfId ? seqByTaskId.get(followupOfId) ?? null : null;
                     return (
-                      <>
+                      <Fragment key={t.id}>
                         <TaskRow
-                          key={t.id}
                           seq={seqByTaskId.get(t.id) ?? null}
                           originSeq={originSeq}
                           task={t} ws={ws} blocked={blocked}
@@ -557,7 +567,7 @@ export function ListView({
                             onJumpTo={(target) => onEdit(target)}
                           />
                         ))}
-                      </>
+                      </Fragment>
                     );
                   })}
                   {!g.key.startsWith("_") && (
@@ -587,14 +597,18 @@ export function ListView({
 // ── "Sequence" flat view ─────────────────────────────────────────────────────
 
 function SequenceList({
-  ws, tasks, onEdit,
+  ws, tasks, onEdit, showDueIn = false, emptyLabel = "No tasks match the current filters.",
 }: {
   ws: WorkingSet; tasks: Task[]; onEdit: (t: Task | null) => void;
+  /** Adds a "Due in" column — how long until (or since) each end date. */
+  showDueIn?: boolean;
+  emptyLabel?: string;
 }) {
   const catMap = new Map(ws.categories.map((c) => [c.id, c]));
+  const today = new Date().toISOString().slice(0, 10);
 
   if (tasks.length === 0) {
-    return <p className="text-muted-foreground py-12 text-center text-sm">No tasks match the current filters.</p>;
+    return <p className="text-muted-foreground py-12 text-center text-sm">{emptyLabel}</p>;
   }
 
   return (
@@ -608,6 +622,9 @@ function SequenceList({
             <th className="w-56 py-4 pr-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">Depends on</th>
             <th className="w-32 py-4 pr-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">Owner</th>
             <th className="w-40 py-4 pr-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">Start → End date</th>
+            {showDueIn && (
+              <th className="w-28 py-4 pr-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)] whitespace-nowrap">Due in</th>
+            )}
             <th className="w-32 py-4 pr-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">Status</th>
           </tr>
         </thead>
@@ -677,6 +694,23 @@ function SequenceList({
                     </span>
                   )}
                 </td>
+                {showDueIn && (() => {
+                  const days = t.end ? daysBetween(today, t.end) : null;
+                  if (days === null) return <td className="text-muted-foreground py-4 pr-4 text-[13px]">—</td>;
+                  return (
+                    <td className="py-4 pr-4 whitespace-nowrap">
+                      <span
+                        className={cn(
+                          "font-mono text-[13px]",
+                          days <= 7 ? "font-semibold text-[var(--t-amber)]" : "text-muted-foreground",
+                        )}
+                        title={`Due ${fmtD(t.end)}`}
+                      >
+                        {days === 0 ? "Today" : days === 1 ? "Tomorrow" : `${days}d`}
+                      </span>
+                    </td>
+                  );
+                })()}
                 <td className="py-4 pr-4">
                   <span className="text-[13.5px] font-medium">{COLUMNS.find((s) => s.id === t.status)?.label ?? t.status}</span>
                 </td>

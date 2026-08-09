@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { addMonths } from "date-fns";
-import { Target, GitBranch, ChevronDown, SlidersHorizontal, ArrowUpDown } from "lucide-react";
+import { GitBranch, ChevronDown, SlidersHorizontal, ArrowUpDown, Eye, EyeOff } from "lucide-react";
 import { useUpdateEntity } from "@/lib/api/hooks";
 import type { Task, WorkingSet, Milestone } from "@/lib/types";
 import { daysBetween, fmtD } from "@/lib/tasks";
@@ -47,6 +47,27 @@ export interface TimelineFilters {
 }
 export const EMPTY_TIMELINE_FILTERS: TimelineFilters = { cat: [], from: "", to: "" };
 
+/** Optional overlays on the gantt — each can be switched off to cut visual
+ *  noise without changing which tasks are shown. */
+export interface TimelineLayers {
+  milestones: boolean;
+  gates: boolean;
+  deps: boolean;
+  today: boolean;
+  subtasks: boolean;
+}
+export const ALL_TIMELINE_LAYERS: TimelineLayers = {
+  milestones: true, gates: true, deps: true, today: true, subtasks: true,
+};
+export const LAYER_OPTIONS: { id: keyof TimelineLayers; label: string; hint: string }[] = [
+  { id: "deps", label: "Dependency lines", hint: "Arrows between linked tasks" },
+  { id: "milestones", label: "Milestones", hint: "Diamond markers in each track" },
+  { id: "gates", label: "Gates", hint: "Full-height checkpoint lines" },
+  { id: "subtasks", label: "Subtask bars", hint: "Nested bars under their parent" },
+  { id: "today", label: "Today line", hint: "The vertical marker on today" },
+];
+export const TIMELINE_LAYERS_KEY = "atlas.actions.timelineLayers";
+
 function useClickOutside(onOutside: () => void) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -81,7 +102,7 @@ export function TimelineFilterPopover({
         <SlidersHorizontal className="size-3.5" /> Filter by...{count > 0 ? ` · ${count}` : ""}
       </Button>
       {open && (
-        <div className="bg-popover absolute left-0 z-20 mt-1.5 w-72 rounded-[var(--radius-md)] border p-4 shadow-lg">
+        <div className="bg-popover absolute left-0 z-[70] mt-1.5 w-72 rounded-[var(--radius-md)] border p-4 shadow-lg">
           <div className="mb-2 flex items-center justify-between">
             <p className="eyebrow">Track</p>
             {count > 0 && (
@@ -135,15 +156,78 @@ export function TimelineFilterPopover({
   );
 }
 
-export function TimelineSortPopover({
-  sort, onChange, showCP, onToggleCP,
+export function TimelineLayersPopover({
+  layers, setLayers,
 }: {
-  sort: TimelineSortMode; onChange: (v: TimelineSortMode) => void;
-  showCP: boolean; onToggleCP: () => void;
+  layers: TimelineLayers; setLayers: (v: TimelineLayers) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useClickOutside(() => setOpen(false));
-  const active = sort !== "track" || showCP;
+  const hidden = LAYER_OPTIONS.filter((o) => !layers[o.id]).length;
+  return (
+    <div className="flex items-center gap-2">
+      <div className="relative" ref={ref}>
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn("h-8 text-[13px]", hidden > 0 && "border-primary bg-primary/10 text-primary")}
+          onClick={() => setOpen((v) => !v)}
+        >
+          <Eye className="size-3.5" /> Show...{hidden > 0 ? ` · ${hidden} off` : ""}
+        </Button>
+        {open && (
+          <div className="bg-popover absolute left-0 z-[70] mt-1.5 w-64 rounded-[var(--radius-md)] border p-1.5 shadow-lg">
+            {LAYER_OPTIONS.map((o) => {
+              const on = layers[o.id];
+              return (
+                <button
+                  key={o.id}
+                  onClick={() => setLayers({ ...layers, [o.id]: !on })}
+                  className="hover:bg-muted flex w-full items-start gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-left transition"
+                >
+                  {on
+                    ? <Eye className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                    : <EyeOff className="text-muted-foreground/60 mt-0.5 size-3.5 shrink-0" />}
+                  <span className="min-w-0 flex-1">
+                    <span className={cn("block text-[13.5px]", on ? "font-semibold" : "text-muted-foreground")}>
+                      {o.label}
+                    </span>
+                    <span className="text-muted-foreground/70 block text-[11.5px]">{o.hint}</span>
+                  </span>
+                </button>
+              );
+            })}
+            {hidden > 0 && (
+              <>
+                <div className="my-1 border-t" />
+                <button
+                  onClick={() => setLayers(ALL_TIMELINE_LAYERS)}
+                  className="text-muted-foreground hover:text-foreground hover:bg-muted w-full rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[12.5px] font-medium transition"
+                >
+                  Show all
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      {hidden > 0 && (
+        <span className="rounded-[var(--radius-sm)] bg-[var(--paper-2)] px-2.5 py-1 text-[12.5px] font-medium text-muted-foreground">
+          {hidden} hidden
+        </span>
+      )}
+    </div>
+  );
+}
+
+export function TimelineSortPopover({
+  sort, onChange,
+}: {
+  sort: TimelineSortMode; onChange: (v: TimelineSortMode) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useClickOutside(() => setOpen(false));
+  const active = sort !== "track";
   return (
     <div className="flex items-center gap-2">
       <div className="relative" ref={ref}>
@@ -156,7 +240,7 @@ export function TimelineSortPopover({
           <ArrowUpDown className="size-3.5" /> Sort by...
         </Button>
         {open && (
-          <div className="bg-popover absolute left-0 z-20 mt-1.5 w-52 rounded-[var(--radius-md)] border p-1.5 shadow-lg">
+          <div className="bg-popover absolute left-0 z-[70] mt-1.5 w-52 rounded-[var(--radius-md)] border p-1.5 shadow-lg">
             {SORT_OPTIONS.map((o) => (
               <button
                 key={o.id}
@@ -169,17 +253,6 @@ export function TimelineSortPopover({
                 {o.label}
               </button>
             ))}
-            <div className="my-1 border-t" />
-            <button
-              onClick={() => { onToggleCP(); setOpen(false); }}
-              className={cn(
-                "flex w-full items-center justify-between rounded-[var(--radius-sm)] px-3 py-2 text-left text-[13.5px] transition",
-                showCP ? "bg-muted font-semibold" : "hover:bg-muted",
-              )}
-            >
-              <span className="inline-flex items-center gap-2"><Target className="size-3.5" /> Critical path</span>
-              {showCP && <span className="text-primary text-[12px]">On</span>}
-            </button>
           </div>
         )}
       </div>
@@ -188,23 +261,18 @@ export function TimelineSortPopover({
           {SORT_OPTIONS.find((o) => o.id === sort)?.label}
         </span>
       )}
-      {showCP && (
-        <span className="rounded-[var(--radius-sm)] bg-[var(--paper-2)] px-2.5 py-1 text-[12.5px] font-medium text-muted-foreground">
-          Critical path
-        </span>
-      )}
     </div>
   );
 }
 
 export function TimelineView({
-  ws, projectId, filtered, filters, sort, showCP, onEdit, onEditMilestone,
+  ws, projectId, filtered, filters, sort, layers, onEdit, onEditMilestone,
 }: {
   ws: WorkingSet; projectId: string; filtered: Task[]; onEdit: (t: Task) => void;
   onEditMilestone: (m: Milestone) => void;
   filters: TimelineFilters;
   sort: TimelineSortMode;
-  showCP: boolean;
+  layers: TimelineLayers;
 }) {
   const updateTask = useUpdateEntity(projectId, "tasks");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -218,11 +286,25 @@ export function TimelineView({
   function changeRange(id: RangeId) {
     setRange(id);
     setRangeMenuOpen(false);
+    setRangeTouchedUnderSort(sort);
     try { window.localStorage.setItem(`${RANGE_KEY}.${projectId}`, id); } catch { /* best-effort */ }
   }
+  // "Upcoming deadlines" is a near-term view, so it opens at ±1 month rather
+  // than whatever wide range was last used. Picking a range while in that sort
+  // still overrides it, and the stored preference is left untouched so other
+  // sorts come back to what the user had chosen.
+  // Remembers which sort the user last picked a range under, so leaving and
+  // re-entering "Upcoming deadlines" returns to the ±1 month default rather
+  // than sticking with a one-off override. Derived, not an effect.
+  const [rangeTouchedUnderSort, setRangeTouchedUnderSort] = useState<TimelineSortMode | null>(null);
+  const effectiveRange: RangeId =
+    sort === "deadline" && rangeTouchedUnderSort !== "deadline" ? "1m" : range;
 
   const filterActive = filters.cat.length > 0 || !!filters.from || !!filters.to;
   const catMap = useMemo(() => new Map(ws.categories.map((c) => [c.id, c])), [ws.categories]);
+  // Dependency lines resolve a predecessor for every dep on every task —
+  // a linear scan there turned quadratic as task counts grew.
+  const taskById = useMemo(() => new Map(ws.tasks.map((t) => [t.id, t])), [ws.tasks]);
 
   const dateFiltered = useMemo(() => {
     return filtered.filter((t) => {
@@ -241,11 +323,14 @@ export function TimelineView({
   const datedMs = ws.milestones.filter((m) => m.date);
 
   // Dated subtasks get their own thin nested bar under the parent's row —
-  // they don't participate in track grouping, critical path, or dependency
+  // they don't participate in track grouping or dependency
   // lines (those are top-level-task concepts), just a visual child of
   // whichever parent row they belong to.
   const datedSubsByParent = useMemo(() => {
     const map = new Map<string, Task[]>();
+    // Toggled off at the source so the rows collapse in the layout pass too,
+    // not just visually — otherwise every parent would keep a blank gap.
+    if (!layers.subtasks) return map;
     dateFiltered.forEach((t) => {
       if (!t.parentId || !t.start || !t.end) return;
       const arr = map.get(t.parentId) ?? [];
@@ -253,38 +338,7 @@ export function TimelineView({
       map.set(t.parentId, arr);
     });
     return map;
-  }, [dateFiltered]);
-
-  // critical path: longest-duration chain through task→task deps
-  const cp = useMemo(() => {
-    const dur = (t: Task) => Math.max(1, daysBetween(t.start, t.end));
-    const map = new Map(dated.map((t) => [t.id, t]));
-    const memo = new Map<string, { len: number; next: string | null }>();
-    const visiting = new Set<string>();
-    function longest(id: string): { len: number; next: string | null } {
-      if (memo.has(id)) return memo.get(id)!;
-      if (visiting.has(id)) return { len: 0, next: null };
-      visiting.add(id);
-      const t = map.get(id)!;
-      let best: { len: number; next: string | null } = { len: dur(t), next: null };
-      dated.forEach((s) => {
-        if ((s.deps ?? []).some((d) => d.type === "task" && d.refId === id)) {
-          const r = longest(s.id);
-          if (dur(t) + r.len > best.len) best = { len: dur(t) + r.len, next: s.id };
-        }
-      });
-      visiting.delete(id);
-      memo.set(id, best);
-      return best;
-    }
-    let start: string | null = null;
-    let len = -1;
-    dated.forEach((t) => { const r = longest(t.id); if (r.len > len) { len = r.len; start = t.id; } });
-    const path = new Set<string>();
-    let cur: string | null = start;
-    while (cur) { path.add(cur); cur = memo.get(cur)!.next; }
-    return path;
-  }, [dated]);
+  }, [dateFiltered, layers.subtasks]);
 
   if (!dated.length && !datedMs.length) {
     return (
@@ -306,7 +360,7 @@ export function TimelineView({
   // it stays centered); every other option is a hard ±N-month window — tasks
   // outside it are excluded from the grid, not just scrolled-past, and are
   // surfaced instead in the "outside range" strip below.
-  const rangeMonths = RANGE_OPTIONS.find((r) => r.id === range)?.months ?? null;
+  const rangeMonths = RANGE_OPTIONS.find((r) => r.id === effectiveRange)?.months ?? null;
   let halfSpanMs: number;
   if (rangeMonths == null) {
     let farthestMs = 4 * 86_400_000;
@@ -334,10 +388,13 @@ export function TimelineView({
   const inRangeDated = [...overlapping, ...(before ? [before] : []), ...(after ? [after] : [])];
   const edgeClampedIds = new Set([before?.id, after?.id].filter(Boolean) as string[]);
   const inRangeMs = datedMs.filter((m) => m.date >= minStr && m.date <= maxStr);
-  const inRangeGates = inRangeMs
+  // Layer toggles are applied at the source so every downstream render — the
+  // full-height lines, the in-band chips and the ungrouped strip — all drop
+  // out together rather than each needing its own guard.
+  const inRangeGates = (layers.gates ? inRangeMs : [])
     .filter((m) => m.type === "gate")
     .map((m) => ({ ...m, left: daysBetween(minStr, m.date) * DAYW }));
-  const inRangeMilestones = inRangeMs
+  const inRangeMilestones = (layers.milestones ? inRangeMs : [])
     .filter((m) => m.type !== "gate")
     .map((m) => ({
       ...m,
@@ -394,17 +451,31 @@ export function TimelineView({
       arr.push(t);
       bycat.set(key, arr);
     });
+    // Track sort lays each track out in dependency flow, so linked tasks sit
+    // on adjacent rows and their arrows stay short. Clustering is scoped to
+    // the track's own tasks, which keeps track grouping intact.
+    const orderTasks = (tasks: Task[]) =>
+      sort === "sequence"
+        ? sortBySequence(tasks)
+        : orderByDependencyFlow(tasks, new Set(tasks.map((t) => t.id)));
     ws.categories.forEach((c) => {
       const tasks = bycat.get(c.id);
-      if (tasks?.length) groups.push({ id: c.id, label: c.label, color: c.color, tasks: sort === "sequence" ? sortBySequence(tasks) : tasks });
+      if (tasks?.length) groups.push({ id: c.id, label: c.label, color: c.color, tasks: orderTasks(tasks) });
     });
     const noTrack = bycat.get("_none");
-    if (noTrack?.length) groups.push({ id: "_none", label: "No track", color: null, tasks: sort === "sequence" ? sortBySequence(noTrack) : noTrack });
+    if (noTrack?.length) groups.push({ id: "_none", label: "No track", color: null, tasks: orderTasks(noTrack) });
     // "Sequence" also reorders the track rows themselves by their earliest
     // task date, so the whole gantt reads top-to-bottom in delivery order
     // instead of category-creation order.
     if (sort === "sequence") {
       groups.sort((a, b) => (a.tasks[0]?.start || "9999").localeCompare(b.tasks[0]?.start || "9999"));
+    } else {
+      orderGroupsByDependencyFlow(groups);
+      // Most dependency arrows on a real board cross tracks, and neither the
+      // per-track chaining nor the section ordering can shorten those on its
+      // own. With both settled, pull each task toward the average row of its
+      // cross-track partners — the usual barycenter pass for this problem.
+      shortenCrossTrackArrows(groups);
     }
   }
 
@@ -470,9 +541,9 @@ export function TimelineView({
 
   const depLines: {
     key: string; from: { x: number; y: number }; to: { x: number; y: number };
-    violated: boolean; color: string; task: Task; title: string; critical: boolean;
+    violated: boolean; color: string; task: Task; title: string;
   }[] = [];
-  ws.tasks.forEach((t) => {
+  (layers.deps ? ws.tasks : []).forEach((t) => {
     if (!t.start || !t.end || !taskLayout.has(t.id)) return;
     // An edge-clamped bar is a pinned marker, not drawn at its true position
     // — a dependency line to/from it would connect to a fake location and
@@ -480,7 +551,7 @@ export function TimelineView({
     if (edgeClampedIds.has(t.id)) return;
     (t.deps ?? []).forEach((d) => {
       if (d.type !== "task") return;
-      const pred = ws.tasks.find((x) => x.id === d.refId);
+      const pred = taskById.get(d.refId ?? "");
       if (!pred?.start || !pred.end || !taskLayout.has(pred.id)) return;
       if (edgeClampedIds.has(pred.id)) return;
       const pL = taskLayout.get(pred.id)!;
@@ -493,7 +564,6 @@ export function TimelineView({
         from: { x: pL.barLeft + pL.barWidth, y: pL.rowY },
         to: { x: dL.barLeft, y: dL.rowY },
         violated, color, task: t,
-        critical: cp.has(pred.id) && cp.has(t.id),
         title: violated
           ? `⚠ Dependency block — ${t.title} starts ${fmtD(t.start)} but "${pred.title}" isn't finished until ${fmtD(pred.end)} · double-click to inspect`
           : `${pred.title} → ${t.title} · double-click to inspect`,
@@ -531,7 +601,9 @@ export function TimelineView({
     <div>
       <UnscheduledTray tasks={undated} onEdit={onEdit} needsStart />
 
-      <div className="relative z-40 mb-2 flex flex-wrap items-center gap-2.5">
+      {/* Above the grid below it — the grid's sticky header and frozen label
+          column sit at z-40/z-50 and would otherwise cover this dropdown. */}
+      <div className="relative z-[60] mb-2 flex flex-wrap items-center gap-2.5">
         <div className="flex-1" />
         <div className="relative">
           <Button
@@ -544,20 +616,20 @@ export function TimelineView({
             onClick={() => setRangeMenuOpen((v) => !v)}
             title="How far back and forward the timeline opens by default — always centered on today"
           >
-            {RANGE_OPTIONS.find((r) => r.id === range)?.label}
+            {RANGE_OPTIONS.find((r) => r.id === effectiveRange)?.label}
             <ChevronDown className="size-3.5" />
           </Button>
           {rangeMenuOpen && (
             <>
-              <div className="fixed inset-0 z-10" onClick={() => setRangeMenuOpen(false)} />
-              <div className="bg-popover absolute right-0 z-20 mt-1.5 w-40 rounded-[var(--radius-md)] border p-1 shadow-lg">
+              <div className="fixed inset-0 z-[60]" onClick={() => setRangeMenuOpen(false)} />
+              <div className="bg-popover absolute right-0 z-[70] mt-1.5 w-40 rounded-[var(--radius-md)] border p-1 shadow-lg">
                 {RANGE_OPTIONS.map((r) => (
                   <button
                     key={r.id}
                     onClick={() => changeRange(r.id)}
                     className={cn(
                       "flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[13px]",
-                      r.id === range ? "bg-foreground text-background" : "hover:bg-muted",
+                      r.id === effectiveRange ? "bg-foreground text-background" : "hover:bg-muted",
                     )}
                   >
                     <span
@@ -579,7 +651,7 @@ export function TimelineView({
             Filters applied
           </span>
         )}
-        {(sort !== "track" || showCP) && (
+        {sort !== "track" && (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 font-medium text-primary">
             Sorting applied
           </span>
@@ -599,7 +671,9 @@ export function TimelineView({
               <div className="pointer-events-none absolute bottom-0 top-0 z-0 bg-[var(--paper-2)]/60" style={{ left: LABEL_W, width: todayLeft }} />
               <div className="pointer-events-none absolute bottom-0 top-0 z-0 bg-[var(--paper-2)]/60" style={{ left: LABEL_W + todayLeft, width: Math.max(0, totalW - todayLeft) }} />
               {/* Today line — runs the full height of the grid, header through the last task row */}
-              <div className="border-primary pointer-events-none absolute bottom-0 top-0 z-40 border-l-[2.5px]" style={{ left: LABEL_W + todayLeft }} />
+              {layers.today && (
+                <div className="border-primary pointer-events-none absolute bottom-0 top-0 z-40 border-l-[2.5px]" style={{ left: LABEL_W + todayLeft }} />
+              )}
             </>
           )}
           {inRangeGates.map((g) => (
@@ -607,7 +681,7 @@ export function TimelineView({
             <div key={g.id} onClick={() => onEditMilestone(g)} className="absolute bottom-0 top-0 z-40 cursor-pointer border-l-[2.5px] border-[var(--t-red)]" style={{ left: LABEL_W + g.left }} title={`${g.title} (gate) — ${fmtD(g.date)}`} />
           ))}
           {depLines.length > 0 && (
-            <svg className="pointer-events-none absolute top-0 z-[5] overflow-visible" style={{ left: LABEL_W, width: totalW, height: totalH }}>
+            <svg className="pointer-events-none absolute top-0 z-20 overflow-visible" style={{ left: LABEL_W, width: totalW, height: totalH }}>
               <defs>
                 <marker id="tl-arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
                   <path d="M0,0 L10,5 L0,10 z" fill="currentColor" />
@@ -619,12 +693,11 @@ export function TimelineView({
               {depLines.map((line) => {
                 const dx = Math.max(34, Math.abs(line.to.x - line.from.x) * 0.5);
                 const path = `M${line.from.x},${line.from.y} C${line.from.x + dx},${line.from.y} ${line.to.x - dx},${line.to.y} ${line.to.x - 4},${line.to.y}`;
-                const critical = showCP && line.critical;
                 return (
                   <path
                     key={line.key} d={path} fill="none"
-                    strokeWidth={line.violated || critical ? 2.6 : 2}
-                    stroke={line.violated ? "var(--t-red)" : critical ? "var(--t-red)" : line.color}
+                    strokeWidth={line.violated ? 2.6 : 2}
+                    stroke={line.violated ? "var(--t-red)" : line.color}
                     opacity={line.violated ? 0.95 : 0.85}
                     style={{ color: line.violated ? "var(--t-red)" : line.color }}
                     markerEnd={line.violated ? "url(#tl-arr-bad)" : "url(#tl-arr)"}
@@ -652,7 +725,7 @@ export function TimelineView({
             </div>
           </div>
 
-          {todayLeft !== null && (
+          {todayLeft !== null && layers.today && (
             // Block-level sticky wrapper pins vertically at HDR_H below the
             // scroll container's top (same offset the header sticks to), so
             // it tracks vertical scroll exactly like the header does. The
@@ -748,7 +821,6 @@ export function TimelineView({
                       trackLabel={deadlineMode ? (t.category ? catMap.get(t.category)?.label ?? "No track" : "No track") : null}
                       minStr={minStr} totalW={totalW}
                       gates={inRangeMs.filter((m) => m.type === "gate")}
-                      critical={showCP && cp.has(t.id)}
                       edgeClamped={edgeClampedIds.has(t.id)}
                       onEdit={() => onEdit(t)}
                       onCommit={(start, end) => updateTask.mutate({ id: t.id, data: { start, end } }, { onError: (e) => toast.error((e as Error).message) })}
@@ -788,15 +860,247 @@ function sortBySequence(tasks: Task[]): Task[] {
   return [...tasks].sort((a, b) => (a.start || "9999").localeCompare(b.start || "9999"));
 }
 
+/** Nudges tasks within each track toward the rows of their cross-track
+ *  dependency partners (a barycenter sweep), shortening the long arrows that
+ *  per-track chaining can't touch. Runs a few passes because moving one track
+ *  changes the targets for the next.
+ *
+ *  Within-track dependency order is preserved: after each sweep any successor
+ *  that ended up above its predecessor is pulled back down, so the ordering
+ *  produced by orderByDependencyFlow still holds. */
+function shortenCrossTrackArrows(
+  groups: { id: string; label: string; color: string | null; tasks: Task[] }[],
+): void {
+  if (groups.length < 2) return;
+
+  const rowOf = new Map<string, number>();
+  const recomputeRows = () => {
+    rowOf.clear();
+    let row = 0;
+    groups.forEach((g) => { row += 1; g.tasks.forEach((t) => { rowOf.set(t.id, row); row += 1; }); });
+  };
+
+  // Undirected cross-track partners per task.
+  const trackOf = new Map<string, string>();
+  groups.forEach((g) => g.tasks.forEach((t) => trackOf.set(t.id, g.id)));
+  const partners = new Map<string, string[]>();
+  const link = (a: string, b: string) => {
+    if (trackOf.get(a) === trackOf.get(b)) return;
+    partners.set(a, [...(partners.get(a) ?? []), b]);
+    partners.set(b, [...(partners.get(b) ?? []), a]);
+  };
+  groups.forEach((g) => g.tasks.forEach((t) => {
+    (t.deps ?? []).forEach((d) => {
+      if (d.type !== "task" || !d.refId || !trackOf.has(d.refId)) return;
+      link(t.id, d.refId);
+    });
+  }));
+  if (partners.size === 0) return;
+
+  // Within-track predecessor lists, used to repair order after each sweep.
+  const predsInTrack = new Map<string, string[]>();
+  groups.forEach((g) => {
+    const ids = new Set(g.tasks.map((t) => t.id));
+    g.tasks.forEach((t) => {
+      const ps = (t.deps ?? [])
+        .filter((d) => d.type === "task" && d.refId && ids.has(d.refId))
+        .map((d) => d.refId!);
+      if (ps.length) predsInTrack.set(t.id, ps);
+    });
+  });
+
+  for (let pass = 0; pass < 4; pass++) {
+    recomputeRows();
+    let moved = false;
+    groups.forEach((g) => {
+      if (g.tasks.length < 2) return;
+      const before = g.tasks.map((t) => t.id).join(",");
+      const key = new Map<string, number>();
+      g.tasks.forEach((t, i) => {
+        const ps = partners.get(t.id) ?? [];
+        const rows = ps.map((p) => rowOf.get(p)).filter((r): r is number => r !== undefined);
+        // No cross-track partner — hold current position so unlinked tasks
+        // don't drift around the linked ones.
+        key.set(t.id, rows.length ? rows.reduce((s, r) => s + r, 0) / rows.length : rowOf.get(t.id) ?? i);
+      });
+      g.tasks.sort((a, b) => (key.get(a.id) ?? 0) - (key.get(b.id) ?? 0));
+
+      // Repair: bubble any successor sitting above one of its in-track
+      // predecessors back below it. Mutually-dependent tasks (a cycle) can
+      // never satisfy this, so the swap budget caps the work instead of
+      // letting the pair trade places forever.
+      let repairs = g.tasks.length * g.tasks.length;
+      for (let i = 0; i < g.tasks.length && repairs > 0; i++) {
+        for (let j = 0; j < i; j++) {
+          const ps = predsInTrack.get(g.tasks[j].id) ?? [];
+          if (ps.includes(g.tasks[i].id)) {
+            const [succ] = g.tasks.splice(j, 1);
+            g.tasks.splice(i, 0, succ);
+            repairs--;
+            i = -1;
+            break;
+          }
+        }
+      }
+      if (g.tasks.map((t) => t.id).join(",") !== before) moved = true;
+    });
+    if (!moved) break;
+  }
+}
+
+/** Reorders the track sections themselves (in place) so tracks linked by
+ *  cross-track dependencies sit next to each other, shortening the longest
+ *  arrows on the chart. Track grouping is untouched — only section order
+ *  changes. Ties and unlinked tracks fall back to earliest task start. */
+function orderGroupsByDependencyFlow(
+  groups: { id: string; label: string; color: string | null; tasks: Task[] }[],
+): void {
+  if (groups.length < 2) return;
+  const groupOfTask = new Map<string, string>();
+  groups.forEach((g) => g.tasks.forEach((t) => groupOfTask.set(t.id, g.id)));
+
+  // Undirected adjacency between track sections, from cross-track deps.
+  const adj = new Map<string, Set<string>>();
+  groups.forEach((g) => adj.set(g.id, new Set()));
+  groups.forEach((g) => {
+    g.tasks.forEach((t) => {
+      (t.deps ?? []).forEach((d) => {
+        if (d.type !== "task" || !d.refId) return;
+        const other = groupOfTask.get(d.refId);
+        if (!other || other === g.id) return;
+        adj.get(g.id)?.add(other);
+        adj.get(other)?.add(g.id);
+      });
+    });
+  });
+
+  const startOfGroup = (g: { tasks: Task[] }) =>
+    g.tasks.reduce((m, t) => ((t.start || "9999") < m ? t.start || "9999" : m), "9999");
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  const byStart = [...groups].sort((a, b) => startOfGroup(a).localeCompare(startOfGroup(b)));
+
+  // Walk connected track-clusters, seeding each from its earliest-starting
+  // track and expanding to linked neighbours (earliest first).
+  const seen = new Set<string>();
+  const out: typeof groups = [];
+  byStart.forEach((seed) => {
+    if (seen.has(seed.id)) return;
+    const queue = [seed.id];
+    while (queue.length) {
+      const id = queue.shift()!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push(byId.get(id)!);
+      [...(adj.get(id) ?? [])]
+        .filter((n) => !seen.has(n))
+        .sort((a, b) => startOfGroup(byId.get(a)!).localeCompare(startOfGroup(byId.get(b)!)))
+        .forEach((n) => queue.push(n));
+    }
+  });
+
+  groups.splice(0, groups.length, ...out);
+}
+
+/** Groups tasks that are linked by task→task dependencies into contiguous
+ *  runs, so a predecessor and its successors end up on adjacent rows and
+ *  their arrows stay short local hops instead of sweeping across the chart.
+ *
+ *  Linked tasks form "clusters" (connected components over the dependency
+ *  graph, treated as undirected so a shared predecessor keeps its successors
+ *  together). Within a cluster, rows follow dependency order — a predecessor
+ *  always precedes its successors — with start date breaking ties. Clusters
+ *  themselves, and unlinked tasks, are then ordered by earliest start so the
+ *  chart still reads left-to-right top-to-bottom.
+ *
+ *  `scopeIds` limits which dependency edges count: passing a track's own task
+ *  ids keeps clustering inside that track, so track grouping is preserved. */
+function orderByDependencyFlow(tasks: Task[], scopeIds?: Set<string>): Task[] {
+  if (tasks.length < 2) return [...tasks];
+  const ids = new Set(tasks.map((t) => t.id));
+  const inScope = (id: string) => ids.has(id) && (!scopeIds || scopeIds.has(id));
+
+  // Directed edges (pred → succ) for ordering, plus undirected adjacency for
+  // working out which tasks belong in the same cluster.
+  const preds = new Map<string, string[]>();
+  const undirected = new Map<string, string[]>();
+  const addUndirected = (a: string, b: string) => {
+    undirected.set(a, [...(undirected.get(a) ?? []), b]);
+    undirected.set(b, [...(undirected.get(b) ?? []), a]);
+  };
+  tasks.forEach((t) => {
+    (t.deps ?? []).forEach((d) => {
+      if (d.type !== "task" || !d.refId || !inScope(d.refId)) return;
+      preds.set(t.id, [...(preds.get(t.id) ?? []), d.refId]);
+      addUndirected(t.id, d.refId);
+    });
+  });
+
+  // Connected components over the undirected graph.
+  const clusterOf = new Map<string, number>();
+  let nextCluster = 0;
+  tasks.forEach((t) => {
+    if (clusterOf.has(t.id)) return;
+    const cluster = nextCluster++;
+    const stack = [t.id];
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (clusterOf.has(id)) continue;
+      clusterOf.set(id, cluster);
+      (undirected.get(id) ?? []).forEach((n) => { if (!clusterOf.has(n)) stack.push(n); });
+    }
+  });
+
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const startOf = (id: string) => byId.get(id)?.start || "9999";
+  const buckets = new Map<number, string[]>();
+  tasks.forEach((t) => {
+    const c = clusterOf.get(t.id)!;
+    buckets.set(c, [...(buckets.get(c) ?? []), t.id]);
+  });
+
+  // Within a cluster: topological order (predecessors first), start date as
+  // the tiebreak. Cycles can't stall it — anything still unemitted when no
+  // node is ready gets flushed in date order.
+  function orderCluster(memberIds: string[]): string[] {
+    const members = new Set(memberIds);
+    const remaining = new Set(memberIds);
+    const out: string[] = [];
+    while (remaining.size > 0) {
+      const ready = [...remaining].filter((id) =>
+        (preds.get(id) ?? []).every((p) => !members.has(p) || !remaining.has(p)),
+      );
+      if (ready.length === 0) {
+        [...remaining].sort((a, b) => startOf(a).localeCompare(startOf(b))).forEach((id) => out.push(id));
+        break;
+      }
+      ready.sort((a, b) => startOf(a).localeCompare(startOf(b)));
+      const pick = ready[0];
+      out.push(pick);
+      remaining.delete(pick);
+    }
+    return out;
+  }
+
+  const ordered = [...buckets.entries()]
+    .map(([, memberIds]) => orderCluster(memberIds))
+    .sort((a, b) => {
+      const aStart = a.reduce((m, id) => (startOf(id) < m ? startOf(id) : m), "9999");
+      const bStart = b.reduce((m, id) => (startOf(id) < m ? startOf(id) : m), "9999");
+      return aStart.localeCompare(bStart);
+    });
+
+  return ordered.flat().map((id) => byId.get(id)!);
+}
+
 // ── gantt row with drag-move / drag-resize ──────────────────────────────────
 
 function GanttRow({
-  task, layout, barColorVar, trackLabel, minStr, totalW, gates, critical, edgeClamped, onEdit, onCommit,
+  task, layout, barColorVar, trackLabel, minStr, totalW, gates, edgeClamped, onEdit, onCommit,
 }: {
   task: Task; layout: { rowY: number; barLeft: number; barWidth: number }; barColorVar: string;
   trackLabel: string | null;
   minStr: string; totalW: number;
-  gates: Milestone[]; critical: boolean;
+  gates: Milestone[];
   edgeClamped: boolean;
   onEdit: () => void;
   onCommit: (start: string, end: string) => void;
@@ -871,7 +1175,6 @@ function GanttRow({
             edgeClamped ? "cursor-pointer border-2 border-dashed border-white/60" : "cursor-grab",
             task.status === "done" && "opacity-55",
             isPast && task.status !== "done" && "opacity-40 grayscale-[0.4]",
-            critical && "ring-2 ring-[var(--t-red)]",
           )}
           style={{ left: visual.left, width: visual.width, background: `color-mix(in oklch, ${barColorVar} 88%, white)` }}
           onPointerDown={(e) => { if (!edgeClamped) onPointerDown(e, "move"); }}

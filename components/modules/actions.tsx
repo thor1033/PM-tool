@@ -14,8 +14,8 @@ import { MilestoneModal } from "@/components/project/milestone-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ListView } from "@/components/modules/actions/list-view";
-import { TimelineView, TimelineFilterPopover, TimelineSortPopover, EMPTY_TIMELINE_FILTERS } from "@/components/modules/actions/timeline-view";
-import type { TimelineFilters, TimelineSortMode } from "@/components/modules/actions/timeline-view";
+import { TimelineView, TimelineFilterPopover, TimelineSortPopover, TimelineLayersPopover, EMPTY_TIMELINE_FILTERS, ALL_TIMELINE_LAYERS, TIMELINE_LAYERS_KEY } from "@/components/modules/actions/timeline-view";
+import type { TimelineFilters, TimelineSortMode, TimelineLayers } from "@/components/modules/actions/timeline-view";
 import { CalendarView } from "@/components/modules/actions/calendar-view";
 import { KanbanView } from "@/components/modules/actions/kanban-view";
 import type { ActionsView, SortMode } from "@/components/modules/actions/shared";
@@ -63,7 +63,7 @@ function FilterPopover({
         <SlidersHorizontal className="size-4" /> Filter{count > 0 ? ` · ${count}` : ""}
       </button>
       {open && (
-        <div className="bg-popover absolute right-0 z-20 mt-1.5 w-80 rounded-[var(--radius-md)] border p-4 shadow-lg">
+        <div className="bg-popover absolute right-0 z-[70] mt-1.5 w-80 rounded-[var(--radius-md)] border p-4 shadow-lg">
           <div className="mb-2 flex items-center justify-between">
             <p className="eyebrow">Assigned to</p>
             {count > 0 && (
@@ -130,9 +130,7 @@ function SortByDropdown({ sort, onChange }: { sort: SortMode; onChange: (v: Sort
   }, []);
   const OPTIONS: { id: SortMode; label: string }[] = [
     { id: "category", label: "Track" },
-    { id: "sequence", label: "Sequence" },
-    { id: "dueDate", label: "Due date" },
-    { id: "priority", label: "Priority" },
+    { id: "upcoming", label: "Upcoming deadlines" },
     { id: "status", label: "Status" },
     { id: "owner", label: "Owner" },
   ];
@@ -146,7 +144,7 @@ function SortByDropdown({ sort, onChange }: { sort: SortMode; onChange: (v: Sort
         <span className="text-muted-foreground">Sort by</span> {OPTIONS.find((o) => o.id === sort)?.label}
       </button>
       {open && (
-        <div className="bg-popover absolute right-0 z-20 mt-1.5 w-44 rounded-[var(--radius-md)] border p-1.5 shadow-lg">
+        <div className="bg-popover absolute right-0 z-[70] mt-1.5 w-44 rounded-[var(--radius-md)] border p-1.5 shadow-lg">
           {OPTIONS.map((o) => (
             <button
               key={o.id}
@@ -179,7 +177,7 @@ function AddNewDropdown({ onNewTask, onNewTrack }: { onNewTask: () => void; onNe
         <Plus className="size-4" /> Add new
       </Button>
       {open && (
-        <div className="bg-popover absolute right-0 z-20 mt-1.5 w-48 rounded-[var(--radius-md)] border p-1.5 shadow-lg">
+        <div className="bg-popover absolute right-0 z-[70] mt-1.5 w-48 rounded-[var(--radius-md)] border p-1.5 shadow-lg">
           <button
             onClick={() => { setOpen(false); onNewTask(); }}
             className="hover:bg-muted flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-left text-[14px] transition"
@@ -210,7 +208,21 @@ export function ActionsModule({ projectId }: { projectId: string }) {
   const [query, setQuery] = useState("");
   const [timelineFilters, setTimelineFilters] = useState<TimelineFilters>(EMPTY_TIMELINE_FILTERS);
   const [timelineSort, setTimelineSort] = useState<TimelineSortMode>("track");
-  const [timelineShowCP, setTimelineShowCP] = useState(false);
+  const [timelineLayers, setTimelineLayers] = useState<TimelineLayers>(() => {
+    if (typeof window === "undefined") return ALL_TIMELINE_LAYERS;
+    try {
+      const raw = window.localStorage.getItem(TIMELINE_LAYERS_KEY);
+      // Merged over the defaults so a stored value written before a new layer
+      // existed still turns that layer on rather than leaving it undefined.
+      return raw ? { ...ALL_TIMELINE_LAYERS, ...JSON.parse(raw) } : ALL_TIMELINE_LAYERS;
+    } catch {
+      return ALL_TIMELINE_LAYERS;
+    }
+  });
+  function changeTimelineLayers(v: TimelineLayers) {
+    setTimelineLayers(v);
+    try { window.localStorage.setItem(TIMELINE_LAYERS_KEY, JSON.stringify(v)); } catch { /* best-effort */ }
+  }
   const [taskDialog, setTaskDialog] = useState<{ open: boolean; task: Task | null; defaultCategoryId?: string | null; defaultStatus?: string }>({ open: false, task: null });
   const [msDialog, setMsDialog] = useState<{ open: boolean; milestone: Milestone | null; defaultCategoryId?: string | null; defaultType?: "milestone" | "gate" }>({ open: false, milestone: null });
   const [addingTrack, setAddingTrack] = useState(false);
@@ -222,7 +234,7 @@ export function ActionsModule({ projectId }: { projectId: string }) {
       const savedView = localStorage.getItem(VIEW_STORAGE_KEY) as View | null;
       if (savedView && VIEWS.some((v) => v.id === savedView)) setView(savedView);
       const savedSort = localStorage.getItem(SORT_STORAGE_KEY) as SortMode | null;
-      const validSorts: SortMode[] = ["category", "sequence", "dueDate", "priority", "status", "owner"];
+      const validSorts: SortMode[] = ["category", "upcoming", "status", "owner"];
       if (savedSort && validSorts.includes(savedSort)) setSort(savedSort);
     } catch {
       // ignore
@@ -305,7 +317,10 @@ export function ActionsModule({ projectId }: { projectId: string }) {
         })}
       </div>
 
-      <div className="mt-2 mb-6 flex flex-wrap items-center justify-between gap-3">
+      {/* Above the views' own content — Timeline's grid uses z-40/z-50 for its
+          sticky header and frozen label column, which would otherwise cover
+          the dropdowns that open from this toolbar. */}
+      <div className="relative z-[60] mt-2 mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2.5">
           {showSearch && (
             <div className="relative">
@@ -334,8 +349,8 @@ export function ActionsModule({ projectId }: { projectId: string }) {
               <TimelineFilterPopover ws={ws} filters={timelineFilters} setFilters={setTimelineFilters} />
               <TimelineSortPopover
                 sort={timelineSort} onChange={setTimelineSort}
-                showCP={timelineShowCP} onToggleCP={() => setTimelineShowCP((v) => !v)}
               />
+              <TimelineLayersPopover layers={timelineLayers} setLayers={changeTimelineLayers} />
             </>
           )}
         </div>
@@ -375,7 +390,7 @@ export function ActionsModule({ projectId }: { projectId: string }) {
       {view === "timeline" && (
         <TimelineView
           ws={ws} projectId={projectId} filtered={ws.tasks}
-          filters={timelineFilters} sort={timelineSort} showCP={timelineShowCP}
+          filters={timelineFilters} sort={timelineSort} layers={timelineLayers}
           onEdit={openTask} onEditMilestone={(m) => openMilestone(m)}
         />
       )}
