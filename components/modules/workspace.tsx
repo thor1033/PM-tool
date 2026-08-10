@@ -1,454 +1,1080 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
-  Link2, Package, ShieldAlert, Lightbulb, Flag, Layers,
-  ChevronRight, ExternalLink, AlertTriangle,
+  Link2, Package, ShieldAlert, Lightbulb, Flag, Layers, Globe, GitBranch,
+  ExternalLink, MessageSquare, SlidersHorizontal, FileText, FileSpreadsheet,
+  Presentation, Image as ImageIcon, File as FileIcon, Check,
 } from "lucide-react";
 import { useProject, useUpdateEntity } from "@/lib/api/hooks";
-import type { Task, WorkingSet } from "@/lib/types";
-import { accent } from "@/lib/colors";
+import type { Task, WorkingSet, Member } from "@/lib/types";
+import type { TaskComment } from "@/lib/db/schema";
+import { accent, accentVar } from "@/lib/colors";
+import { initials, fmtD, daysBetween, followupChainOf } from "@/lib/tasks";
 import { cn } from "@/lib/utils";
 import { ModuleHeader } from "@/components/project/ui";
 import { GlossaryText } from "@/components/project/glossary-text";
-import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CardModal } from "@/components/project/card-modal";
+import { Button } from "@/components/ui/button";
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── constants ────────────────────────────────────────────────────────────────
 
+const WHO_KEY = "atlas.view";      // per-project: atlas.view.<projectId>
+const MODE_KEY = "atlas.ws.mode";  // global
+
+const EVERYONE = "__everyone";
+
+type Mode = "focus" | "timeline";
+
+/** Status groups in the order the hub lists them. */
 const STATUS_ORDER = [
-  { id: "inprogress", label: "In progress", dot: "bg-blue-500" },
-  { id: "backlog",    label: "To do",        dot: "bg-slate-400" },
-  { id: "done",       label: "Done",          dot: "bg-green-500" },
-];
+  { id: "inprogress", label: "In progress", var: "--hue-progress" },
+  { id: "backlog", label: "To do", var: "--hue-backlog" },
+  { id: "done", label: "Done", var: "--hue-done" },
+] as const;
 
-const PRIORITY_COLOR: Record<string, string> = {
-  high: "bg-red-500",
-  med:  "bg-amber-500",
-  low:  "bg-slate-400",
+const statusVarOf = (id: string) =>
+  STATUS_ORDER.find((s) => s.id === id)?.var ?? "--hue-backlog";
+
+const PRIO_VAR: Record<string, string> = {
+  high: "--t-red", med: "--t-amber", low: "--ink-ghost",
 };
 
 const RISK_SCORE: Record<string, number> = { high: 3, med: 2, low: 1 };
-const RISK_COLOR = (l: string, i: string) => {
-  const s = RISK_SCORE[l] * RISK_SCORE[i];
-  return s >= 6 ? "bg-red-500" : s >= 4 ? "bg-amber-500" : "bg-green-500";
+
+const FILE_META: Record<string, { color: string; Icon: typeof FileIcon }> = {
+  image: { color: "pink", Icon: ImageIcon },
+  pdf: { color: "red", Icon: FileText },
+  excel: { color: "green", Icon: FileSpreadsheet },
+  slides: { color: "amber", Icon: Presentation },
+  doc: { color: "blue", Icon: FileIcon },
 };
+const fileMeta = (type: string) => FILE_META[type] ?? FILE_META.doc;
 
-function initials(name: string) {
-  return name.split(/\s+/).map((p) => p[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+const DAYW = 5; // px per day on the personal gantt
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+function isOverdue(t: Task) {
+  return t.status !== "done" && !!t.end && t.end < todayStr();
 }
 
-function fmtDate(d: string) {
-  if (!d) return "";
-  return new Date(d).toLocaleDateString(undefined, { day: "numeric", month: "short" });
-}
-
-// ── Context builder ───────────────────────────────────────────────────────────
+// ── per-task context ─────────────────────────────────────────────────────────
 
 function buildCtx(task: Task, ws: WorkingSet) {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const today = todayStr();
 
-  // Deps with ready/waiting/blocked status
   const deps = (task.deps ?? [])
-    .filter((d) => d.type === "task" && d.refId)
     .map((d) => {
-      const pred = ws.tasks.find((t) => t.id === d.refId);
-      if (!pred) return null;
-      const done = pred.status === "done";
-      const violated = !done && !!task.start && !!pred.end && new Date(task.start) < new Date(pred.end);
-      return {
-        id: d.id || d.refId!,
-        title: pred.title,
-        status: pred.status,
-        end: pred.end,
-        done,
-        violated,
-        blocked: !done && !!pred.end && new Date(pred.end) > today,
-      };
+      if (d.type === "task" && d.refId) {
+        const pred = ws.tasks.find((t) => t.id === d.refId);
+        if (!pred) return null;
+        const done = pred.status === "done";
+        // "blocked" is a real date conflict: this task starts before its
+        // predecessor is due to finish. "waiting" is simply not-yet-done.
+        const violated = !done && !!task.start && !!pred.end && task.start < pred.end;
+        return {
+          id: d.id || d.refId, kind: "task" as const, name: pred.title,
+          scope: "", state: violated ? "blocked" : !done ? "waiting" : "ready",
+        };
+      }
+      if (d.type === "deliverable" && d.refId) {
+        const p = ws.products.find((x) => x.id === d.refId);
+        if (!p) return null;
+        return {
+          id: d.id || d.refId, kind: "deliverable" as const, name: p.name,
+          scope: "", state: p.placeholder ? "waiting" : "ready",
+        };
+      }
+      if (d.type === "ext" || d.type === "external") {
+        const ext = d.refId ? ws.externals.find((x) => x.id === d.refId) : null;
+        return {
+          id: d.id || d.refId || d.label || "ext", kind: "ext" as const,
+          name: ext?.title || d.label || "External dependency",
+          scope: ext?.party || d.scope || "", state: "ok",
+        };
+      }
+      return null;
     })
     .filter(Boolean) as {
-      id: string; title: string; status: string; end: string;
-      done: boolean; violated: boolean; blocked: boolean;
+      id: string; kind: "task" | "deliverable" | "ext";
+      name: string; scope: string; state: string;
     }[];
 
-  // Deliverables linked to this task
   const deliverables = ws.products.filter((p) => (p.taskIds ?? []).includes(task.id));
-
-  // Risks this task mitigates
   const linkedRisks = ws.risks.filter((r) => (r.taskIds ?? []).includes(task.id));
-
-  // Pre-analysis insights from the same track
-  const insights = ws.findings.filter((f) => f.category && f.category === task.category);
-
-  // Gates ahead (type=gate, same category, date >= task.end)
-  const gates = ws.milestones.filter(
-    (m) => m.type === "gate" && m.category === task.category &&
-      m.date && task.end && new Date(m.date) >= new Date(task.end),
-  );
-
-  // Subtasks
+  // Findings aren't tied to individual tasks — they're surfaced by track.
+  const insights = task.category
+    ? ws.findings.filter((f) => f.category && f.category === task.category)
+    : [];
+  const gate = ws.milestones
+    .filter((m) => m.type === "gate" && m.category === task.category && m.date && task.end && m.date >= task.end)
+    .sort((a, b) => a.date.localeCompare(b.date))[0] ?? null;
   const subtasks = ws.tasks.filter((t) => t.parentId === task.id);
+  // `occurrence` is rendered in the head as follow-up context, so it's kept
+  // out of Details to avoid showing the same value twice.
+  const custom = Object.entries((task.custom ?? {}) as Record<string, unknown>)
+    .filter(([k, v]) => k !== "occurrence" && v !== null && v !== undefined && String(v).trim() !== "");
 
-  return { deps, deliverables, linkedRisks, insights, gates, subtasks };
+  // Follow-up lineage: what this was spun off from and what came out of it.
+  // Only worth showing when there's more than the task itself.
+  const chain = followupChainOf(task, ws.tasks);
+  const lineage = chain.length > 1 ? chain : [];
+
+  return { deps, deliverables, linkedRisks, insights, gate, subtasks, custom, lineage, today };
 }
 
-// ── Left panel: task list ─────────────────────────────────────────────────────
+// ── small shared bits ────────────────────────────────────────────────────────
 
-function TaskList({
-  ws, myTasks, selId, onSelect,
-}: {
-  ws: WorkingSet; myTasks: Task[]; selId: string | null; onSelect: (id: string) => void;
+function Avatar({ name, member, size = 24 }: { name: string; member?: Member; size?: number }) {
+  const a = member ? accent(member.color) : null;
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center rounded-full font-bold text-white",
+        a ? a.bg : "bg-[var(--ink-ghost)]",
+      )}
+      style={{ width: size, height: size, fontSize: size * 0.38 }}
+      title={name}
+    >
+      {initials(name)}
+    </span>
+  );
+}
+
+function Chip({ children, colorVar, className }: {
+  children: React.ReactNode; colorVar?: string; className?: string;
 }) {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-mono text-[11px] font-medium",
+        !colorVar && "bg-[var(--paper-2)] text-muted-foreground",
+        className,
+      )}
+      style={colorVar ? {
+        background: `color-mix(in oklch, ${colorVar} 15%, var(--panel))`,
+        color: colorVar,
+      } : undefined}
+    >
+      {children}
+    </span>
+  );
+}
 
-  const groups = STATUS_ORDER.map((s) => ({
-    ...s,
-    tasks: myTasks.filter((t) => t.status === s.id),
-  })).filter((g) => g.tasks.length > 0);
+function HubCard({ title, count, icon: Icon, children }: {
+  title: string; count?: number; icon: typeof Link2; children: React.ReactNode;
+}) {
+  return (
+    <section className="shadow-xs rounded-[var(--radius-lg)] border bg-[var(--panel)] p-4">
+      <header className="mb-3 flex items-center gap-2">
+        <Icon className="text-muted-foreground size-3.5 shrink-0" />
+        <h3 className="font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">
+          {title}
+        </h3>
+        {count !== undefined && (
+          <span className="text-muted-foreground/70 font-mono text-[11px]">{count}</span>
+        )}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+const DEP_STATE: Record<string, { label: string; v: string }> = {
+  blocked: { label: "blocked", v: "--t-red" },
+  waiting: { label: "waiting", v: "--t-amber" },
+  ready: { label: "ready", v: "--t-green" },
+  ok: { label: "ok", v: "--ink-ghost" },
+};
+
+// ── the hub: everything tied to one task ─────────────────────────────────────
+
+function WSHub({ task, ws, projectId, wide, onOpenTask, onSelectTask }: {
+  task: Task; ws: WorkingSet; projectId: string; wide?: boolean;
+  onOpenTask: (t: Task) => void;
+  /** Move the whole workspace selection to another task (chain navigation). */
+  onSelectTask: (id: string) => void;
+}) {
+  const router = useRouter();
+  const update = useUpdateEntity(projectId, "tasks");
+  const ctx = useMemo(() => buildCtx(task, ws), [task, ws]);
+  const cat = ws.categories.find((c) => c.id === task.category);
+  const phase = ws.phases.find((p) => p.id === task.phase);
+  const overdue = isOverdue(task);
+  const catVar = cat ? accentVar(cat.color) : "var(--accent-c)";
+  const done = ctx.subtasks.filter((s) => s.status === "done").length;
+  const occurrence = String(
+    (task.custom as Record<string, unknown> | undefined)?.occurrence ?? "",
+  ).trim();
+
+  const [commentText, setCommentText] = useState("");
+  const [commentAuthor, setCommentAuthor] = useState(() => ws.members[0]?.name ?? "");
+
+  function setStatus(v: string) {
+    update.mutate({ id: task.id, data: { status: v } }, {
+      onError: (e) => toast.error((e as Error).message),
+    });
+  }
+  function toggleSub(sub: Task) {
+    update.mutate(
+      { id: sub.id, data: { status: sub.status === "done" ? "backlog" : "done" } },
+      { onError: (e) => toast.error((e as Error).message) },
+    );
+  }
+  function addComment() {
+    const text = commentText.trim();
+    if (!text) return;
+    const comment: TaskComment = {
+      id: `c_${Math.random().toString(36).slice(2, 9)}`,
+      author: commentAuthor || "Anonymous",
+      text,
+      ts: Date.now(),
+    };
+    update.mutate(
+      { id: task.id, data: { comments: [...(task.comments ?? []), comment] } },
+      { onError: (e) => toast.error((e as Error).message) },
+    );
+    setCommentText("");
+  }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="space-y-4">
+      {/* Head — status/dates + lineage, then title, description, and a footer
+          row with track/priority on the left against the owner on the right.
+          Double-click anywhere on the card opens the full task editor. */}
+      <section
+        onDoubleClick={() => onOpenTask(task)}
+        title="Double-click to open the full task card"
+        className="shadow-xs rounded-[var(--radius-lg)] border bg-[var(--panel)] p-5"
+      >
+        {/* Row 1: status + dates (left) · follow-up chain (right) */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* The select is the status display — a separate label alongside
+                it would just repeat the selected option. */}
+            <span className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] border bg-[var(--panel)] pl-2.5">
+              <span className="size-2 shrink-0 rounded-full" style={{ background: `var(${statusVarOf(task.status)})` }} />
+              <select
+                value={task.status}
+                onChange={(e) => setStatus(e.target.value)}
+                onDoubleClick={(e) => e.stopPropagation()}
+                className="h-7 rounded-r-[var(--radius-sm)] bg-transparent pr-2 text-[12.5px] font-medium outline-none"
+                aria-label="Task status"
+              >
+                <option value="backlog">Backlog</option>
+                <option value="inprogress">In Progress</option>
+                <option value="done">Done</option>
+              </select>
+            </span>
+            {(task.start || task.end) && (
+              <span className={cn(
+                "font-mono text-[12.5px]",
+                overdue ? "font-bold text-[var(--t-red)]" : "text-muted-foreground",
+              )}>
+                {task.start && task.end
+                  ? `${fmtD(task.start)} → ${fmtD(task.end)}`
+                  : `due ${fmtD(task.end || task.start)}`}
+                {overdue && " · overdue"}
+              </span>
+            )}
+          </div>
+
+          {ctx.lineage.length > 0 && (
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <GitBranch className="text-muted-foreground size-3.5 shrink-0" />
+              {ctx.lineage.map((node, i) => {
+                const self = node.direction === "self";
+                return (
+                  <span key={node.id} className="flex min-w-0 items-center gap-1.5">
+                    {i > 0 && <span className="text-muted-foreground/50 shrink-0">→</span>}
+                    <button
+                      onClick={() => { if (!self) onSelectTask(node.id); }}
+                      disabled={self}
+                      className={cn(
+                        "max-w-[190px] truncate rounded-full border px-2.5 py-0.5 text-[12px] transition",
+                        self
+                          ? "border-primary bg-primary/10 text-primary cursor-default font-medium"
+                          : "hover:bg-[var(--paper-2)]",
+                        node.status === "done" && !self && "text-muted-foreground line-through",
+                      )}
+                      title={self ? "This task" : `Go to “${node.title || "Untitled task"}”`}
+                    >
+                      {node.title || "Untitled task"}
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Row 2: title */}
+        <h2 className="mt-3 font-serif-display text-[22px] font-medium leading-snug tracking-tight">
+          {task.title || "Untitled task"}
+        </h2>
+
+        {/* Row 3: description */}
+        <div className="mt-2.5 text-[14px] leading-relaxed">
+          {task.description ? (
+            <GlossaryText
+              text={task.description}
+              terms={(ws.project.glossary as { id: string; term: string; definition: string }[]) ?? []}
+            />
+          ) : (
+            <p className="text-muted-foreground">No description yet — open the task to add one.</p>
+          )}
+        </div>
+
+        {/* A previously-saved reason for the follow-up is no longer editable
+            here, but it still reads as useful context so it stays visible. */}
+        {occurrence && (
+          <p className="text-muted-foreground mt-2.5 border-l-2 pl-3 text-[13.5px] italic">
+            {occurrence}
+          </p>
+        )}
+
+        {/* Row 4: track + priority (left) · owner (right) */}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-3.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {cat && <Chip colorVar={catVar}>{cat.label}</Chip>}
+            {phase && <Chip colorVar={accentVar(phase.color)}>{phase.label}</Chip>}
+            <Chip colorVar={`var(${PRIO_VAR[task.priority] ?? "--ink-ghost"})`}>
+              {task.priority}
+            </Chip>
+          </div>
+
+          {(task.assignees ?? []).length > 0 && (
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              {task.assignees.map((name) => {
+                const m = ws.members.find((x) => x.name === name);
+                return (
+                  <span key={name} className="inline-flex items-center gap-1.5 rounded-full bg-[var(--paper-2)] py-0.5 pl-0.5 pr-2.5 text-[12.5px]">
+                    <Avatar name={name} member={m} size={20} />
+                    {name}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Subtasks */}
+      {ctx.subtasks.length > 0 && (
+        <HubCard title={`Subtasks ${done}/${ctx.subtasks.length}`} icon={Layers}>
+          <ul className="divide-y">
+            {ctx.subtasks.map((s) => (
+              <li key={s.id} className="flex items-center gap-2.5 py-2">
+                <button
+                  onClick={() => toggleSub(s)}
+                  className={cn(
+                    "flex size-4 shrink-0 items-center justify-center rounded-full border transition",
+                    s.status === "done"
+                      ? "border-[var(--hue-done)] bg-[var(--hue-done)] text-white"
+                      : "border-[var(--line-strong)] hover:border-primary",
+                  )}
+                  title={s.status === "done" ? "Mark as to do" : "Mark as done"}
+                >
+                  {s.status === "done" && <Check className="size-2.5" strokeWidth={3} />}
+                </button>
+                <span className={cn(
+                  "min-w-0 flex-1 truncate text-[13.5px]",
+                  s.status === "done" && "text-muted-foreground line-through",
+                )}>
+                  {s.title}
+                </span>
+                {s.end && (
+                  <span className="text-muted-foreground shrink-0 font-mono text-[12px]">{fmtD(s.end)}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </HubCard>
+      )}
+
+      {/* Context grid */}
+      <div className={cn("grid gap-4", wide ? "lg:grid-cols-2" : "xl:grid-cols-2")}>
+        {ctx.deps.length > 0 && (
+          <HubCard title="Depends on" count={ctx.deps.length} icon={Link2}>
+            <ul className="divide-y">
+              {ctx.deps.map((d) => {
+                const st = DEP_STATE[d.state] ?? DEP_STATE.ok;
+                const Icon = d.kind === "deliverable" ? Package : d.kind === "ext" ? ExternalLink : Link2;
+                return (
+                  <li key={d.id} className="flex items-center gap-2 py-2">
+                    <Icon className="text-muted-foreground size-3.5 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate text-[13.5px]">
+                      {d.name}
+                      {d.scope && <span className="text-muted-foreground"> · {d.scope}</span>}
+                    </span>
+                    <Chip colorVar={`var(${st.v})`}>{st.label}</Chip>
+                  </li>
+                );
+              })}
+            </ul>
+          </HubCard>
+        )}
+
+        {/* Files & links — everything a person needs to actually do the task.
+            Today that's the catalogue deliverables linked to it. */}
+        {ctx.deliverables.length > 0 && (
+          <HubCard title="Files & links" count={ctx.deliverables.length} icon={Package}>
+            <ul className="divide-y">
+              {ctx.deliverables.map((p) => {
+                const { color, Icon } = fileMeta(p.type);
+                return (
+                  <li key={p.id}>
+                    <button
+                      onClick={() => { if (p.url) window.open(p.url, "_blank", "noopener,noreferrer"); }}
+                      disabled={!p.url}
+                      className="flex w-full items-center gap-2 py-2 text-left transition enabled:hover:text-primary disabled:cursor-default"
+                    >
+                      <Icon className="size-3.5 shrink-0" style={{ color: accentVar(color) }} />
+                      <span className="min-w-0 flex-1 truncate text-[13.5px]">{p.name}</span>
+                      <Chip>{p.url ? "Drive" : "none"}</Chip>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </HubCard>
+        )}
+
+        {ctx.linkedRisks.length > 0 && (
+          <HubCard title="Risks this mitigates" count={ctx.linkedRisks.length} icon={ShieldAlert}>
+            <ul className="divide-y">
+              {ctx.linkedRisks.map((r) => {
+                const score = (RISK_SCORE[r.likelihood] ?? 2) * (RISK_SCORE[r.impact] ?? 2);
+                const v = score >= 6 ? "--t-red" : score >= 4 ? "--t-amber" : "--t-green";
+                return (
+                  <li key={r.id}>
+                    <button
+                      onClick={() => router.push(`/projects/${projectId}/risks`)}
+                      className="hover:text-primary flex w-full items-center gap-2.5 py-2 text-left transition"
+                    >
+                      <span
+                        className="flex size-5 shrink-0 items-center justify-center rounded font-mono text-[10px] font-bold text-white"
+                        style={{ background: `var(${v})` }}
+                      >
+                        {score}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-[13.5px]">{r.title}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </HubCard>
+        )}
+
+        {ctx.insights.length > 0 && (
+          <HubCard title="Insights from pre-analysis" count={ctx.insights.length} icon={Lightbulb}>
+            <ul className="divide-y">
+              {ctx.insights.map((f) => (
+                <li key={f.id}>
+                  <button
+                    onClick={() => router.push(`/projects/${projectId}/preanalysis`)}
+                    className="hover:text-primary flex w-full items-center gap-2 py-2 text-left transition"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-[13.5px]">{f.title}</span>
+                    {f.source && (
+                      <span className="text-muted-foreground shrink-0 text-[12px]">{f.source}</span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </HubCard>
+        )}
+
+        {ctx.gate && (
+          <HubCard title="Gate ahead" icon={Flag}>
+            <div className="flex items-center gap-2.5 py-1">
+              <Flag className="size-4 shrink-0 text-[var(--t-red)]" />
+              <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{ctx.gate.title}</span>
+              <span className="text-muted-foreground shrink-0 font-mono text-[12px]">{fmtD(ctx.gate.date)}</span>
+            </div>
+          </HubCard>
+        )}
+
+        {ctx.custom.length > 0 && (
+          <HubCard title="Details" count={ctx.custom.length} icon={SlidersHorizontal}>
+            <dl className="divide-y">
+              {ctx.custom.map(([k, v]) => (
+                <div key={k} className="flex items-baseline gap-3 py-2">
+                  <dt className="text-muted-foreground shrink-0 font-mono text-[11px] uppercase tracking-wide">{k}</dt>
+                  <dd className="min-w-0 flex-1 text-[13.5px]">{String(v)}</dd>
+                </div>
+              ))}
+            </dl>
+          </HubCard>
+        )}
+      </div>
+
+      {/* Discussion */}
+      <HubCard title="Discussion" count={(task.comments ?? []).length} icon={MessageSquare}>
+        <div className="space-y-3">
+          {(task.comments ?? []).length > 0 ? (
+            <ul className="space-y-3">
+              {(task.comments ?? []).map((c) => {
+                const m = ws.members.find((x) => x.name === c.author);
+                return (
+                  <li key={c.id} className="flex gap-2.5">
+                    <Avatar name={c.author} member={m} size={26} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-[13px] font-semibold">{c.author}</span>
+                        <span className="text-muted-foreground/70 font-mono text-[11px]">
+                          {new Date(c.ts).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 whitespace-pre-wrap text-[13.5px] leading-relaxed">{c.text}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground text-[13.5px]">No comments yet.</p>
+          )}
+          <div className="flex items-center gap-2 border-t pt-3">
+            <select
+              value={commentAuthor}
+              onChange={(e) => setCommentAuthor(e.target.value)}
+              className="h-8 shrink-0 rounded-[var(--radius-sm)] border bg-[var(--panel)] px-2 text-[12.5px]"
+              aria-label="Comment as"
+            >
+              {ws.members.map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}
+              {ws.members.length === 0 && <option value="">Anonymous</option>}
+            </select>
+            <input
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addComment(); } }}
+              placeholder="Write a comment…"
+              className="focus:border-primary min-w-0 flex-1 rounded-[var(--radius-sm)] border bg-[var(--panel)] px-2.5 py-1.5 text-[13.5px] outline-none"
+            />
+            <Button size="sm" className="h-8 shrink-0" onClick={addComment} disabled={!commentText.trim()}>
+              Post
+            </Button>
+          </div>
+        </div>
+      </HubCard>
+    </div>
+  );
+}
+
+// ── focus mode: task list ────────────────────────────────────────────────────
+
+function WSList({ ws, myTasks, selId, everyone, onSelect, onToggleSub, onOpenTask }: {
+  ws: WorkingSet; myTasks: Task[]; selId: string | null; everyone: boolean;
+  onSelect: (id: string) => void;
+  onToggleSub: (sub: Task) => void;
+  onOpenTask: (t: Task) => void;
+}) {
+  // Grouped once rather than filtering the full task list per row.
+  const subsByParent = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    ws.tasks.forEach((t) => {
+      if (!t.parentId) return;
+      map.set(t.parentId, [...(map.get(t.parentId) ?? []), t]);
+    });
+    return map;
+  }, [ws.tasks]);
+
+  const groups = STATUS_ORDER
+    .map((s) => ({ ...s, tasks: myTasks.filter((t) => t.status === s.id) }))
+    .filter((g) => g.tasks.length > 0);
+
+  // How many tasks each row's follow-up chain spans. Built once per render
+  // by grouping tasks into lineages, rather than walking the chain per row.
+  const chainSizes = useMemo(() => {
+    const parentOf = (t: Task) =>
+      (t.deps ?? []).find((d) => d.type === "followup")?.refId ?? null;
+    const byId = new Map(ws.tasks.map((t) => [t.id, t]));
+
+    // Walk each task up to its lineage root, then count members per root.
+    const rootOf = new Map<string, string>();
+    const resolveRoot = (t: Task): string => {
+      const cached = rootOf.get(t.id);
+      if (cached) return cached;
+      const seen = new Set<string>([t.id]);
+      let cur = t;
+      while (true) {
+        const pid = parentOf(cur);
+        const prev = pid ? byId.get(pid) : undefined;
+        if (!prev || seen.has(prev.id)) break; // cycle-safe
+        seen.add(prev.id);
+        cur = prev;
+      }
+      seen.forEach((id) => rootOf.set(id, cur.id));
+      return cur.id;
+    };
+
+    const perRoot = new Map<string, number>();
+    ws.tasks.forEach((t) => {
+      const root = resolveRoot(t);
+      perRoot.set(root, (perRoot.get(root) ?? 0) + 1);
+    });
+    return new Map(ws.tasks.map((t) => [t.id, perRoot.get(resolveRoot(t)) ?? 1]));
+  }, [ws.tasks]);
+
+  return (
+    <div className="space-y-5">
       {groups.map((g) => (
         <div key={g.id}>
-          <div className="mb-1 flex items-center gap-2 px-1">
-            <span className={cn("size-2 rounded-full", g.dot)} />
-            <span className="text-xs font-semibold text-muted-foreground">{g.label}</span>
-            <span className="text-xs text-muted-foreground">{g.tasks.length}</span>
+          <div className="mb-2 flex items-center gap-2 px-1">
+            <span className="size-2 shrink-0 rounded-full" style={{ background: `var(${g.var})` }} />
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">
+              {g.label}
+            </span>
+            <span className="text-muted-foreground/70 font-mono text-[11px]">{g.tasks.length}</span>
           </div>
-          <div className="space-y-1">
+          <ul className="space-y-1.5">
             {g.tasks.map((t) => {
-              const overdue = t.status !== "done" && t.end && new Date(t.end) < today;
-              const nDeps = (t.deps ?? []).filter((d) => d.type === "task").length;
+              const overdue = isOverdue(t);
+              // A "followup" dep is provenance, not a blocking dependency —
+              // it gets its own chain marker instead of inflating this count.
+              const nDeps = (t.deps ?? []).filter((d) => d.type !== "followup").length;
               const nLinks = ws.products.filter((p) => (p.taskIds ?? []).includes(t.id)).length;
               const nRisks = ws.risks.filter((r) => (r.taskIds ?? []).includes(t.id)).length;
               const nCmt = (t.comments ?? []).length;
-              const isSelected = t.id === selId;
+              const chainLen = chainSizes.get(t.id) ?? 1;
+              const who = t.assignees ?? [];
+              const selected = t.id === selId;
+              return (
+                <li key={t.id}>
+                  <button
+                    onClick={() => onSelect(t.id)}
+                    onDoubleClick={() => onOpenTask(t)}
+                    title="Double-click to open the full task card"
+                    className={cn(
+                      "flex w-full items-start gap-2.5 rounded-[var(--radius-md)] border px-3 py-2.5 text-left transition",
+                      selected
+                        ? "border-primary bg-primary/5"
+                        : "hover:bg-[var(--paper-2)] border-transparent",
+                    )}
+                  >
+                    <span
+                      className="mt-1.5 size-1.5 shrink-0 rounded-full"
+                      style={{ background: `var(${PRIO_VAR[t.priority] ?? "--ink-ghost"})` }}
+                      title={`${t.priority} priority`}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className={cn(
+                        "block truncate text-[13.5px] font-medium",
+                        t.status === "done" && "text-muted-foreground line-through",
+                      )}>
+                        {t.title || "Untitled task"}
+                      </span>
+                      <span className="text-muted-foreground/80 mt-1 flex flex-wrap items-center gap-2 font-mono text-[11px]">
+                        {everyone && who.length > 0 && (
+                          <span className="truncate">
+                            {who[0]}{who.length > 1 ? ` +${who.length - 1}` : ""}
+                          </span>
+                        )}
+                        {t.end && (
+                          <span className={cn(overdue && "font-bold text-[var(--t-red)]")}>
+                            {fmtD(t.end)}
+                          </span>
+                        )}
+                        {nDeps > 0 && <span className="inline-flex items-center gap-0.5"><Link2 className="size-3" />{nDeps}</span>}
+                        {nLinks > 0 && <span className="inline-flex items-center gap-0.5"><Package className="size-3" />{nLinks}</span>}
+                        {nRisks > 0 && <span className="inline-flex items-center gap-0.5 text-[var(--t-red)]"><ShieldAlert className="size-3" />{nRisks}</span>}
+                        {nCmt > 0 && <span className="inline-flex items-center gap-0.5"><MessageSquare className="size-3" />{nCmt}</span>}
+                        {chainLen > 1 && (
+                          <span
+                            className="inline-flex items-center gap-0.5 text-[var(--accent-c)]"
+                            title={`Part of a follow-up chain of ${chainLen} tasks`}
+                          >
+                            <GitBranch className="size-3" />{chainLen}
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                  </button>
+
+                  {/* Subtasks nested under their parent, so the list shows the
+                      work breakdown rather than only top-level rows. */}
+                  {subsByParent.get(t.id)?.length ? (
+                    <ul className="mt-1 space-y-0.5 pl-6">
+                      {subsByParent.get(t.id)!.map((s) => (
+                        <li key={s.id} className="flex items-center gap-2 rounded-[var(--radius-sm)] py-1 pl-1 pr-2">
+                          <button
+                            onClick={() => onToggleSub(s)}
+                            className={cn(
+                              "flex size-3.5 shrink-0 items-center justify-center rounded-full border transition",
+                              s.status === "done"
+                                ? "border-[var(--hue-done)] bg-[var(--hue-done)] text-white"
+                                : "border-[var(--line-strong)] hover:border-primary",
+                            )}
+                            title={s.status === "done" ? "Mark as to do" : "Mark as done"}
+                          >
+                            {s.status === "done" && <Check className="size-2" strokeWidth={3} />}
+                          </button>
+                          <span className={cn(
+                            "min-w-0 flex-1 truncate text-[12.5px]",
+                            s.status === "done" && "text-muted-foreground line-through",
+                          )}>
+                            {s.title || "Untitled subtask"}
+                          </span>
+                          {s.end && (
+                            <span className="text-muted-foreground/80 shrink-0 font-mono text-[11px]">
+                              {fmtD(s.end)}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── timeline mode: a personal gantt ──────────────────────────────────────────
+
+function WSTimeline({ ws, myTasks, selId, onSelect }: {
+  ws: WorkingSet; myTasks: Task[]; selId: string | null; onSelect: (id: string) => void;
+}) {
+  const dated = myTasks.filter((t) => t.start && t.end);
+  const undated = myTasks.filter((t) => !t.start || !t.end);
+
+  if (dated.length === 0) {
+    return (
+      <div className="shadow-xs rounded-[var(--radius-lg)] border bg-[var(--panel)] p-10 text-center">
+        <GitBranch className="text-muted-foreground/40 mx-auto mb-3 size-7" />
+        <p className="font-serif-display text-[17px] font-medium">No scheduled tasks</p>
+        <p className="text-muted-foreground mt-1 text-[13.5px]">
+          Add start and end dates to see them on the timeline.
+        </p>
+        {undated.length > 0 && (
+          <div className="mt-5 flex flex-wrap justify-center gap-1.5">
+            {undated.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => onSelect(t.id)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-[12.5px] transition",
+                  t.id === selId ? "border-primary bg-primary/10 text-primary" : "hover:bg-[var(--paper-2)]",
+                )}
+              >
+                {t.title || "Untitled task"}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const minStr = dated.reduce((m, t) => (t.start < m ? t.start : m), dated[0].start);
+  const maxStr = dated.reduce((m, t) => (t.end > m ? t.end : m), dated[0].end);
+  const totalDays = Math.max(1, daysBetween(minStr, maxStr));
+  const totalW = totalDays * DAYW;
+  const LABEL_W = 200;
+  const today = todayStr();
+  const todayLeft = today >= minStr && today <= maxStr ? daysBetween(minStr, today) * DAYW : null;
+
+  // month ticks across the span
+  const months: { left: number; label: string }[] = [];
+  const cur = new Date(minStr);
+  cur.setDate(1);
+  const end = new Date(maxStr);
+  while (cur <= end) {
+    const iso = cur.toISOString().slice(0, 10);
+    if (iso >= minStr) {
+      months.push({
+        left: daysBetween(minStr, iso) * DAYW,
+        label: cur.toLocaleDateString("en-GB", { month: "short", year: "2-digit" }),
+      });
+    }
+    cur.setMonth(cur.getMonth() + 1);
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="shadow-xs overflow-x-auto rounded-[var(--radius-lg)] border bg-[var(--panel)]">
+        <div className="relative" style={{ minWidth: LABEL_W + totalW }}>
+          {/* axis */}
+          <div className="sticky top-0 z-20 flex border-b bg-[var(--paper-2)]">
+            <div
+              className="sticky left-0 z-10 shrink-0 border-r bg-[var(--paper-2)] px-4 py-2.5 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]"
+              style={{ width: LABEL_W }}
+            >
+              Task
+            </div>
+            <div className="relative flex-1" style={{ width: totalW, height: 38 }}>
+              {months.map((m, i) => (
+                <span
+                  key={i}
+                  className="text-muted-foreground absolute top-2.5 whitespace-nowrap border-l pl-2 font-mono text-[11px]"
+                  style={{ left: m.left }}
+                >
+                  {m.label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* rows */}
+          <div className="relative">
+            {todayLeft !== null && (
+              <div
+                className="border-primary pointer-events-none absolute bottom-0 top-0 z-10 border-l-[2px]"
+                style={{ left: LABEL_W + todayLeft }}
+                title="Today"
+              />
+            )}
+            {dated.map((t) => {
+              const cat = ws.categories.find((c) => c.id === t.category);
+              const barVar = cat ? accentVar(cat.color) : "var(--accent-c)";
+              const left = daysBetween(minStr, t.start) * DAYW;
+              const width = Math.max(DAYW, daysBetween(t.start, t.end) * DAYW);
+              const overdue = isOverdue(t);
               return (
                 <button
                   key={t.id}
                   onClick={() => onSelect(t.id)}
                   className={cn(
-                    "flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left transition",
-                    isSelected ? "border-indigo-300 bg-indigo-50 dark:border-indigo-700 dark:bg-indigo-950/40" : "hover:bg-muted/50",
+                    "flex w-full border-b text-left transition last:border-b-0",
+                    t.id === selId ? "bg-primary/5" : "hover:bg-[var(--paper-2)]",
                   )}
+                  style={{ height: 34 }}
                 >
-                  <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", PRIORITY_COLOR[t.priority] ?? "bg-slate-400")} />
-                  <div className="min-w-0 flex-1">
-                    <p className={cn("truncate text-sm font-medium", t.status === "done" && "line-through text-muted-foreground")}>
-                      {t.title}
-                    </p>
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
-                      {t.end && (
-                        <span className={cn("flex items-center gap-0.5", overdue && "text-red-600 dark:text-red-400 font-medium")}>
-                          {overdue && <AlertTriangle className="size-2.5" />}
-                          {fmtDate(t.end)}{overdue ? " · overdue" : ""}
-                        </span>
+                  <span
+                    className={cn(
+                      "sticky left-0 z-10 flex shrink-0 items-center truncate border-r bg-[var(--panel)] px-4 text-[12.5px]",
+                      t.id === selId && "bg-primary/5",
+                    )}
+                    style={{ width: LABEL_W }}
+                  >
+                    {t.title || "Untitled task"}
+                  </span>
+                  <span className="relative flex-1" style={{ width: totalW }}>
+                    <span
+                      className={cn(
+                        "absolute top-[7px] flex h-[20px] items-center overflow-hidden rounded-[5px] px-2",
+                        t.status === "done" && "opacity-50",
+                        overdue && "ring-1 ring-[var(--t-red)]",
                       )}
-                      {nDeps > 0 && <span className="flex items-center gap-0.5"><Link2 className="size-2.5" />{nDeps}</span>}
-                      {nLinks > 0 && <span className="flex items-center gap-0.5"><Package className="size-2.5" />{nLinks}</span>}
-                      {nRisks > 0 && <span className="flex items-center gap-0.5 text-red-500"><ShieldAlert className="size-2.5" />{nRisks}</span>}
-                      {nCmt > 0 && <span>{nCmt} 💬</span>}
-                    </div>
-                  </div>
-                  {isSelected && <ChevronRight className="mt-0.5 size-3.5 shrink-0 text-indigo-500" />}
+                      style={{
+                        left, width,
+                        background: `color-mix(in oklch, ${barVar} 88%, white)`,
+                      }}
+                      title={`${t.title} · ${fmtD(t.start)} → ${fmtD(t.end)}${overdue ? " · overdue" : ""}`}
+                    >
+                      <span className="truncate text-[11px] font-semibold text-white [text-shadow:0_1px_2px_rgba(0,0,0,.2)]">
+                        {width > 40 ? t.title : ""}
+                      </span>
+                    </span>
+                  </span>
                 </button>
               );
             })}
           </div>
         </div>
-      ))}
-      {myTasks.length === 0 && (
-        <p className="py-8 text-center text-sm text-muted-foreground">No tasks assigned.</p>
-      )}
-    </div>
-  );
-}
-
-// ── Right panel: task hub ─────────────────────────────────────────────────────
-
-function HubCard({ title, count, icon: Icon, children, className }: {
-  title: string; count?: number; icon: typeof Link2; children: React.ReactNode; className?: string;
-}) {
-  return (
-    <div className={cn("rounded-xl border bg-card p-3", className)}>
-      <div className="mb-2 flex items-center gap-2">
-        <Icon className="size-3.5 text-muted-foreground" />
-        <span className="text-xs font-semibold">{title}</span>
-        {count !== undefined && <Badge variant="secondary" className="text-[10px]">{count}</Badge>}
       </div>
-      {children}
-    </div>
-  );
-}
 
-function HubLine({ label, tag, tagCls, dim }: {
-  label: string; tag?: string; tagCls?: string; dim?: string;
-}) {
-  return (
-    <div className="flex items-center gap-2 py-1 text-sm">
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {dim && <span className="shrink-0 text-xs text-muted-foreground">{dim}</span>}
-      {tag && <span className={cn("shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium", tagCls)}>{tag}</span>}
-    </div>
-  );
-}
-
-function TaskHub({ task, ws, projectId }: { task: Task; ws: WorkingSet; projectId: string }) {
-  const update = useUpdateEntity(projectId, "tasks");
-  const ctx = useMemo(() => buildCtx(task, ws), [task, ws]);
-  const cat = ws.categories.find((c) => c.id === task.category);
-  const phase = ws.phases.find((p) => p.id === task.phase);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const overdue = task.status !== "done" && task.end && new Date(task.end) < today;
-  const a = cat ? accent(cat.color) : null;
-
-  return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="rounded-xl border bg-card p-4">
-        <div className="mb-1 flex items-center gap-2">
-          <span className={cn("text-xs font-medium", task.status === "done" ? "text-green-600" : task.status === "inprogress" ? "text-blue-600" : "text-muted-foreground")}>
-            {task.status === "inprogress" ? "In progress" : task.status === "done" ? "Done" : "To do"}
-          </span>
-          {overdue && (
-            <Badge variant="destructive" className="text-[10px]">Overdue</Badge>
-          )}
-        </div>
-        <h2 className="mb-2 text-lg font-semibold leading-snug">{task.title}</h2>
+      {undated.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          {cat && <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", a!.soft)}>{cat.label}</span>}
-          {phase && <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", accent(phase.color).soft)}>{phase.label}</span>}
-          <span className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-muted">
-            <span className={cn("size-1.5 rounded-full", PRIORITY_COLOR[task.priority])} />
-            {task.priority} priority
+          <span className="text-muted-foreground font-mono text-[11px] font-semibold uppercase tracking-wide">
+            Undated
           </span>
-        </div>
-        {task.start || task.end ? (
-          <p className={cn("mt-2 text-xs", overdue ? "text-red-600" : "text-muted-foreground")}>
-            {task.start ? `${fmtDate(task.start)} → ` : "Due "}
-            {fmtDate(task.end)}
-          </p>
-        ) : null}
-        {task.description && (
-          <p className="mt-2 text-sm text-muted-foreground">
-            <GlossaryText
-              text={task.description}
-              terms={(ws.project.glossary as { id: string; term: string; definition: string }[]) ?? []}
-            />
-          </p>
-        )}
-        {(task.assignees ?? []).length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {task.assignees.map((name) => {
-              const m = ws.members.find((x) => x.name === name);
-              const mAccent = m ? accent(m.color) : null;
-              return (
-                <span key={name} className={cn("flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs", mAccent ? mAccent.soft : "bg-muted")}>
-                  <span className={cn("flex size-4 items-center justify-center rounded-full text-[8px] font-bold text-white", mAccent ? mAccent.bg : "bg-slate-400")}>
-                    {initials(name)}
-                  </span>
-                  {name}
-                </span>
-              );
-            })}
-          </div>
-        )}
-        <div className="mt-3 flex items-center gap-2">
-          <Select
-            value={task.status}
-            onValueChange={(v) => update.mutate(
-              { id: task.id, data: { status: v } },
-              { onError: (e) => toast.error((e as Error).message) },
-            )}
-          >
-            <SelectTrigger className="h-7 w-36 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="backlog">To do</SelectItem>
-              <SelectItem value="inprogress">In progress</SelectItem>
-              <SelectItem value="done">Done</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Subtasks */}
-      {ctx.subtasks.length > 0 && (
-        <HubCard title="Subtasks" count={ctx.subtasks.length} icon={Layers}>
-          {ctx.subtasks.map((s) => (
-            <HubLine
-              key={s.id}
-              label={s.title}
-              tag={s.status === "done" ? "done" : s.status === "inprogress" ? "in progress" : "to do"}
-              tagCls={s.status === "done" ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" : s.status === "inprogress" ? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" : "bg-muted text-muted-foreground"}
-              dim={s.end ? fmtDate(s.end) : undefined}
-            />
-          ))}
-        </HubCard>
-      )}
-
-      {/* Dependencies */}
-      {ctx.deps.length > 0 && (
-        <HubCard title="Depends on" count={ctx.deps.length} icon={Link2}>
-          {ctx.deps.map((d) => (
-            <HubLine
-              key={d.id}
-              label={d.title}
-              dim={d.end ? fmtDate(d.end) : undefined}
-              tag={d.violated ? "blocked" : d.blocked ? "waiting" : d.done ? "ready" : "ok"}
-              tagCls={
-                d.violated ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" :
-                d.blocked ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" :
-                "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300"
-              }
-            />
-          ))}
-        </HubCard>
-      )}
-
-      {/* Deliverables */}
-      {ctx.deliverables.length > 0 && (
-        <HubCard title="Deliverables & links" count={ctx.deliverables.length} icon={Package}>
-          {ctx.deliverables.map((p) => (
-            <div key={p.id} className="flex items-center gap-2 py-1">
-              <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
-              {p.url ? (
-                <a href={p.url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-muted-foreground hover:text-foreground">
-                  <ExternalLink className="size-3.5" />
-                </a>
-              ) : (
-                <span className="text-xs text-muted-foreground">no link</span>
+          {undated.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => onSelect(t.id)}
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-[12.5px] transition",
+                t.id === selId ? "border-primary bg-primary/10 text-primary" : "hover:bg-[var(--paper-2)]",
               )}
-            </div>
+            >
+              {t.title || "Untitled task"}
+            </button>
           ))}
-        </HubCard>
-      )}
-
-      {/* Risks */}
-      {ctx.linkedRisks.length > 0 && (
-        <HubCard title="Risks this mitigates" count={ctx.linkedRisks.length} icon={ShieldAlert}>
-          {ctx.linkedRisks.map((r) => (
-            <div key={r.id} className="flex items-center gap-2 py-1">
-              <span className={cn("flex size-5 shrink-0 items-center justify-center rounded text-[10px] font-bold text-white", RISK_COLOR(r.likelihood, r.impact))}>
-                {RISK_SCORE[r.likelihood] * RISK_SCORE[r.impact]}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-sm">{r.title}</span>
-              <Badge variant="outline" className="text-[10px]">{r.status}</Badge>
-            </div>
-          ))}
-        </HubCard>
-      )}
-
-      {/* Pre-analysis insights */}
-      {ctx.insights.length > 0 && (
-        <HubCard title="Insights from pre-analysis" count={ctx.insights.length} icon={Lightbulb}>
-          {ctx.insights.slice(0, 4).map((f) => (
-            <HubLine key={f.id} label={f.title} dim={f.category || undefined} />
-          ))}
-        </HubCard>
-      )}
-
-      {/* Gates ahead */}
-      {ctx.gates.length > 0 && (
-        <HubCard title="Gate ahead" count={ctx.gates.length} icon={Flag}>
-          {ctx.gates.map((g) => (
-            <HubLine
-              key={g.id}
-              label={g.title}
-              tag={g.date}
-              tagCls="bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
-            />
-          ))}
-        </HubCard>
+        </div>
       )}
     </div>
   );
 }
 
-// ── Module ────────────────────────────────────────────────────────────────────
+// ── module ───────────────────────────────────────────────────────────────────
 
 export function WorkspaceModule({ projectId }: { projectId: string }) {
   const { data: ws } = useProject(projectId);
-  const [who, setWho] = useState<string>("");
+  const updateTask = useUpdateEntity(projectId, "tasks");
+  const [who, setWho] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>(() => {
+    if (typeof window === "undefined") return "focus";
+    try {
+      const m = window.localStorage.getItem(MODE_KEY);
+      return m === "focus" || m === "timeline" ? m : "focus";
+    } catch {
+      return "focus";
+    }
+  });
   const [selId, setSelId] = useState<string | null>(null);
+  const [openTask, setOpenTask] = useState<Task | null>(null);
+
+  // The default person depends on loaded data (it must not land on an empty
+  // view), so it's resolved during render rather than in an effect: `who`
+  // stays null until the user picks someone, and `activeWho` fills in the
+  // saved-or-derived default in the meantime.
+  const activeWho = useMemo(() => {
+    if (who !== null) return who;
+    if (!ws) return EVERYONE;
+    let savedWho: string | null = null;
+    try {
+      savedWho = window.localStorage.getItem(`${WHO_KEY}.${projectId}`);
+    } catch { /* best-effort */ }
+
+    const names = new Set(ws.members.map((m) => m.name));
+    const hasTasks = (name: string) =>
+      ws.tasks.some((t) => !t.parentId && (t.assignees ?? []).includes(name));
+
+    // saved person → "You" if they actually have tasks → Everyone. A saved
+    // person who has since lost all their tasks falls through too, so a
+    // restored selection can't drop you on an empty view either.
+    if (savedWho === EVERYONE) return EVERYONE;
+    if (savedWho && names.has(savedWho) && hasTasks(savedWho)) return savedWho;
+    if (names.has("You") && hasTasks("You")) return "You";
+    return EVERYONE;
+  }, [who, ws, projectId]);
+
+  function toggleSubtask(sub: Task) {
+    updateTask.mutate(
+      { id: sub.id, data: { status: sub.status === "done" ? "backlog" : "done" } },
+      { onError: (e) => toast.error((e as Error).message) },
+    );
+  }
+
+  function changeWho(v: string) {
+    setWho(v);
+    setSelId(null);
+    try { window.localStorage.setItem(`${WHO_KEY}.${projectId}`, v); } catch { /* best-effort */ }
+  }
+  function changeMode(v: Mode) {
+    setMode(v);
+    try { window.localStorage.setItem(MODE_KEY, v); } catch { /* best-effort */ }
+  }
+
+  const everyone = activeWho === EVERYONE;
+
+  const myTasks = useMemo(() => {
+    if (!ws) return [];
+    const top = ws.tasks.filter((t) => !t.parentId);
+    return everyone ? top : top.filter((t) => (t.assignees ?? []).includes(activeWho));
+  }, [ws, activeWho, everyone]);
 
   if (!ws) return null;
 
-  const { tasks, members } = ws;
-
-  const myTasks = useMemo(
-    () => (who ? tasks.filter((t) => (t.assignees ?? []).includes(who) && !t.parentId) : tasks.filter((t) => !t.parentId)),
-    [tasks, who],
-  );
-
-  // Auto-select first task if selection is gone
   const selTask = myTasks.find((t) => t.id === selId) ?? myTasks[0] ?? null;
-
-  const people = useMemo(
-    () => [...new Set(members.map((m) => m.name).filter(Boolean))].sort(),
-    [members],
-  );
-
-  const selectedMember = members.find((m) => m.name === who);
-  const memberAccent = selectedMember ? accent(selectedMember.color) : null;
+  const member = ws.members.find((m) => m.name === activeWho);
 
   return (
     <div>
-      <ModuleHeader
-        title="Workspace"
-        description="A person's tasks and everything needed to do them — in one place."
-      />
+      <ModuleHeader eyebrow="Overview" title="Workspace" />
 
-      {/* Person picker */}
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          {selectedMember && (
-            <span className={cn("flex size-8 items-center justify-center rounded-full text-xs font-bold text-white", memberAccent!.bg)}>
-              {initials(selectedMember.name)}
+      {/* ws-bar */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          {everyone ? (
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--paper-2)]">
+              <Globe className="text-muted-foreground size-4" />
             </span>
+          ) : (
+            <Avatar name={activeWho} member={member} size={32} />
           )}
-          <Select value={who} onValueChange={setWho}>
-            <SelectTrigger className="w-52">
-              <SelectValue placeholder="Everyone — all tasks" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">Everyone — all tasks</SelectItem>
-              {people.map((p) => (
-                <SelectItem key={p} value={p}>{p}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <select
+            value={activeWho}
+            onChange={(e) => changeWho(e.target.value)}
+            className="focus:border-primary h-10 rounded-[var(--radius-sm)] border bg-[var(--panel)] px-3 text-[14px] outline-none"
+            aria-label="Show tasks for"
+          >
+            <option value={EVERYONE}>Everyone — all tasks</option>
+            {ws.members.map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}
+          </select>
+          <p className="text-muted-foreground hidden min-w-0 truncate text-[13.5px] md:block">
+            {everyone
+              ? "Every task and everything tied to it, in one place."
+              : `${activeWho}'s tasks and everything needed to do them — in one place.`}
+          </p>
         </div>
-        <p className="text-sm text-muted-foreground">
-          {who
-            ? `${who}'s tasks and everything needed to do them.`
-            : "Every task and everything tied to it, in one place."}
-        </p>
+
+        {/* seg-toggle */}
+        <div className="flex shrink-0 gap-1 rounded-[var(--radius-sm)] border bg-[var(--paper-2)] p-1">
+          {([
+            { id: "focus" as const, label: "Focus", Icon: Layers },
+            { id: "timeline" as const, label: "Timeline", Icon: GitBranch },
+          ]).map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              onClick={() => changeMode(id)}
+              className={cn(
+                "flex items-center gap-2 rounded-[6px] px-3.5 py-1.5 text-[13px] font-semibold transition",
+                mode === id ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Icon className="size-3.5" /> {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {myTasks.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {who
-            ? `${who} isn't assigned to any tasks. Assign them on a task card.`
-            : "No tasks in this project yet."}
-        </p>
-      ) : (
-        <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
-          {/* Left: task list */}
-          <div className="overflow-y-auto">
-            <TaskList ws={ws} myTasks={myTasks} selId={selTask?.id ?? null} onSelect={setSelId} />
+        <div className="shadow-xs rounded-[var(--radius-lg)] border bg-[var(--panel)] p-12 text-center">
+          <Layers className="text-muted-foreground/40 mx-auto mb-3 size-7" />
+          <p className="font-serif-display text-[17px] font-medium">
+            {everyone ? "No tasks yet" : `Nothing assigned to ${activeWho}`}
+          </p>
+          <p className="text-muted-foreground mt-1 text-[13.5px]">
+            {everyone
+              ? "Add tasks from the Tasks page to see them here."
+              : "Assign them on a task card and it'll show up here."}
+          </p>
+        </div>
+      ) : mode === "focus" ? (
+        <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
+          <div className="lg:max-h-[calc(100dvh-16rem)] lg:overflow-y-auto lg:pr-1">
+            <WSList
+              ws={ws} myTasks={myTasks} selId={selTask?.id ?? null}
+              everyone={everyone} onSelect={setSelId}
+              onToggleSub={toggleSubtask} onOpenTask={setOpenTask}
+            />
           </div>
-          {/* Right: hub */}
-          <div>
-            {selTask ? (
-              <TaskHub task={selTask} ws={ws} projectId={projectId} />
-            ) : (
-              <p className="text-sm text-muted-foreground">Select a task to see its full context.</p>
+          <div className="min-w-0">
+            {selTask && (
+              <WSHub task={selTask} ws={ws} projectId={projectId} onOpenTask={setOpenTask} onSelectTask={setSelId} />
             )}
           </div>
         </div>
+      ) : (
+        <div className="space-y-6">
+          <WSTimeline ws={ws} myTasks={myTasks} selId={selTask?.id ?? null} onSelect={setSelId} />
+          {selTask && (
+            <WSHub task={selTask} ws={ws} projectId={projectId} wide onOpenTask={setOpenTask} onSelectTask={setSelId} />
+          )}
+        </div>
+      )}
+
+      {openTask && (
+        <CardModal
+          ws={ws}
+          projectId={projectId}
+          task={openTask}
+          open
+          onOpenChange={(v) => { if (!v) setOpenTask(null); }}
+        />
       )}
     </div>
   );

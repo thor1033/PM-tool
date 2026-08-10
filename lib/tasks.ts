@@ -204,6 +204,12 @@ export interface FollowupChainNode {
   status: string;
   /** This node's position relative to the task the chain was built for. */
   direction: "before" | "self" | "after";
+  /** How many follow-up hops from the origin of the chain. Ancestors and the
+   *  task itself form a single line; descendants can branch, so depth is what
+   *  lets a renderer indent parallel branches under a shared parent. */
+  depth: number;
+  /** The task this one was spun off from, or null at the root. */
+  parentId: string | null;
 }
 
 /** Walks a task's full follow-up lineage in both directions: what it was
@@ -212,32 +218,67 @@ export interface FollowupChainNode {
  *  this one). Cycle-safe — a malformed chain just stops instead of looping. */
 export function followupChainOf(task: Task, allTasks: Task[]): FollowupChainNode[] {
   const byId = new Map(allTasks.map((t) => [t.id, t]));
-  const before: FollowupChainNode[] = [];
-  const seen = new Set<string>([task.id]);
+  const parentOf = (t: Task) =>
+    (t.deps ?? []).find((d) => d.type === "followup")?.refId ?? null;
 
+  // Successors indexed once — a task can spawn several follow-ups, so this
+  // is a one-to-many lookup, not a single "next".
+  const childrenOf = new Map<string, Task[]>();
+  allTasks.forEach((t) => {
+    const p = parentOf(t);
+    if (!p) return;
+    childrenOf.set(p, [...(childrenOf.get(p) ?? []), t]);
+  });
+
+  // Walk back to the origin of the lineage. Ancestry is always a single line
+  // (a task is spun off from at most one other), so this stays a simple walk.
+  const before: FollowupChainNode[] = [];
+  const seenBack = new Set<string>([task.id]);
   let cur = task;
   while (true) {
-    const dep = (cur.deps ?? []).find((d) => d.type === "followup");
-    const prev = dep?.refId ? byId.get(dep.refId) : undefined;
-    if (!prev || seen.has(prev.id)) break;
-    before.unshift({ id: prev.id, title: prev.title, status: prev.status, direction: "before" });
-    seen.add(prev.id);
+    const pid = parentOf(cur);
+    const prev = pid ? byId.get(pid) : undefined;
+    if (!prev || seenBack.has(prev.id)) break;
+    before.unshift({
+      id: prev.id, title: prev.title, status: prev.status,
+      direction: "before", depth: 0, parentId: parentOf(prev),
+    });
+    seenBack.add(prev.id);
     cur = prev;
   }
+  // Ancestors are depth 0..n reading down to the task itself.
+  before.forEach((n, i) => { n.depth = i; });
+  const selfDepth = before.length;
 
+  // Forward: every descendant, breadth-first, so parallel follow-ups off the
+  // same task are all included instead of only the first one found.
   const after: FollowupChainNode[] = [];
-  seen.clear();
-  seen.add(task.id);
-  let curId = task.id;
-  while (true) {
-    const next = allTasks.find((t) => !seen.has(t.id) && (t.deps ?? []).some((d) => d.type === "followup" && d.refId === curId));
-    if (!next) break;
-    after.push({ id: next.id, title: next.title, status: next.status, direction: "after" });
-    seen.add(next.id);
-    curId = next.id;
+  const seen = new Set<string>([task.id, ...before.map((n) => n.id)]);
+  let frontier: { task: Task; depth: number }[] = [{ task, depth: selfDepth }];
+  while (frontier.length) {
+    const next: typeof frontier = [];
+    frontier.forEach(({ task: t, depth }) => {
+      (childrenOf.get(t.id) ?? []).forEach((child) => {
+        if (seen.has(child.id)) return; // cycle-safe
+        seen.add(child.id);
+        after.push({
+          id: child.id, title: child.title, status: child.status,
+          direction: "after", depth: depth + 1, parentId: t.id,
+        });
+        next.push({ task: child, depth: depth + 1 });
+      });
+    });
+    frontier = next;
   }
 
-  return [...before, { id: task.id, title: task.title, status: task.status, direction: "self" }, ...after];
+  return [
+    ...before,
+    {
+      id: task.id, title: task.title, status: task.status,
+      direction: "self", depth: selfDepth, parentId: parentOf(task),
+    },
+    ...after,
+  ];
 }
 
 /** Would adding `otherId` as a task-dependency of `task` create an immediate

@@ -19,6 +19,7 @@ import { PlanModule } from "@/components/modules/plan";
 import { ActionsModule } from "@/components/modules/actions";
 import { AuditModule } from "@/components/modules/audit";
 import { WorkspaceModule } from "@/components/modules/workspace";
+import { NotesModule } from "@/components/modules/notes";
 import { StrategyModule } from "@/components/modules/strategy";
 import { FeaturesModule } from "@/components/modules/features";
 import { CapacityModule } from "@/components/modules/capacity";
@@ -44,6 +45,7 @@ const MODULES: Record<
   taxonomy: TaxonomyModule,
   glossary: GlossaryModule,
   workspace: WorkspaceModule,
+  notes: NotesModule,
   audit: AuditModule,
   strategy: StrategyModule,
   features: FeaturesModule,

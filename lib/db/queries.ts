@@ -19,6 +19,7 @@ const {
   phases,
   categories,
   externals,
+  notes,
   activity,
 } = schema;
 
@@ -101,6 +102,10 @@ export async function getWorkingSet(
       .select()
       .from(externals)
       .where(eq(externals.projectId, projectId));
+    const nt = await tx
+      .select()
+      .from(notes)
+      .where(eq(notes.projectId, projectId));
     const act = await tx
       .select()
       .from(activity)
@@ -119,6 +124,7 @@ export async function getWorkingSet(
       phases: ph,
       categories: ct,
       externals: ex,
+      notes: nt,
       activity: act,
     };
   });

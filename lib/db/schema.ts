@@ -236,6 +236,32 @@ export const milestones = pgTable(
 );
 
 /** Externally-owned inputs a task can depend on (dep.type === "ext"). */
+export const notes = pgTable(
+  "notes",
+  {
+    orgId: uuid("org_id").notNull(),
+    projectId: uuid("project_id")
+      .references(() => projects.id, { onDelete: "cascade" })
+      .notNull(),
+    id: text("id").notNull(),
+    title: text("title").default("").notNull(),
+    body: text("body").default("").notNull(),
+    /** Free-text ISO date the note is *about* (not when the row was written). */
+    date: text("date").default("").notNull(),
+    /** Both links are optional: a note can hang off a track, a task, both, or
+     *  nothing at all (a general project note). Neither is a foreign key —
+     *  the id is plain text like every other cross-entity link here, so a
+     *  deleted track/task leaves an orphan link rather than cascading. */
+    category: text("category"),
+    taskId: text("task_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.projectId, t.id] }),
+    index("notes_project_idx").on(t.projectId),
+  ],
+);
+
 export const externals = pgTable(
   "externals",
   {
@@ -341,6 +367,7 @@ export type Tag = InferSelectModel<typeof tags>;
 export type Phase = InferSelectModel<typeof phases>;
 export type Category = InferSelectModel<typeof categories>;
 export type External = InferSelectModel<typeof externals>;
+export type Note = InferSelectModel<typeof notes>;
 export type Activity = InferSelectModel<typeof activity>;
 
 // ---------- audit / activity (append-only; dedicated route in P5) ----------

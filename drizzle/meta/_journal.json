@@ -50,6 +50,13 @@
       "when": 1786111206091,
       "tag": "0006_great_robbie_robertson",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786391625828,
+      "tag": "0007_slimy_fabian_cortez",
+      "breakpoints": true
     }
   ]
 }

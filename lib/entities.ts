@@ -29,6 +29,18 @@ const taskSchema = z
   })
   .partial();
 
+const noteSchema = z
+  .object({
+    title: z.string(),
+    body: z.string(),
+    date: z.string(),
+    // Both links are optional and nullable — a note can sit under a track, a
+    // task, both, or nothing.
+    category: z.string().nullable(),
+    taskId: z.string().nullable(),
+  })
+  .partial();
+
 const externalSchema = z
   .object({
     title: z.string(),
@@ -138,6 +150,7 @@ export const entityConfig = {
   phases: { table: schema.phases, prefix: "ph", schema: taxonomySchema },
   categories: { table: schema.categories, prefix: "ct", schema: categorySchema },
   externals: { table: schema.externals, prefix: "ext", schema: externalSchema },
+  notes: { table: schema.notes, prefix: "n", schema: noteSchema },
 } as const;
 
 export type EntityName = keyof typeof entityConfig;

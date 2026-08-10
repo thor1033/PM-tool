@@ -20,7 +20,8 @@ import {
   Lightbulb,
   Boxes,
   History,
-  UserCircle,
+  Layers,
+  NotebookPen,
   type LucideIcon,
 } from "lucide-react";
 
@@ -37,10 +38,11 @@ export interface NavItem {
 /** Module tabs shown inside a project workspace (order matches the sidebar). */
 export const PROJECT_NAV: NavItem[] = [
   { slug: "dashboard",  label: "Overview",            icon: LayoutDashboard, hint: "Project health at a glance" },
-  { slug: "workspace",  label: "Workspace",            icon: UserCircle,      hint: "Per-person task hub" },
+  { slug: "workspace",  label: "Workspace",            icon: Layers,          hint: "Per-person task hub" },
   { slug: "actions",    label: "Tasks",                icon: ListTodo,        hint: "Tasks, kanban, gantt and calendar" },
   { slug: "business-case", label: "Business case",    icon: FileText,        hint: "Why, outcomes and finances",         group: "overview" },
   { slug: "scope",         label: "Scope",            icon: Target,          hint: "In and out of scope",                group: "overview" },
+  { slug: "notes",         label: "Notes",            icon: NotebookPen,     hint: "Notes by track or task",             group: "overview" },
   { slug: "preanalysis",   label: "Pre-analysis",     icon: Microscope,      hint: "Findings and as-is / to-be",         group: "overview" },
   { slug: "risks",         label: "Risks",            icon: TriangleAlert,   hint: "Risk register and mitigation",        group: "overview" },
   { slug: "stakeholders",  label: "Stakeholders",     icon: Users,           hint: "People, influence and interest",      group: "overview" },
