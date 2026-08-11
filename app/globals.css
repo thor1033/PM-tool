@@ -200,4 +200,12 @@
     text-transform: uppercase;
     color: var(--ink-ghost);
   }
+  /* Glossary marks are inserted into the DOM by lib/glossary-highlighter.ts,
+     so they're styled here rather than via a component's className. */
+  .gloss-mark {
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+    text-decoration-color: color-mix(in oklch, var(--accent-c) 60%, transparent);
+    cursor: help;
+  }
 }

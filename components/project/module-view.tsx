@@ -1,7 +1,9 @@
 "use client";
 
-import { useProject } from "@/lib/api/hooks";
+import { useProject, useUpdateProject } from "@/lib/api/hooks";
 import { EmptyState } from "@/components/project/ui";
+import { Button } from "@/components/ui/button";
+import { PROJECT_NAV } from "@/lib/nav";
 import { DashboardModule } from "@/components/modules/dashboard";
 import { BoardModule } from "@/components/modules/board";
 import { BusinessCaseModule } from "@/components/modules/business-case";
@@ -62,8 +64,18 @@ export function ModuleView({
   projectId: string;
   tab: string;
 }) {
-  const { error } = useProject(projectId);
+  const { data, error } = useProject(projectId);
+  const updateProject = useUpdateProject(projectId);
   const Module = MODULES[tab];
+
+  // A page switched off in Customise is still reachable by URL (a bookmark, or
+  // switching it off while looking at it). Rather than blocking access and
+  // stranding the user, show it with a way back on.
+  const settings = (data?.project.settings as Record<string, unknown> | undefined) ?? {};
+  const hasNavPrefs = Array.isArray(settings.navModules);
+  const navModules = hasNavPrefs ? (settings.navModules as string[]) : [];
+  const navItem = PROJECT_NAV.find((n) => n.slug === tab);
+  const hidden = !!navItem?.group && hasNavPrefs && !navModules.includes(tab);
 
   if (error) {
     return (
@@ -76,5 +88,28 @@ export function ModuleView({
   if (!Module) {
     return <EmptyState title="Unknown section" body={`No module "${tab}".`} />;
   }
-  return <Module projectId={projectId} />;
+  return (
+    <>
+      {hidden && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-dashed px-4 py-3">
+          <p className="text-muted-foreground text-[13.5px]">
+            <span className="font-medium">{navItem?.label}</span> is switched off
+            for this project, so it isn&rsquo;t in the sidebar.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              updateProject.mutate({
+                settings: { ...settings, navModules: [...navModules, tab] },
+              })
+            }
+          >
+            Show it again
+          </Button>
+        </div>
+      )}
+      <Module projectId={projectId} />
+    </>
+  );
 }

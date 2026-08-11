@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { useState } from "react";
-import { ChevronsUpDown, ArrowLeft, Check, ChevronDown, Star } from "lucide-react";
+import { ChevronsUpDown, ArrowLeft, Check, ChevronDown, Star, SlidersHorizontal } from "lucide-react";
 import { PROJECT_NAV } from "@/lib/nav";
 import { useProject, useProjects, useUpdateProject } from "@/lib/api/hooks";
 import { accent } from "@/lib/colors";
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const GROUP_LABELS: Record<string, string> = {
   overview: "Overview",
@@ -39,15 +40,42 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
 
   const settings = (project?.settings as Record<string, unknown> | undefined) ?? {};
   const navFavs: string[] = Array.isArray(settings.navFavs) ? (settings.navFavs as string[]) : [];
+  /* Which groupable pages this project shows. A project that has never been
+     customised has no stored list — that's treated as "show everything" so
+     existing work doesn't vanish, while a saved list is respected exactly
+     (including an empty one, meaning the user switched everything off). */
+  const hasNavPrefs = Array.isArray(settings.navModules);
+  const enabledModules: string[] = hasNavPrefs ? (settings.navModules as string[]) : [];
+  const isEnabled = (slug: string) => !hasNavPrefs || enabledModules.includes(slug);
 
   const activeItem = PROJECT_NAV.find((n) => n.slug === activeSlug);
   const activeGroup = activeItem?.group;
 
+  const [customiseOpen, setCustomiseOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({
     overview: activeGroup === "overview",
     strategy: activeGroup === "strategy",
     delivery: activeGroup === "delivery",
   });
+
+  function toggleModule(slug: string) {
+    if (!project) return;
+    // First customisation starts from "everything on", which is what the user
+    // is currently looking at.
+    const base = hasNavPrefs
+      ? enabledModules
+      : PROJECT_NAV.filter((n) => n.group).map((n) => n.slug);
+    const next = base.includes(slug)
+      ? base.filter((s) => s !== slug)
+      : [...base, slug];
+    updateProject.mutate({ settings: { ...settings, navModules: next } });
+  }
+
+  function setAllModules(on: boolean) {
+    if (!project) return;
+    const next = on ? PROJECT_NAV.filter((n) => n.group).map((n) => n.slug) : [];
+    updateProject.mutate({ settings: { ...settings, navModules: next } });
+  }
 
   function toggleFav(slug: string) {
     if (!project) return;
@@ -57,13 +85,22 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
     updateProject.mutate({ settings: { ...settings, navFavs: next } });
   }
 
+  const groupableCount = PROJECT_NAV.filter((n) => n.group).length;
+  const shownCount = PROJECT_NAV.filter((n) => n.group && isEnabled(n.slug)).length;
+  const glossaryCount = ((data?.project.glossary as { term?: string }[] | undefined) ?? [])
+    .filter((t) => t.term?.trim()).length;
   const pinned = PROJECT_NAV.filter((n) => !n.group);
-  const favItems = PROJECT_NAV.filter((n) => n.group && navFavs.includes(n.slug));
-  const groups = (["overview", "strategy", "delivery"] as const).map((key) => ({
-    key,
-    label: GROUP_LABELS[key],
-    items: PROJECT_NAV.filter((n) => n.group === key),
-  }));
+  const favItems = PROJECT_NAV.filter(
+    (n) => n.group && navFavs.includes(n.slug) && isEnabled(n.slug),
+  );
+  const groups = (["overview", "strategy", "delivery"] as const)
+    .map((key) => ({
+      key,
+      label: GROUP_LABELS[key],
+      items: PROJECT_NAV.filter((n) => n.group === key && isEnabled(n.slug)),
+    }))
+    // A section with nothing switched on shouldn't render an empty header.
+    .filter((g) => g.items.length > 0);
 
   function NavLink({ item, indent = false }: { item: (typeof PROJECT_NAV)[number]; indent?: boolean }) {
     const active = activeSlug === item.slug;
@@ -82,7 +119,18 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
           )}
         >
           <Icon className={cn("size-[18px] shrink-0", active ? "opacity-100" : "opacity-80")} />
-          {item.label}
+          <span className="flex-1">{item.label}</span>
+          {item.slug === "glossary" && glossaryCount > 0 && (
+            <span
+              className={cn(
+                "shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[10.5px] font-semibold",
+                active ? "bg-background/20" : "bg-muted text-muted-foreground",
+              )}
+              title={`${glossaryCount} term${glossaryCount === 1 ? "" : "s"}`}
+            >
+              {glossaryCount}
+            </span>
+          )}
         </Link>
         {item.group && (
           <button
@@ -194,6 +242,20 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
         </div>
+
+        {/* Customise — which optional pages this project shows. */}
+        <div className="shrink-0 border-t p-3">
+          <button
+            onClick={() => setCustomiseOpen(true)}
+            className="text-muted-foreground hover:bg-muted hover:text-foreground flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-[13.5px] font-medium transition"
+          >
+            <SlidersHorizontal className="size-4 shrink-0" />
+            Customise pages
+            <span className="ml-auto font-mono text-[11px]">
+              {shownCount}/{groupableCount}
+            </span>
+          </button>
+        </div>
       </aside>
 
       {/* Content */}
@@ -209,7 +271,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56">
-              {PROJECT_NAV.map((item) => (
+              {PROJECT_NAV.filter((n) => !n.group || isEnabled(n.slug)).map((item) => (
                 <DropdownMenuItem key={item.slug} asChild>
                   <Link href={`/projects/${id}/${item.slug}`}>
                     <item.icon className="size-4" />
@@ -230,6 +292,69 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
           children
         )}
       </main>
+
+      <Dialog open={customiseOpen} onOpenChange={setCustomiseOpen}>
+        <DialogContent className="no-gloss flex max-h-[85dvh] flex-col sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-serif-display font-medium">Customise pages</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-muted-foreground text-[13.5px] leading-relaxed">
+              Choose what this project needs. Overview, Workspace and Tasks are
+              always available.
+            </p>
+            <div className="flex shrink-0 gap-1.5">
+              <Button size="sm" variant="outline" onClick={() => setAllModules(true)}>All</Button>
+              <Button size="sm" variant="outline" onClick={() => setAllModules(false)}>None</Button>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
+            {(["overview", "strategy", "delivery"] as const).map((key) => (
+              <div key={key}>
+                <p className="eyebrow mb-2 text-[11px]">{GROUP_LABELS[key]}</p>
+                <div className="space-y-1">
+                  {PROJECT_NAV.filter((n) => n.group === key).map((item) => {
+                    const on = isEnabled(item.slug);
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.slug}
+                        onClick={() => toggleModule(item.slug)}
+                        className="hover:bg-muted flex w-full items-center gap-3 rounded-[var(--radius-sm)] px-2.5 py-2 text-left transition"
+                      >
+                        <Icon className={cn("size-4 shrink-0", on ? "text-foreground" : "text-muted-foreground/50")} />
+                        <span className="min-w-0 flex-1">
+                          <span className={cn("block text-[13.5px] font-medium", !on && "text-muted-foreground")}>
+                            {item.label}
+                          </span>
+                          <span className="text-muted-foreground/70 block text-[12px]">{item.hint}</span>
+                        </span>
+                        <span
+                          className={cn(
+                            "relative h-5 w-9 shrink-0 rounded-full transition",
+                            on ? "bg-primary" : "bg-[var(--line-strong)]",
+                          )}
+                          role="switch"
+                          aria-checked={on}
+                        >
+                          <span
+                            className={cn(
+                              "absolute top-0.5 size-4 rounded-full bg-white transition-all",
+                              on ? "left-[18px]" : "left-0.5",
+                            )}
+                          />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

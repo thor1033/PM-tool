@@ -9,6 +9,7 @@ import { accentVar } from "@/lib/colors";
 import { fmtD, TRACK_ICONS } from "@/lib/tasks";
 import { cn } from "@/lib/utils";
 import { ModuleHeader } from "@/components/project/ui";
+import { GlossaryText } from "@/components/project/glossary-text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -157,7 +158,12 @@ function NoteCard({ ws, projectId, note, onEdit }: {
       </header>
 
       {note.body && (
-        <p className="mt-2 whitespace-pre-wrap text-[13.5px] leading-relaxed">{note.body}</p>
+        <p className="mt-2 whitespace-pre-wrap text-[13.5px] leading-relaxed">
+          <GlossaryText
+            text={note.body}
+            terms={(ws.project.glossary as { id: string; term: string; definition: string }[]) ?? []}
+          />
+        </p>
       )}
 
       {(cat || task) && (
