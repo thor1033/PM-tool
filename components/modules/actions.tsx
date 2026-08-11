@@ -21,6 +21,16 @@ import { KanbanView } from "@/components/modules/actions/kanban-view";
 import type { ActionsView, SortMode } from "@/components/modules/actions/shared";
 import { VIEW_STORAGE_KEY, SORT_STORAGE_KEY } from "@/components/modules/actions/shared";
 
+const STATUS_FILTERS = [
+  { id: "backlog", label: "Backlog", var: "--hue-backlog" },
+  { id: "inprogress", label: "In progress", var: "--hue-progress" },
+  { id: "done", label: "Done", var: "--hue-done" },
+];
+/** Done work is hidden by default — it's the bulk of an old project and
+ *  rarely what you're looking at. Shown as a real filter, not a hidden rule,
+ *  so it's discoverable and reversible. */
+const DEFAULT_STATUS_FILTER = ["backlog", "inprogress"];
+
 const VIEWS: { id: ActionsView; label: string; icon: typeof Rows3 }[] = [
   { id: "list", label: "Task list", icon: Rows3 },
   { id: "kanban", label: "Kanban", icon: KanbanSquare },
@@ -33,11 +43,14 @@ type View = ActionsView;
 // ── header Filter popover ───────────────────────────────────────────────────
 
 function FilterPopover({
-  ws, fCat, setFCat, fWho, setFWho,
+  ws, fCat, setFCat, fWho, setFWho, fStatus, setFStatus, showStatus = true,
 }: {
   ws: { categories: { id: string; label: string; color: string }[]; members: { id: string; name: string; color: string }[] };
   fCat: string[]; setFCat: (v: string[]) => void;
   fWho: string[]; setFWho: (v: string[]) => void;
+  fStatus: string[]; setFStatus: (v: string[]) => void;
+  /** Hidden on Kanban, where status is the board's columns. */
+  showStatus?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -47,9 +60,15 @@ function FilterPopover({
     return () => document.removeEventListener("mousedown", h);
   }, []);
 
-  const count = fCat.length + fWho.length;
+  // The badge reflects whether anything is actually being hidden, not whether
+  // a setting differs from its default — hiding Done by default still hides
+  // work, and that should be visible rather than silent.
+  const statusHides = fStatus.length > 0 && fStatus.length < STATUS_FILTERS.length;
+  const count = fCat.length + fWho.length + (showStatus && statusHides ? 1 : 0);
   const toggleCat = (id: string) => setFCat(fCat.includes(id) ? fCat.filter((x) => x !== id) : [...fCat, id]);
   const toggleWho = (id: string) => setFWho(fWho.includes(id) ? fWho.filter((x) => x !== id) : [...fWho, id]);
+  const toggleStatus = (id: string) =>
+    setFStatus(fStatus.includes(id) ? fStatus.filter((x) => x !== id) : [...fStatus, id]);
 
   return (
     <div className="relative" ref={ref}>
@@ -67,7 +86,7 @@ function FilterPopover({
           <div className="mb-2 flex items-center justify-between">
             <p className="eyebrow">Assigned to</p>
             {count > 0 && (
-              <button onClick={() => { setFCat([]); setFWho([]); }} className="text-muted-foreground hover:text-foreground text-[12px] font-medium">
+              <button onClick={() => { setFCat([]); setFWho([]); setFStatus(DEFAULT_STATUS_FILTER); }} className="text-muted-foreground hover:text-foreground text-[12px] font-medium">
                 Clear
               </button>
             )}
@@ -96,6 +115,21 @@ function FilterPopover({
             </button>
             {ws.members.length === 0 && <span className="text-muted-foreground text-sm">No members yet</span>}
           </div>
+          {showStatus && <p className="eyebrow mb-2">Status</p>}
+          {showStatus && <div className="mb-4 flex flex-wrap gap-2">
+            {STATUS_FILTERS.map((st) => (
+              <button
+                key={st.id}
+                onClick={() => toggleStatus(st.id)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition",
+                  fStatus.includes(st.id) ? "bg-foreground text-background border-foreground" : "hover:bg-muted",
+                )}
+              >
+                <span className="size-2 rounded-full" style={{ background: `var(${st.var})` }} />{st.label}
+              </button>
+            ))}
+          </div>}
           <p className="eyebrow mb-2">Track</p>
           <div className="flex flex-wrap gap-2">
             {ws.categories.map((c) => (
@@ -205,6 +239,7 @@ export function ActionsModule({ projectId }: { projectId: string }) {
   const [sort, setSort] = useState<SortMode>("category");
   const [fCat, setFCat] = useState<string[]>([]);
   const [fWho, setFWho] = useState<string[]>([]);
+  const [fStatus, setFStatus] = useState<string[]>(DEFAULT_STATUS_FILTER);
   const [query, setQuery] = useState("");
   const [timelineFilters, setTimelineFilters] = useState<TimelineFilters>(EMPTY_TIMELINE_FILTERS);
   const [timelineSort, setTimelineSort] = useState<TimelineSortMode>("track");
@@ -263,11 +298,20 @@ export function ActionsModule({ projectId }: { projectId: string }) {
 
   // Dependency lookups always resolve against the FULL task list — filtering
   // only changes what's rendered, never whether a block resolves correctly.
-  const filtered = useMemo(
+  // Track / owner / search, without the status filter. Kanban uses this: the
+  // board's whole point is the status columns, so hiding Done there would
+  // empty a column rather than reduce noise.
+  const filteredNoStatus = useMemo(
     () => tasks.filter((t) => taskMatchesFilter(t, fCat, fWho) && matchesQuery(t)),
     [tasks, fCat, fWho, matchesQuery],
   );
-  const hasActiveFilter = fCat.length > 0 || fWho.length > 0 || q.length > 0;
+  const filtered = useMemo(
+    () => filteredNoStatus.filter((t) => fStatus.length === 0 || fStatus.includes(t.status)),
+    [filteredNoStatus, fStatus],
+  );
+  // Same rule as the badge: "active" means something is being hidden.
+  const statusFiltered = fStatus.length > 0 && fStatus.length < STATUS_FILTERS.length;
+  const hasActiveFilter = fCat.length > 0 || fWho.length > 0 || q.length > 0 || statusFiltered;
 
   if (!ws) return null;
 
@@ -342,7 +386,13 @@ export function ActionsModule({ projectId }: { projectId: string }) {
               )}
             </div>
           )}
-          {showGlobalFilter && <FilterPopover ws={ws} fCat={fCat} setFCat={setFCat} fWho={fWho} setFWho={setFWho} />}
+          {showGlobalFilter && (
+            <FilterPopover
+              ws={ws} fCat={fCat} setFCat={setFCat} fWho={fWho} setFWho={setFWho}
+              fStatus={fStatus} setFStatus={setFStatus}
+              showStatus={view !== "kanban"}
+            />
+          )}
           {showSortBy && <SortByDropdown sort={sort} onChange={changeSort} />}
           {view === "timeline" && (
             <>
@@ -399,7 +449,7 @@ export function ActionsModule({ projectId }: { projectId: string }) {
       )}
       {view === "kanban" && (
         <KanbanView
-          ws={ws} projectId={projectId} filtered={filtered}
+          ws={ws} projectId={projectId} filtered={filteredNoStatus}
           onOpen={(t) => openTask(t)}
           onNew={(status) => openTask(null, undefined, status)}
         />

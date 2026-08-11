@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/project/confirm";
 import {
   Dialog,
   DialogContent,
@@ -81,6 +82,7 @@ function ProductDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   const create = useCreateEntity(projectId, "products");
+  const confirm = useConfirm();
   const update = useUpdateEntity(projectId, "products");
   const updateTask = useUpdateEntity(projectId, "tasks");
   const del = useDeleteEntity(projectId, "products");
@@ -111,9 +113,9 @@ function ProductDialog({
     onOpenChange(false);
   }
 
-  function remove() {
+  async function remove() {
     if (!item) return;
-    if (!confirm(`Delete "${item.name}"?`)) return;
+    if (!(await confirm({ title: `Delete “${item.name}”?`, body: "This removes it from the catalogue." }))) return;
     del.mutate(item.id, { onError: (e) => toast.error((e as Error).message) });
     onOpenChange(false);
   }

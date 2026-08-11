@@ -14,6 +14,7 @@ import { ModuleHeader, SectionCard } from "@/components/project/ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useConfirm } from "@/components/project/confirm";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -179,6 +180,7 @@ function MemberRow({
   onRename: (id: string, oldName: string, newName: string) => void;
 }) {
   const a = accent(member.color);
+  const confirm = useConfirm();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(member.name);
 
@@ -212,7 +214,7 @@ function MemberRow({
         ) : (
           <>
             <Button variant="ghost" size="icon" className="size-7" onClick={() => setEditing(true)}><Pencil className="size-3.5" /></Button>
-            <Button variant="ghost" size="icon" className="size-7" onClick={() => { if (confirm(`Remove "${member.name}" from the team? Their assignments will be cleared.`)) onDelete(member.id, member.name); }}>
+            <Button variant="ghost" size="icon" className="size-7" onClick={async () => { if (await confirm({ title: `Remove “${member.name}” from the team?`, body: "Their assignments will be cleared.", confirmLabel: "Remove" })) onDelete(member.id, member.name); }}>
               <Trash2 className="size-3.5" />
             </Button>
           </>

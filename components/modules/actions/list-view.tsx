@@ -17,6 +17,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Input } from "@/components/ui/input";
 import { COLLAPSE_STORAGE_KEY_PREFIX, OPEN_SUBS_STORAGE_KEY_PREFIX } from "@/components/modules/actions/shared";
 import type { SortMode } from "@/components/modules/actions/shared";
+import { useConfirm } from "@/components/project/confirm";
 
 const STATUS_RANK: Record<string, number> = Object.fromEntries(COLUMNS.map((c, i) => [c.id, i]));
 
@@ -78,6 +79,23 @@ export function ListView({
   const update = useUpdateEntity(projectId, "tasks");
   const del = useDeleteEntity(projectId, "tasks");
   const updateCat = useUpdateEntity(projectId, "categories");
+  const delCat = useDeleteEntity(projectId, "categories");
+
+  /** Deleting a track would orphan its tasks, so they're moved to "no track"
+   *  first — they stay visible under "Undefined track" instead of vanishing. */
+  async function deleteTrack(g: Group) {
+    const inTrack = ws.tasks.filter((t) => t.category === g.key);
+    const ok = await confirm({
+      title: `Delete the “${g.label}” track?`,
+      body: inTrack.length
+        ? `Its ${inTrack.length} task${inTrack.length === 1 ? "" : "s"} will be kept and moved to “no track”.`
+        : "The track is empty.",
+    });
+    if (!ok) return;
+    inTrack.forEach((t) => update.mutate({ id: t.id, data: { category: null } }));
+    delCat.mutate(g.key, { onError: (e) => toast.error((e as Error).message) });
+  }
+  const confirm = useConfirm();
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => loadJSON(`${COLLAPSE_STORAGE_KEY_PREFIX}${projectId}`, {}));
   const [expandedSubs, setExpandedSubs] = useState<Record<string, boolean>>(() => loadJSON(`${OPEN_SUBS_STORAGE_KEY_PREFIX}${projectId}`, {}));
@@ -338,6 +356,16 @@ export function ListView({
               <div className="flex items-center gap-2">
                 {!g.key.startsWith("_") && (
                   <>
+                    {/* Adds straight into this track, alongside the toolbar's
+                        "Add new" which starts without one pre-selected. */}
+                    <Button
+                      size="sm"
+                      className="h-8 text-[12.5px]"
+                      onClick={() => onEdit(null, g.key)}
+                      title={`Add a task to ${g.label}`}
+                    >
+                      <Plus className="size-3.5" /> Task
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -356,6 +384,13 @@ export function ListView({
                     >
                       <Flag className="size-3.5" /> Gate
                     </Button>
+                    <button
+                      onClick={() => deleteTrack(g)}
+                      title="Delete this track"
+                      className="text-muted-foreground/70 rounded-[var(--radius-sm)] p-1.5 transition hover:bg-[color-mix(in_oklch,var(--t-red)_12%,transparent)] hover:text-[var(--t-red)]"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
                   </>
                 )}
               </div>
@@ -523,7 +558,7 @@ export function ListView({
                           totalCount={subs.length}
                           onToggleSubs={() => toggleSubs(t.id)}
                           onEdit={() => onEdit(t)}
-                          onDelete={() => { if (confirm(`Delete "${t.title}"?`)) del.mutate(t.id, { onError: (e) => toast.error((e as Error).message) }); }}
+                          onDelete={async () => { if (await confirm({ title: `Delete “${t.title || "this task"}”?`, body: "This also removes its subtasks, comments and links." })) del.mutate(t.id, { onError: (e) => toast.error((e as Error).message) }); }}
                           indent={0}
                           dragging={dragTaskId === t.id}
                           dragOver={dragOverRow === t.id}
@@ -560,7 +595,7 @@ export function ListView({
                             hasSubtasks={false} subsOpen={false} doneCount={0} totalCount={0}
                             onToggleSubs={() => {}}
                             onEdit={() => onEdit(sub)}
-                            onDelete={() => { if (confirm(`Delete "${sub.title}"?`)) del.mutate(sub.id, { onError: (e) => toast.error((e as Error).message) }); }}
+                            onDelete={async () => { if (await confirm({ title: `Delete “${sub.title || "this subtask"}”?` })) del.mutate(sub.id, { onError: (e) => toast.error((e as Error).message) }); }}
                             indent={1}
                             dragging={false} dragOver={false}
                             onDragStart={() => {}} onDragOver={() => {}} onDrop={() => {}}
@@ -831,9 +866,23 @@ function TaskRow({
         </span>
       </td>
       <td className="py-4 pr-4">
-        <div className="flex items-center gap-2 opacity-0 transition group-hover:opacity-100">
-          <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="text-muted-foreground hover:text-foreground"><Pencil className="size-4" /></button>
-          <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-muted-foreground hover:text-[var(--t-red)]"><Trash2 className="size-4" /></button>
+        {/* Always visible rather than hover-only — a delete you can't see is
+            a delete you can't find. */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => { e.stopPropagation(); onEdit(); }}
+            title="Edit task"
+            className="text-muted-foreground hover:bg-muted hover:text-foreground rounded-[var(--radius-sm)] p-1.5 transition"
+          >
+            <Pencil className="size-4" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            title="Delete task"
+            className="text-muted-foreground/70 rounded-[var(--radius-sm)] p-1.5 transition hover:bg-[color-mix(in_oklch,var(--t-red)_12%,transparent)] hover:text-[var(--t-red)]"
+          >
+            <Trash2 className="size-4" />
+          </button>
         </div>
       </td>
     </tr>

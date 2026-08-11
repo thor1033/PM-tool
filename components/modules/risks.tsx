@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/project/confirm";
 import {
   Dialog,
   DialogContent,
@@ -147,6 +148,7 @@ function RiskDialog({
 export function RisksModule({ projectId }: { projectId: string }) {
   const { data } = useProject(projectId);
   const del = useDeleteEntity(projectId, "risks");
+  const confirm = useConfirm();
   const [dialog, setDialog] = useState<{ open: boolean; risk: Risk | null }>({
     open: false,
     risk: null,
@@ -205,8 +207,8 @@ export function RisksModule({ projectId }: { projectId: string }) {
                     variant="ghost"
                     size="icon"
                     className="size-7"
-                    onClick={() => {
-                      if (confirm(`Delete "${r.title}"?`))
+                    onClick={async () => {
+                      if (await confirm({ title: `Delete “${r.title || "this risk"}”?` }))
                         del.mutate(r.id, {
                           onError: (e) => toast.error((e as Error).message),
                         });

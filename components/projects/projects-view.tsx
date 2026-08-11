@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { CreateProjectDialog } from "@/components/projects/create-project-dialog";
+import { useConfirm } from "@/components/project/confirm";
 
 function timeAgo(iso: string) {
   const d = Date.now() - new Date(iso).getTime();
@@ -35,6 +36,7 @@ function ProjectCard({
   childrenProjects: ProjectSummary[];
 }) {
   const del = useDeleteProject();
+  const confirm = useConfirm();
   const pct = p.taskCount ? Math.round((p.doneCount / p.taskCount) * 100) : 0;
 
   return (
@@ -65,8 +67,8 @@ function ProjectCard({
           <DropdownMenuContent align="end">
             <DropdownMenuItem
               variant="destructive"
-              onSelect={() => {
-                if (confirm(`Delete "${p.name}"? This cannot be undone.`)) {
+              onSelect={async () => {
+                if (await confirm({ title: `Delete “${p.name}”?`, body: "This cannot be undone — every task, risk and document in it goes too." })) {
                   del.mutate(p.id, {
                     onSuccess: () => toast.success("Project deleted"),
                     onError: (e) => toast.error((e as Error).message),

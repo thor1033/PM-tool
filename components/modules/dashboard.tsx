@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { useMemo, useState } from "react";
 import {
   TriangleAlert,
@@ -10,10 +11,8 @@ import {
   Users,
   ChevronDown,
   Link2,
-  FileText,
-  KanbanSquare,
 } from "lucide-react";
-import { useProject } from "@/lib/api/hooks";
+import { useProject, useUpdateProject } from "@/lib/api/hooks";
 import { accent, accentVar } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import type { Task, WorkingSet } from "@/lib/types";
@@ -464,6 +463,60 @@ function TaskLine({ t, onOpen }: { t: Task; onOpen: (t: Task) => void }) {
 
 // ── module ────────────────────────────────────────────────────────────────────
 
+/** The project's business purpose, editable in place. Writes to the same
+ *  `businessCase.purpose` the Business case page edits, so the two stay in
+ *  sync through the shared working-set cache. */
+function PurposeLine({ projectId, businessCase }: {
+  projectId: string; businessCase: Record<string, unknown> | null;
+}) {
+  const update = useUpdateProject(projectId);
+  const purpose = (businessCase as { purpose?: string } | null)?.purpose ?? "";
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(purpose);
+
+  function commit() {
+    setEditing(false);
+    const next = draft.trim();
+    if (next === purpose) return;
+    update.mutate(
+      { businessCase: { ...(businessCase ?? {}), purpose: next } },
+      { onError: (e) => toast.error((e as Error).message) },
+    );
+  }
+
+  if (editing) {
+    return (
+      <textarea
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commit(); }
+          if (e.key === "Escape") { setDraft(purpose); setEditing(false); }
+        }}
+        rows={3}
+        placeholder="What is this project for?"
+        className="font-serif-display focus:border-primary mt-3 w-full max-w-[560px] resize-y rounded-[var(--radius-sm)] border bg-[var(--panel)] px-3 py-2 text-[17px] leading-[1.55] outline-none"
+      />
+    );
+  }
+
+  return (
+    <p
+      onDoubleClick={() => { setDraft(purpose); setEditing(true); }}
+      title="Double-click to edit"
+      className={cn(
+        "font-serif-display mt-3 max-w-[560px] cursor-text rounded-[var(--radius-sm)] text-[17px] leading-[1.55] transition",
+        "hover:bg-[var(--paper-2)] -mx-1 px-1",
+        purpose ? "text-muted-foreground" : "text-muted-foreground/60 italic",
+      )}
+    >
+      {purpose || "Add a business purpose to summarise this project here."}
+    </p>
+  );
+}
+
 export function DashboardModule({ projectId }: { projectId: string }) {
   const { data } = useProject(projectId);
   const [openTask, setOpenTask] = useState<Task | null>(null);
@@ -543,29 +596,15 @@ export function DashboardModule({ projectId }: { projectId: string }) {
           {project.code && (
             <p className="text-muted-foreground mt-1 font-mono text-[12.5px] tracking-wide">{project.code}</p>
           )}
-          <p className="font-serif-display text-muted-foreground mt-3 max-w-[560px] text-[17px] leading-[1.55]">
-            {(project.businessCase as { purpose?: string } | null)?.purpose ||
-              "Add a business purpose to summarise this project here."}
-          </p>
+          <PurposeLine
+            projectId={projectId}
+            businessCase={project.businessCase as Record<string, unknown> | null}
+          />
           {personal && (
             <p className="text-muted-foreground mt-2 text-[13.5px] italic">
               Showing only {who}&rsquo;s tasks and the risks on work they&rsquo;re assigned to.
             </p>
           )}
-          <div className="mt-4.5 mt-[18px] flex flex-wrap items-center gap-2.5">
-            <Link
-              href={`/projects/${projectId}/business-case`}
-              className="bg-primary text-primary-foreground hover:bg-[var(--accent-deep)] inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] px-3.5 py-2 text-[13.5px] font-semibold transition"
-            >
-              <FileText className="size-[15px]" /> Read the business case
-            </Link>
-            <Link
-              href={`/projects/${projectId}/actions`}
-              className="shadow-xs inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border bg-[var(--panel)] px-3.5 py-2 text-[13.5px] font-semibold transition hover:bg-[var(--panel-2)]"
-            >
-              <KanbanSquare className="size-[15px]" /> Open the board
-            </Link>
-          </div>
         </div>
         <ViewBox people={people} who={who} onChange={setWho} />
       </section>

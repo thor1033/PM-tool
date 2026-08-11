@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/project/confirm";
 import {
   Dialog,
   DialogContent,
@@ -355,6 +356,7 @@ export function BoardModule({ projectId }: { projectId: string }) {
   const { data } = useProject(projectId);
   const update = useUpdateEntity(projectId, "tasks");
   const del = useDeleteEntity(projectId, "tasks");
+  const confirm = useConfirm();
   const [dialog, setDialog] = useState<{ open: boolean; task: Task | null }>({
     open: false,
     task: null,
@@ -413,8 +415,8 @@ export function BoardModule({ projectId }: { projectId: string }) {
                   task={t}
                   ws={data}
                   onEdit={() => setDialog({ open: true, task: t })}
-                  onDelete={() => {
-                    if (confirm(`Delete "${t.title}"?`))
+                  onDelete={async () => {
+                    if (await confirm({ title: `Delete “${t.title || "this task"}”?`, body: "This also removes its subtasks, comments and links." }))
                       del.mutate(t.id, {
                         onError: (e) => toast.error((e as Error).message),
                       });

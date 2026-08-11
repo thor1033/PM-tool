@@ -9,6 +9,7 @@ import { ModuleHeader } from "@/components/project/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/project/confirm";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -146,6 +147,7 @@ function BulkImport({ existing, onAdd, onClose }: {
 export function GlossaryModule({ projectId }: { projectId: string }) {
   const { data } = useProject(projectId);
   const update = useUpdateProject(projectId);
+  const confirm = useConfirm();
   const [query, setQuery] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
 
@@ -182,8 +184,8 @@ export function GlossaryModule({ projectId }: { projectId: string }) {
   function patch(id: string, key: "term" | "definition", value: string) {
     commit(items.map((t) => (t.id === id ? { ...t, [key]: value } : t)));
   }
-  function remove(t: Term) {
-    if (!confirm(`Remove “${t.term || "this term"}”?`)) return;
+  async function remove(t: Term) {
+    if (!(await confirm({ title: `Remove “${t.term || "this term"}”?`, body: "It will stop being highlighted across the project.", confirmLabel: "Remove" }))) return;
     commit(items.filter((x) => x.id !== t.id));
   }
 

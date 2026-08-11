@@ -13,6 +13,7 @@ import { GlossaryText } from "@/components/project/glossary-text";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/project/confirm";
 
 const GROUP_KEY = "atlas.notes.groupBy";
 
@@ -125,6 +126,7 @@ function NoteCard({ ws, projectId, note, onEdit }: {
   ws: WorkingSet; projectId: string; note: Note; onEdit: () => void;
 }) {
   const del = useDeleteEntity(projectId, "notes");
+  const confirm = useConfirm();
   const cat = note.category ? ws.categories.find((c) => c.id === note.category) : null;
   const task = note.taskId ? ws.tasks.find((t) => t.id === note.taskId) : null;
   const catIcon = cat?.icon ? TRACK_ICONS[cat.icon] : null;
@@ -144,8 +146,8 @@ function NoteCard({ ws, projectId, note, onEdit }: {
             <span className="text-muted-foreground font-mono text-[11.5px]">{fmtD(note.date)}</span>
           )}
           <button
-            onClick={() => {
-              if (confirm(`Delete “${note.title || "Untitled note"}”?`)) {
+            onClick={async () => {
+              if (await confirm({ title: `Delete “${note.title || "this note"}”?` })) {
                 del.mutate(note.id, { onError: (e) => toast.error((e as Error).message) });
               }
             }}

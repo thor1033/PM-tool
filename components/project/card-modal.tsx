@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
-  Plus, X, Trash2, MessageSquare, TriangleAlert, Link2, Target, Package, GitBranch,
+  Plus, X, Trash2, MessageSquare, TriangleAlert, Link2, Target, Package, GitBranch, ListChecks, Check,
 } from "lucide-react";
 import {
   useCreateEntity, useUpdateEntity, useDeleteEntity,
@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useConfirm } from "@/components/project/confirm";
 
 // ── status segmented control ────────────────────────────────────────────────
 
@@ -316,13 +317,23 @@ export function CardModal({
   const create = useCreateEntity(projectId, "tasks");
   const update = useUpdateEntity(projectId, "tasks");
   const del = useDeleteEntity(projectId, "tasks");
+  const confirm = useConfirm();
 
   // Which task this modal instance is actually showing — starts as the
   // `task` prop, but "+ Follow-up" and clicking a chain node swap this
   // in-place (no close/reopen) once a followup has been created and the
   // parent's working-set cache has the new row.
   const [activeTaskId, setActiveTaskId] = useState<string | null>(task?.id ?? null);
-  const activeTask = activeTaskId ? ws.tasks.find((t) => t.id === activeTaskId) ?? task : task;
+  // A freshly-created follow-up isn't in the working set until the refetch
+  // lands, so the lookup misses for a moment. Falling straight back to the
+  // original `task` there would silently keep the old task on screen, so the
+  // swap is only abandoned when the id genuinely doesn't resolve.
+  const found = activeTaskId ? ws.tasks.find((t) => t.id === activeTaskId) : null;
+  const swapped = !!activeTaskId && activeTaskId !== task?.id;
+  const activeTask = found ?? (swapped ? null : task);
+  // A brand-new task starts today; an existing one keeps whatever it has,
+  // including a deliberately empty date.
+  const defaultStart = (t: Task | null) => t ? t.start : new Date().toISOString().slice(0, 10);
 
   const [form, setForm] = useState(() => ({
     title: activeTask?.title ?? "",
@@ -332,7 +343,7 @@ export function CardModal({
     priority: activeTask?.priority ?? "med",
     category: activeTask?.category ?? defaultCategoryId ?? ws.categories[0]?.id ?? "none",
     assignees: (activeTask?.assignees ?? []).join(", "),
-    start: activeTask?.start ?? "",
+    start: defaultStart(activeTask),
     end: activeTask?.end ?? "",
     deps: activeTask?.deps ?? ([] as TaskDep[]),
   }));
@@ -348,12 +359,32 @@ export function CardModal({
       priority: activeTask?.priority ?? "med",
       category: activeTask?.category ?? defaultCategoryId ?? ws.categories[0]?.id ?? "none",
       assignees: (activeTask?.assignees ?? []).join(", "),
-      start: activeTask?.start ?? "",
+      start: defaultStart(activeTask),
       end: activeTask?.end ?? "",
       deps: activeTask?.deps ?? ([] as TaskDep[]),
     });
+    // Also keyed on whether the row has resolved, so a follow-up that arrives
+    // after the refetch repopulates the form instead of leaving it blank.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTaskId]);
+  }, [activeTaskId, activeTask?.id]);
+
+  const [subTitle, setSubTitle] = useState("");
+  const subtasks = activeTask ? ws.tasks.filter((t) => t.parentId === activeTask.id) : [];
+
+  function addSubtask() {
+    const title = subTitle.trim();
+    if (!activeTask || !title) return;
+    create.mutate(
+      {
+        title, status: "backlog", priority: activeTask.priority,
+        category: activeTask.category, origin: activeTask.origin,
+        parentId: activeTask.id, assignees: [], tags: [],
+        deps: [], comments: [], custom: {},
+      },
+      { onError: (e) => toast.error((e as Error).message) },
+    );
+    setSubTitle("");
+  }
 
   const [commentText, setCommentText] = useState("");
   const [commentAuthor, setCommentAuthor] = useState(() => ws.members[0]?.name ?? "");
@@ -423,21 +454,24 @@ export function CardModal({
     onOpenChange(false);
   }
 
-  function remove() {
+  async function remove() {
     if (!activeTask) return;
-    if (!confirm(`Delete "${activeTask.title}"?`)) return;
+    if (!(await confirm({ title: `Delete “${activeTask.title || "this task"}”?`, body: "This also removes its subtasks, comments and links." }))) return;
     del.mutate(activeTask.id, { onError: (e) => toast.error((e as Error).message) });
     onOpenChange(false);
   }
 
 
   const chain = activeTask ? followupChainOf(activeTask, ws.tasks) : [];
+  // A task is a follow-up when it was spun off another one — that's what the
+  // "reason" explains, so the field only belongs on those.
+  const isFollowup = (activeTask?.deps ?? []).some((d) => d.type === "followup");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[85dvh] max-h-[1050px] w-[90vw] max-w-[1400px] sm:max-w-[1400px] flex-col overflow-hidden p-0">
         <DialogHeader className="flex-row items-center justify-between border-b px-6 py-4 space-y-0">
-          <DialogTitle className="font-serif-display font-medium">{activeTask ? "Edit task" : "New task"}</DialogTitle>
+          <DialogTitle className="font-serif-display font-medium">{activeTask ? "Edit task" : swapped ? "Opening…" : "New task"}</DialogTitle>
           {activeTask && (
             <Button
               variant="outline" size="sm" className="mr-8"
@@ -461,15 +495,19 @@ export function CardModal({
               <Label>Description</Label>
               <Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={3} />
             </div>
-            <div className="space-y-1.5">
-              <Label>Reason for follow-up</Label>
-              <Textarea
-                value={form.occurrence}
-                onChange={(e) => set("occurrence", e.target.value)}
-                rows={2}
-                placeholder="Why did this follow-up become necessary?"
-              />
-            </div>
+            {/* Only meaningful on a task that was actually spun off another —
+                on a standalone task it's a field with nothing to explain. */}
+            {isFollowup && (
+              <div className="space-y-1.5">
+                <Label>Reason for follow-up</Label>
+                <Textarea
+                  value={form.occurrence}
+                  onChange={(e) => set("occurrence", e.target.value)}
+                  rows={2}
+                  placeholder="Why did this follow-up become necessary?"
+                />
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label>Status</Label>
@@ -569,6 +607,73 @@ export function CardModal({
               deps={form.deps.filter((d) => d.type !== "followup")}
               onChange={(next) => set("deps", [...next, ...form.deps.filter((d) => d.type === "followup")])}
             />
+
+            {activeTask && (
+              <div className="border-t pt-4">
+                <h4 className="mb-3 flex items-center gap-1.5 text-sm font-medium">
+                  <ListChecks className="text-muted-foreground size-4" />
+                  Subtasks
+                  {subtasks.length > 0 && (
+                    <span className="bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 text-xs">
+                      {subtasks.filter((t) => t.status === "done").length}/{subtasks.length}
+                    </span>
+                  )}
+                </h4>
+                {subtasks.length === 0 && (
+                  <p className="text-muted-foreground mb-3 text-xs">No subtasks yet.</p>
+                )}
+                {subtasks.map((sub) => (
+                  <div key={sub.id} className="mb-1.5 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => update.mutate(
+                        { id: sub.id, data: { status: sub.status === "done" ? "backlog" : "done" } },
+                        { onError: (e) => toast.error((e as Error).message) },
+                      )}
+                      className={cn(
+                        "flex size-4 shrink-0 items-center justify-center rounded-full border transition",
+                        sub.status === "done"
+                          ? "border-[var(--hue-done)] bg-[var(--hue-done)] text-white"
+                          : "border-[var(--line-strong)] hover:border-primary",
+                      )}
+                      title={sub.status === "done" ? "Mark as to do" : "Mark as done"}
+                    >
+                      {sub.status === "done" && <Check className="size-2.5" strokeWidth={3} />}
+                    </button>
+                    <span className={cn(
+                      "min-w-0 flex-1 truncate text-xs",
+                      sub.status === "done" && "text-muted-foreground line-through",
+                    )}>
+                      {sub.title || "Untitled subtask"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTaskId(sub.id)}
+                      className="text-muted-foreground hover:text-foreground shrink-0 text-[11px]"
+                      title="Open this subtask"
+                    >
+                      Open
+                    </button>
+                  </div>
+                ))}
+                <div className="mt-2 flex items-center gap-2">
+                  <Input
+                    value={subTitle}
+                    onChange={(e) => setSubTitle(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addSubtask(); } }}
+                    placeholder="Add a subtask…"
+                    className="h-8 text-xs"
+                  />
+                  <Button
+                    type="button" size="sm" variant="outline" className="h-8 shrink-0"
+                    onClick={addSubtask}
+                    disabled={!subTitle.trim() || create.isPending}
+                  >
+                    <Plus className="size-3.5" /> Add
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {activeTask && (
               <div className="border-t pt-4">

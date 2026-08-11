@@ -10,14 +10,14 @@ import {
   useDeleteEntity,
 } from "@/lib/api/hooks";
 import type { Stakeholder } from "@/lib/types";
-import { cn } from "@/lib/utils";
 import { ModuleHeader, EmptyState } from "@/components/project/ui";
 import { GlossaryText } from "@/components/project/glossary-text";
+import { initials } from "@/lib/tasks";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/project/confirm";
 import {
   Dialog,
   DialogContent,
@@ -25,28 +25,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-
-const ROLES = [
-  "Executive Sponsor",
-  "Project Owner",
-  "Advisor",
-  "Key User",
-  "Gatekeeper",
-  "Contributor",
-];
-
-const LEVEL: Record<string, string> = {
-  high: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200",
-  med: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
-  low: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
-};
 
 function StakeholderDialog({
   projectId,
@@ -64,10 +42,8 @@ function StakeholderDialog({
   const [f, setF] = useState(() => ({
     name: item?.name ?? "",
     title: item?.title ?? "",
-    role: item?.role ?? "Contributor",
+    role: item?.role ?? "",
     responsibility: item?.responsibility ?? "",
-    influence: item?.influence ?? "med",
-    interest: item?.interest ?? "med",
     contact: item?.contact ?? "",
   }));
   const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
@@ -99,38 +75,11 @@ function StakeholderDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Role</Label>
-            <Select value={f.role} onValueChange={(v) => set("role", v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {ROLES.map((r) => (
-                  <SelectItem key={r} value={r}>{r}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Influence</Label>
-              <Select value={f.influence} onValueChange={(v) => set("influence", v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="med">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Interest</Label>
-              <Select value={f.interest} onValueChange={(v) => set("interest", v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="med">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <Input
+              value={f.role}
+              onChange={(e) => set("role", e.target.value)}
+              placeholder="However you'd describe their role"
+            />
           </div>
           <div className="space-y-1.5">
             <Label>Responsibility</Label>
@@ -162,6 +111,7 @@ function StakeholderDialog({
 export function StakeholdersModule({ projectId }: { projectId: string }) {
   const { data } = useProject(projectId);
   const del = useDeleteEntity(projectId, "stakeholders");
+  const confirm = useConfirm();
   const [dialog, setDialog] = useState<{ open: boolean; item: Stakeholder | null }>(
     { open: false, item: null },
   );
@@ -172,13 +122,9 @@ export function StakeholdersModule({ projectId }: { projectId: string }) {
   return (
     <div>
       <ModuleHeader
+        eyebrow="Overview"
         title="Stakeholders"
-        description="Who matters, and how much they influence or care."
-        actions={
-          <Button onClick={() => setDialog({ open: true, item: null })}>
-            <Plus className="size-4" /> Add stakeholder
-          </Button>
-        }
+        description="Who matters on this engagement, and what they’re responsible for."
       />
 
       {items.length === 0 ? (
@@ -193,63 +139,75 @@ export function StakeholdersModule({ projectId }: { projectId: string }) {
         />
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
+          {/* The header button is gone, so this is the way to add another
+              once the list is no longer empty. */}
+          <button
+            onClick={() => setDialog({ open: true, item: null })}
+            className="text-muted-foreground hover:border-primary hover:text-primary flex min-h-[92px] items-center justify-center gap-2 rounded-[var(--radius-lg)] border border-dashed text-[13.5px] font-medium transition md:order-last"
+          >
+            <Plus className="size-4" /> Add stakeholder
+          </button>
           {items.map((s) => (
-            <div key={s.id} className="group rounded-xl border p-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="font-medium">{s.name}</div>
-                  <div className="text-muted-foreground text-xs">
-                    {s.title}
-                    {s.title && s.role ? " · " : ""}
-                    {s.role}
-                  </div>
+            <article
+              key={s.id}
+              onDoubleClick={() => setDialog({ open: true, item: s })}
+              title="Double-click to edit"
+              className="group shadow-xs rounded-[var(--radius-lg)] border bg-[var(--panel)] p-4 transition hover:shadow-md"
+            >
+              <header className="flex items-start gap-3">
+                <span className="bg-foreground text-background mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full text-[12px] font-bold">
+                  {initials(s.name)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-serif-display truncate text-[16px] font-medium leading-snug">
+                    {s.name || "Unnamed"}
+                  </h3>
+                  {(s.title || s.role) && (
+                    <p className="text-muted-foreground truncate text-[12.5px]">
+                      {s.title}
+                      {s.title && s.role ? " · " : ""}
+                      {s.role}
+                    </p>
+                  )}
                 </div>
-                <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-7"
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
                     onClick={() => setDialog({ open: true, item: s })}
+                    title="Edit stakeholder"
+                    className="text-muted-foreground hover:bg-muted hover:text-foreground rounded-[var(--radius-sm)] p-1.5 transition"
                   >
-                    <Pencil className="size-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-7"
-                    onClick={() => {
-                      if (confirm(`Delete "${s.name}"?`))
+                    <Pencil className="size-3.5" />
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (await confirm({ title: `Delete “${s.name || "this stakeholder"}”?` }))
                         del.mutate(s.id, {
                           onError: (e) => toast.error((e as Error).message),
                         });
                     }}
+                    title="Delete stakeholder"
+                    className="text-muted-foreground/70 rounded-[var(--radius-sm)] p-1.5 transition hover:bg-[color-mix(in_oklch,var(--t-red)_12%,transparent)] hover:text-[var(--t-red)]"
                   >
-                    <Trash2 className="size-4" />
-                  </Button>
+                    <Trash2 className="size-3.5" />
+                  </button>
                 </div>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Badge className={cn("border-0", LEVEL[s.influence])}>
-                  Influence: {s.influence}
-                </Badge>
-                <Badge className={cn("border-0", LEVEL[s.interest])}>
-                  Interest: {s.interest}
-                </Badge>
-              </div>
+              </header>
+
               {s.responsibility && (
-                <p className="text-muted-foreground mt-2 text-sm">
+                <p className="mt-3 text-[13.5px] leading-relaxed">
                   <GlossaryText text={s.responsibility} terms={glossary} />
                 </p>
               )}
+
               {s.contact && (
                 <a
                   href={`mailto:${s.contact}`}
-                  className="text-primary mt-2 inline-flex items-center gap-1 text-xs"
+                  className="text-muted-foreground hover:text-primary mt-3 inline-flex items-center gap-1.5 border-t pt-2.5 text-[12.5px] transition"
                 >
-                  <Mail className="size-3" /> {s.contact}
+                  <Mail className="size-3.5" /> {s.contact}
                 </a>
               )}
-            </div>
+            </article>
           ))}
         </div>
       )}

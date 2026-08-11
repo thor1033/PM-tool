@@ -4,6 +4,7 @@ import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthKitProvider } from "@workos-inc/authkit-nextjs/components";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ConfirmProvider } from "@/components/project/confirm";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -22,7 +23,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <AuthKitProvider>
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
+        <TooltipProvider delayDuration={200}>
+          <ConfirmProvider>{children}</ConfirmProvider>
+        </TooltipProvider>
       </QueryClientProvider>
     </AuthKitProvider>
   );

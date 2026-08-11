@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useConfirm } from "@/components/project/confirm";
 
 export function MilestoneModal({
   ws, projectId, milestone, defaultCategoryId, defaultType, open, onOpenChange,
@@ -21,6 +22,7 @@ export function MilestoneModal({
   open: boolean; onOpenChange: (v: boolean) => void;
 }) {
   const create = useCreateEntity(projectId, "milestones");
+  const confirm = useConfirm();
   const update = useUpdateEntity(projectId, "milestones");
   const del = useDeleteEntity(projectId, "milestones");
 
@@ -52,9 +54,9 @@ export function MilestoneModal({
     onOpenChange(false);
   }
 
-  function remove() {
+  async function remove() {
     if (!milestone) return;
-    if (!confirm(`Delete "${milestone.title}"?`)) return;
+    if (!(await confirm({ title: `Delete “${milestone.title || "this milestone"}”?` }))) return;
     del.mutate(milestone.id, { onError: (e) => toast.error((e as Error).message) });
     onOpenChange(false);
   }

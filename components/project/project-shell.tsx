@@ -20,6 +20,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { SaveIndicator } from "@/components/project/save-indicator";
 
 const GROUP_LABELS: Record<string, string> = {
   overview: "Overview",
@@ -292,6 +293,8 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
           children
         )}
       </main>
+
+      <SaveIndicator />
 
       <Dialog open={customiseOpen} onOpenChange={setCustomiseOpen}>
         <DialogContent className="no-gloss flex max-h-[85dvh] flex-col sm:max-w-lg">
