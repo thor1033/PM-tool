@@ -521,10 +521,17 @@ export function TimelineView({
       barLeft = daysBetween(minStr, t.start) * DAYW;
       barWidth = Math.max(DAYW, daysBetween(t.start, t.end) * DAYW);
     }
-    return { rowY: rowTop + rowH / 2, barLeft, barWidth };
+    // A finished task is drawn to the date it actually finished, with the
+    // planned end left behind as a ghost so the gap is visible. Undated or
+    // edge-clamped bars keep the planned geometry — there's nothing to compare.
+    let actualWidth: number | null = null;
+    if (t.completedOn && t.start && !edgeClampedIds.has(t.id)) {
+      actualWidth = Math.max(DAYW, daysBetween(t.start, t.completedOn) * DAYW);
+    }
+    return { rowY: rowTop + rowH / 2, barLeft, barWidth, actualWidth };
   }
-  const taskLayout = new Map<string, { rowY: number; barLeft: number; barWidth: number }>();
-  const subLayout = new Map<string, { rowY: number; barLeft: number; barWidth: number }>();
+  const taskLayout = new Map<string, { rowY: number; barLeft: number; barWidth: number; actualWidth: number | null }>();
+  const subLayout = new Map<string, { rowY: number; barLeft: number; barWidth: number; actualWidth: number | null }>();
   let yCursor = HDR_H;
   groups.forEach((g) => {
     yCursor += TRACK_H;
@@ -845,6 +852,9 @@ export function TimelineView({
       <div className="text-muted-foreground mt-4 flex flex-wrap gap-5 text-[13px]">
         <span className="inline-flex items-center gap-2"><span className="inline-block h-3 w-5 rounded-[3px]" style={{ background: "var(--accent-c)" }} /> In progress</span>
         <span className="inline-flex items-center gap-2"><span className="inline-block h-3 w-5 rounded-[3px]" style={{ background: "var(--hue-done)" }} /> Done</span>
+        <span className="inline-flex items-center gap-2">
+          <span className="inline-block h-3 w-5 rounded-[3px] border border-dashed" style={{ borderColor: "color-mix(in oklch, var(--accent-c) 55%, transparent)" }} /> Planned end
+        </span>
         <span className="inline-flex items-center gap-2" style={{ color: "var(--accent-deep)" }}>◆ Milestone</span>
         <span className="inline-flex items-center gap-2 text-[var(--t-red)]">▐ Gate</span>
         <span className="inline-flex items-center gap-2 text-[var(--t-red)]">Dependency block (double-click to inspect)</span>
@@ -1097,7 +1107,9 @@ function orderByDependencyFlow(tasks: Task[], scopeIds?: Set<string>): Task[] {
 function GanttRow({
   task, layout, barColorVar, trackLabel, minStr, totalW, gates, edgeClamped, onEdit, onCommit,
 }: {
-  task: Task; layout: { rowY: number; barLeft: number; barWidth: number }; barColorVar: string;
+  task: Task;
+  layout: { rowY: number; barLeft: number; barWidth: number; actualWidth: number | null };
+  barColorVar: string;
   trackLabel: string | null;
   minStr: string; totalW: number;
   gates: Milestone[];
@@ -1154,6 +1166,14 @@ function GanttRow({
   const nowTs = Date.now();
   const isPast = +new Date(task.end) < nowTs;
 
+  // While dragging, `visual` is the live geometry and must win. Otherwise a
+  // finished task draws to its actual end with the planned end ghosted.
+  const dragging = visual.width !== layout.barWidth || visual.left !== layout.barLeft;
+  const showsActual = !dragging && layout.actualWidth !== null && layout.actualWidth !== layout.barWidth;
+  const barW = showsActual ? layout.actualWidth! : visual.width;
+  const plannedWidth = layout.barWidth;
+  const slipDays = task.completedOn && task.end ? daysBetween(task.end, task.completedOn) : 0;
+
   return (
     <div className="group flex border-b hover:bg-[var(--paper-2)]" style={{ height: 48 }}>
       <div className="sticky left-0 z-50 flex shrink-0 items-center gap-2 border-r bg-[var(--panel)] px-4 group-hover:bg-[var(--paper-2)]" style={{ width: 250 }}>
@@ -1168,6 +1188,21 @@ function GanttRow({
         {gates.map((m) => (
           <div key={m.id} className="pointer-events-none absolute inset-y-0 border-l-[1.5px] border-dashed border-[oklch(0.63_0.12_25/0.3)]" style={{ left: daysBetween(minStr, m.date) * DAYW }} />
         ))}
+        {/* Planned end, ghosted behind the real bar, so a task that finished
+            early or late shows the gap rather than just moving. Only drawn
+            when the two actually differ. */}
+        {showsActual && (
+          <div
+            className="pointer-events-none absolute top-[9px] z-[9] h-[30px] rounded-[7px] border border-dashed"
+            style={{
+              left: visual.left,
+              width: plannedWidth,
+              borderColor: `color-mix(in oklch, ${barColorVar} 55%, transparent)`,
+              background: `color-mix(in oklch, ${barColorVar} 8%, transparent)`,
+            }}
+            title={`Planned to finish ${fmtD(task.end)}`}
+          />
+        )}
         <div
           ref={barRef}
           className={cn(
@@ -1176,17 +1211,20 @@ function GanttRow({
             task.status === "done" && "opacity-55",
             isPast && task.status !== "done" && "opacity-40 grayscale-[0.4]",
           )}
-          style={{ left: visual.left, width: visual.width, background: `color-mix(in oklch, ${barColorVar} 88%, white)` }}
+          style={{ left: visual.left, width: barW, background: `color-mix(in oklch, ${barColorVar} 88%, white)` }}
           onPointerDown={(e) => { if (!edgeClamped) onPointerDown(e, "move"); }}
           onDoubleClick={onEdit}
           title={
             edgeClamped
               ? `${task.title} · ${fmtD(task.start)} → ${fmtD(task.end)} — outside the current range, shown at the edge · double-click to open`
-              : `${task.title} · ${fmtD(task.start)} → ${fmtD(task.end)}`
+              : task.completedOn
+                ? `${task.title} · planned ${fmtD(task.start)} → ${fmtD(task.end)} · finished ${fmtD(task.completedOn)}`
+                  + (slipDays > 0 ? ` (${slipDays}d late)` : slipDays < 0 ? ` (${Math.abs(slipDays)}d early)` : " (on time)")
+                : `${task.title} · ${fmtD(task.start)} → ${fmtD(task.end)}`
           }
         >
           <span className="pointer-events-none absolute inset-0 flex items-center truncate px-2.5 text-[12.5px] font-semibold text-white [text-shadow:0_1px_2px_rgba(0,0,0,.18)]">
-            {visual.width > 44 ? task.title : ""}
+            {barW > 44 ? task.title : ""}
           </span>
           {!edgeClamped && (
             <>

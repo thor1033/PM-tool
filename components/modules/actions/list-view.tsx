@@ -68,9 +68,9 @@ function saveJSON(key: string, value: unknown) {
 }
 
 export function ListView({
-  ws, projectId, filtered, hasActiveFilter, sort, fCat, setFCat, onEdit, onEditMilestone,
+  ws, projectId, filtered, sort, fCat, setFCat, onEdit, onEditMilestone,
 }: {
-  ws: WorkingSet; projectId: string; filtered: Task[]; hasActiveFilter: boolean; sort: SortMode;
+  ws: WorkingSet; projectId: string; filtered: Task[]; sort: SortMode;
   fCat: string[]; setFCat: (v: string[]) => void;
   onEdit: (t: Task | null, defaultCategoryId?: string | null) => void;
   onEditMilestone: (m: Milestone | null, defaultCategoryId?: string | null, defaultType?: "milestone" | "gate") => void;
@@ -194,7 +194,10 @@ export function ListView({
     const out: Group[] = [];
     ws.categories.forEach((c) => {
       const tasks = byCat.get(c.id) ?? [];
-      if (tasks.length || !hasActiveFilter) out.push({ key: c.id, label: c.label, color: c.color, tasks });
+      // Tracks are structure the user created, so they stay listed even when a
+      // filter leaves them empty — a fully-done track shouldn't silently
+      // disappear just because Done is hidden. The row explains itself below.
+      out.push({ key: c.id, label: c.label, color: c.color, tasks });
     });
     SYNTH_GROUPS.forEach((g) => {
       const tasks = synthBuckets.get(g.key) ?? [];
@@ -208,7 +211,7 @@ export function ListView({
       out.push({ key: "_none", label: "Undefined track", color: null, tasks: undefinedCategory });
     }
     return out;
-  }, [filtered, ws.categories, hasActiveFilter]);
+  }, [filtered, ws.categories]);
 
   // Grouped once per render instead of re-filtering the full task list for
   // every parent row — that per-row filter turned quadratic as task counts grew.
@@ -483,7 +486,9 @@ export function ListView({
                             dragOverRow === `_empty_${g.key}` ? "border-primary bg-primary/5 text-primary" : "border-[var(--line)]",
                           )}
                         >
-                          Drag a task here, or use &ldquo;Task&rdquo; above to add one
+                          {ws.tasks.some((t) => !t.parentId && t.category === g.key)
+                            ? "Every task here is hidden by the current filter"
+                            : "Drag a task here, or use “Task” above to add one"}
                         </div>
                       </td>
                     </tr>

@@ -8,7 +8,7 @@ import {
 import {
   useCreateEntity, useUpdateEntity, useDeleteEntity,
 } from "@/lib/api/hooks";
-import { resolveDep, wouldConflict, initials, followupChainOf, type ResolvedDep } from "@/lib/tasks";
+import { resolveDep, wouldConflict, initials, followupChainOf, fmtD, daysBetween, type ResolvedDep } from "@/lib/tasks";
 import type { Task, WorkingSet } from "@/lib/types";
 import type { TaskComment, TaskDep } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
@@ -544,9 +544,43 @@ export function CardModal({
                 <Input type="date" value={form.start} onChange={(e) => set("start", e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label>End</Label>
+                <Label>Planned end</Label>
                 <Input type="date" value={form.end} onChange={(e) => set("end", e.target.value)} />
               </div>
+            </div>
+
+            {/* Recorded automatically when the task is marked done, and cleared
+                if it's reopened — read-only so the measured date can't drift
+                from what actually happened. */}
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                Actual end
+                <span className="text-muted-foreground/70 font-normal">· set when marked done</span>
+              </Label>
+              {activeTask?.completedOn ? (
+                <div className="flex items-center gap-2 rounded-[var(--radius-sm)] border bg-[var(--paper-2)] px-3 py-2">
+                  <Check className="size-3.5 shrink-0 text-[var(--hue-done)]" />
+                  <span className="font-mono text-[13px]">{fmtD(activeTask.completedOn)}</span>
+                  {activeTask.end && (() => {
+                    const slip = daysBetween(activeTask.end, activeTask.completedOn);
+                    if (slip === 0) return <span className="text-muted-foreground ml-auto text-[12px]">on time</span>;
+                    return (
+                      <span
+                        className={cn(
+                          "ml-auto text-[12px] font-medium",
+                          slip > 0 ? "text-[var(--t-red)]" : "text-[var(--hue-done)]",
+                        )}
+                      >
+                        {slip > 0 ? `${slip}d late` : `${Math.abs(slip)}d early`}
+                      </span>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="text-muted-foreground rounded-[var(--radius-sm)] border border-dashed px-3 py-2 text-[13px]">
+                  Not finished yet
+                </div>
+              )}
             </div>
 
             <div className="space-y-1.5">

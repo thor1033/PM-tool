@@ -26,6 +26,7 @@ const taskSchema = z
     parentId: z.string().nullable(),
     comments: z.array(z.any()),
     custom: z.record(z.string(), z.any()),
+    completedOn: z.string(),
   })
   .partial();
 

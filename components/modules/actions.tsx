@@ -309,9 +309,6 @@ export function ActionsModule({ projectId }: { projectId: string }) {
     () => filteredNoStatus.filter((t) => fStatus.length === 0 || fStatus.includes(t.status)),
     [filteredNoStatus, fStatus],
   );
-  // Same rule as the badge: "active" means something is being hidden.
-  const statusFiltered = fStatus.length > 0 && fStatus.length < STATUS_FILTERS.length;
-  const hasActiveFilter = fCat.length > 0 || fWho.length > 0 || q.length > 0 || statusFiltered;
 
   if (!ws) return null;
 
@@ -432,7 +429,7 @@ export function ActionsModule({ projectId }: { projectId: string }) {
 
       {view === "list" && (
         <ListView
-          ws={ws} projectId={projectId} filtered={filtered} hasActiveFilter={hasActiveFilter} sort={sort}
+          ws={ws} projectId={projectId} filtered={filtered} sort={sort}
           fCat={fCat} setFCat={setFCat}
           onEdit={openTask} onEditMilestone={openMilestone}
         />

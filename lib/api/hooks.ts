@@ -122,12 +122,13 @@ const ARRAY_DEFAULTS = {
 export function useCreateEntity(projectId: string, entity: EntityName) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: Record<string, unknown>) =>
+    mutationFn: (raw: Record<string, unknown>) =>
       apiFetch(`/api/projects/${projectId}/${entity}`, {
         method: "POST",
-        body: JSON.stringify(data),
+        body: JSON.stringify(withCompletionDate(entity, raw)),
       }),
-    onMutate: async (data: Record<string, unknown>) => {
+    onMutate: async (raw: Record<string, unknown>) => {
+      const data = withCompletionDate(entity, raw);
       await qc.cancelQueries({ queryKey: projectKey(projectId) });
       const previous = qc.getQueryData<WorkingSet>(projectKey(projectId));
       const optimistic = {
@@ -154,6 +155,24 @@ export function useCreateEntity(projectId: string, entity: EntityName) {
   });
 }
 
+/** Stamps a task's real completion date whenever its status changes.
+ *
+ *  Applied centrally rather than at each call site: status is changed from the
+ *  list, board, kanban drag, workspace, task editor, subtask toggles and the
+ *  AI plan, and one missed path would silently lose the date. An explicit
+ *  `completedOn` in the payload always wins, so a manual correction sticks. */
+function withCompletionDate(
+  entity: EntityName,
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  if (entity !== "tasks") return data;
+  if (!("status" in data) || "completedOn" in data) return data;
+  return {
+    ...data,
+    completedOn: data.status === "done" ? new Date().toISOString().slice(0, 10) : "",
+  };
+}
+
 export function useUpdateEntity(projectId: string, entity: EntityName) {
   const qc = useQueryClient();
   return useMutation({
@@ -166,9 +185,10 @@ export function useUpdateEntity(projectId: string, entity: EntityName) {
     }) =>
       apiFetch(`/api/projects/${projectId}/${entity}/${id}`, {
         method: "PATCH",
-        body: JSON.stringify(data),
+        body: JSON.stringify(withCompletionDate(entity, data)),
       }),
-    onMutate: async ({ id, data }) => {
+    onMutate: async ({ id, data: raw }) => {
+      const data = withCompletionDate(entity, raw);
       await qc.cancelQueries({ queryKey: projectKey(projectId) });
       const previous = qc.getQueryData<WorkingSet>(projectKey(projectId));
       patchWorkingSet(qc, projectId, (ws) => ({

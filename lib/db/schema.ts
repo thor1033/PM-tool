@@ -100,6 +100,10 @@ export const tasks = pgTable(
     parentId: text("parent_id"),
     comments: jsonb("comments").$type<TaskComment[]>().default([]).notNull(),
     custom: jsonb("custom").$type<Record<string, unknown>>().default({}).notNull(),
+    /** When the task was actually finished, as a plain ISO date. `end` is the
+     *  planned date; this is what happened, so the two can be compared. Set
+     *  automatically when status becomes "done" and cleared if it moves back. */
+    completedOn: text("completed_on").default("").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
