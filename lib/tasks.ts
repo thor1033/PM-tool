@@ -85,8 +85,17 @@ export function taskIdMap(tasks: Task[]): Map<string, number> {
 
 /** Shared task filter: category (track) + assignee. `"__unassigned"` in
  *  `fWho` matches tasks with no assignees, mirroring the reference app. */
+/** Filter id for "tasks with no track" — a real, selectable bucket, since a
+ *  task is allowed to have no category. */
+export const NO_TRACK_ID = "_none";
+
 export function taskMatchesFilter(t: Task, fCat: string[], fWho: string[]): boolean {
-  if (fCat.length && !(t.category && fCat.includes(t.category))) return false;
+  if (fCat.length) {
+    const ok = t.category
+      ? fCat.includes(t.category)
+      : fCat.includes(NO_TRACK_ID);
+    if (!ok) return false;
+  }
   if (fWho.length) {
     const who = assigneesOf(t);
     const ok = fWho.some((w) => (w === "__unassigned" ? who.length === 0 : who.includes(w)));

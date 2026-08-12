@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { addMonths } from "date-fns";
 import { GitBranch, ChevronDown, SlidersHorizontal, ArrowUpDown, Eye, EyeOff } from "lucide-react";
 import { useUpdateEntity } from "@/lib/api/hooks";
 import type { Task, WorkingSet, Milestone } from "@/lib/types";
-import { daysBetween, fmtD } from "@/lib/tasks";
+import { daysBetween, fmtD, NO_TRACK_ID } from "@/lib/tasks";
 import { accentVar } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -38,7 +38,6 @@ const MAX_VISIBLE_ROWS = 8;
 const ROW_H = 48, HDR_H = 44, TRACK_H = 40, SUB_ROW_H = 34;
 const LABEL_W = 250;
 
-const NO_TRACK_ID = "_none";
 
 export interface TimelineFilters {
   cat: string[];
@@ -265,6 +264,29 @@ export function TimelineSortPopover({
   );
 }
 
+/** Centers "today" in the viewport whenever the range changes.
+ *
+ *  Lives in its own component because the grid it belongs to is skipped
+ *  entirely when a filter leaves nothing dated; as an effect in the parent it
+ *  would sit after that early return and change hook order between renders. */
+function CenterOnToday({
+  scrollRef,
+  todayLeft,
+  totalW,
+}: {
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  todayLeft: number | null;
+  totalW: number;
+}) {
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && todayLeft != null) {
+      el.scrollLeft = Math.max(0, LABEL_W + todayLeft - el.clientWidth / 2);
+    }
+  }, [scrollRef, todayLeft, totalW]);
+  return null;
+}
+
 export function TimelineView({
   ws, projectId, filtered, filters, sort, layers, onEdit, onEditMilestone,
 }: {
@@ -340,6 +362,9 @@ export function TimelineView({
     return map;
   }, [dateFiltered, layers.subtasks]);
 
+  // The grid below runs hooks, so the empty case must not be an early return
+  // out of this component — it renders as a sibling instead. Filtering to a
+  // track with nothing dated used to unmount those hooks mid-render.
   if (!dated.length && !datedMs.length) {
     return (
       <div>
@@ -420,16 +445,6 @@ export function TimelineView({
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayLeft = todayStr >= minStr && todayStr <= rangeMax.toISOString().slice(0, 10)
     ? daysBetween(minStr, todayStr) * DAYW : null;
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el && todayLeft != null) {
-      // Center "today" (LABEL_W + todayLeft, in document coords) within the
-      // scroll container's visible width, re-centering whenever the range
-      // changes so today always sits in the middle of what's on screen.
-      el.scrollLeft = Math.max(0, LABEL_W + todayLeft - el.clientWidth / 2);
-    }
-  }, [todayLeft, totalW]);
 
   // "Upcoming deadlines" abandons track grouping entirely: one flat list,
   // soonest end date first, track shown inline as a small tag per row
@@ -606,6 +621,7 @@ export function TimelineView({
 
   return (
     <div>
+      <CenterOnToday scrollRef={scrollRef} todayLeft={todayLeft} totalW={totalW} />
       <UnscheduledTray tasks={undated} onEdit={onEdit} needsStart />
 
       {/* Above the grid below it — the grid's sticky header and frozen label
@@ -821,9 +837,11 @@ export function TimelineView({
                   </div>
                 )}
                 {g.tasks.map((t) => (
-                  <>
+                  // The fragment is the list child, so it carries the key —
+                  // on GanttRow it left the fragment itself unkeyed.
+                  <Fragment key={t.id}>
                     <GanttRow
-                      key={t.id} task={t} layout={taskLayout.get(t.id)!}
+                      task={t} layout={taskLayout.get(t.id)!}
                       barColorVar={t.category ? accentVar(catMap.get(t.category)?.color ?? "") : col}
                       trackLabel={deadlineMode ? (t.category ? catMap.get(t.category)?.label ?? "No track" : "No track") : null}
                       minStr={minStr} totalW={totalW}
@@ -841,7 +859,7 @@ export function TimelineView({
                         onCommit={(start, end) => updateTask.mutate({ id: sub.id, data: { start, end } }, { onError: (e) => toast.error((e as Error).message) })}
                       />
                     ))}
-                  </>
+                  </Fragment>
                 ))}
               </div>
             );

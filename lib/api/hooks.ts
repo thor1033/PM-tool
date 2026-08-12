@@ -9,6 +9,12 @@ import {
 } from "@tanstack/react-query";
 import { apiFetch } from "./client";
 import type { EntityName } from "@/lib/entities";
+import {
+  describeCreate,
+  describeUpdate,
+  describeDelete,
+  type DescribedEvent,
+} from "@/lib/activity-describe";
 import type { ProjectSummary, WorkingSet } from "@/lib/types";
 
 const projectsKey = ["projects"] as const;
@@ -108,6 +114,25 @@ export function useUpdateProject(id: string) {
   });
 }
 
+// ---------- activity recording ----------
+// Every edit flows through the three hooks below, so recording here means a
+// new screen or shortcut is covered automatically. Writes are fire-and-forget:
+// a failed log must never surface as a failed edit.
+
+const loggedRecently = new Map<string, number>();
+const COALESCE_MS = 5 * 60 * 1000;
+
+function record(projectId: string, ev: DescribedEvent | null) {
+  if (!ev) return;
+  const seenAt = loggedRecently.get(ev.key) ?? 0;
+  if (Date.now() - seenAt < COALESCE_MS) return;
+  loggedRecently.set(ev.key, Date.now());
+  void apiFetch(`/api/projects/${projectId}/audit`, {
+    method: "POST",
+    body: JSON.stringify({ kind: ev.kind, text: ev.text, key: ev.key }),
+  }).catch(() => {});
+}
+
 // ---------- entity mutations (optimistic) ----------
 // `entity` matches the WorkingSet array key (tasks, risks, …), so we can update
 // the cached working set in place before the server responds.
@@ -147,6 +172,10 @@ export function useCreateEntity(projectId: string, entity: EntityName) {
     },
     onError: (_e, _data, ctx) => {
       if (ctx?.previous) qc.setQueryData(projectKey(projectId), ctx.previous);
+    },
+    onSuccess: (created, raw) => {
+      const id = (created as { id?: string } | undefined)?.id ?? "";
+      record(projectId, describeCreate(entity, raw, id));
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: projectKey(projectId) });
@@ -191,16 +220,24 @@ export function useUpdateEntity(projectId: string, entity: EntityName) {
       const data = withCompletionDate(entity, raw);
       await qc.cancelQueries({ queryKey: projectKey(projectId) });
       const previous = qc.getQueryData<WorkingSet>(projectKey(projectId));
+      // Snapshot the row before we overwrite it, so the digest can say what
+      // changed rather than just that something did.
+      const before = (previous?.[entity] as { id: string }[] | undefined)?.find(
+        (it) => it.id === id,
+      ) as Record<string, unknown> | undefined;
       patchWorkingSet(qc, projectId, (ws) => ({
         ...ws,
         [entity]: (ws[entity] as { id: string }[]).map((it) =>
           it.id === id ? { ...it, ...data } : it,
         ),
       }));
-      return { previous };
+      return { previous, before };
     },
     onError: (_e, _vars, ctx) => {
       if (ctx?.previous) qc.setQueryData(projectKey(projectId), ctx.previous);
+    },
+    onSuccess: (_res, { id, data }, ctx) => {
+      record(projectId, describeUpdate(entity, data, ctx?.before, id));
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: projectKey(projectId) });
@@ -219,16 +256,25 @@ export function useDeleteEntity(projectId: string, entity: EntityName) {
     onMutate: async (id: string) => {
       await qc.cancelQueries({ queryKey: projectKey(projectId) });
       const previous = qc.getQueryData<WorkingSet>(projectKey(projectId));
+      // The row is about to vanish from the cache — grab its name first or
+      // the feed can only say "deleted something".
+      const gone = (previous?.[entity] as { id: string }[] | undefined)?.find(
+        (it) => it.id === id,
+      ) as Record<string, unknown> | undefined;
+      const name = String(gone?.title ?? gone?.name ?? gone?.label ?? "");
       patchWorkingSet(qc, projectId, (ws) => ({
         ...ws,
         [entity]: (ws[entity] as { id: string }[]).filter(
           (it) => it.id !== id,
         ),
       }));
-      return { previous };
+      return { previous, name };
     },
     onError: (_e, _id, ctx) => {
       if (ctx?.previous) qc.setQueryData(projectKey(projectId), ctx.previous);
+    },
+    onSuccess: (_res, id, ctx) => {
+      record(projectId, describeDelete(entity, ctx?.name ?? "", id));
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: projectKey(projectId) });

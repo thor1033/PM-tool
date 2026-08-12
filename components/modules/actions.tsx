@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Rows3, GitBranch, Calendar, KanbanSquare, SlidersHorizontal, ArrowUpDown, Layers, Search, X, Plus, ListTodo } from "lucide-react";
 import { useProject, useCreateEntity } from "@/lib/api/hooks";
-import { taskMatchesFilter, taskIdMap } from "@/lib/tasks";
+import { taskMatchesFilter, taskIdMap, NO_TRACK_ID } from "@/lib/tasks";
 import type { Task, Milestone } from "@/lib/types";
 import { accentVar, ACCENTS } from "@/lib/colors";
 import { cn } from "@/lib/utils";
@@ -144,6 +144,17 @@ function FilterPopover({
                 <span className="size-2 rounded-full" style={{ background: accentVar(c.color) }} />{c.label}
               </button>
             ))}
+            {/* Tasks are allowed to have no track, so the filter has to be
+                able to select them — the timeline already offered this. */}
+            <button
+              onClick={() => toggleCat(NO_TRACK_ID)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition",
+                fCat.includes(NO_TRACK_ID) ? "bg-foreground text-background border-foreground" : "hover:bg-muted",
+              )}
+            >
+              <span className="bg-ink-ghost size-2 rounded-full" />No track
+            </button>
             {ws.categories.length === 0 && <span className="text-muted-foreground text-sm">No tracks yet</span>}
           </div>
         </div>

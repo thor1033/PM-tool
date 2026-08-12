@@ -16,6 +16,7 @@ import { useProject, useUpdateProject } from "@/lib/api/hooks";
 import { accent, accentVar } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import type { Task, WorkingSet } from "@/lib/types";
+import { DigestFeed } from "@/components/modules/dashboard-digest";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -619,6 +620,23 @@ export function DashboardModule({ projectId }: { projectId: string }) {
         onOpen={setOpenTask}
         projectId={projectId}
       />
+
+      <Panel
+        title="What's happened"
+        action={<PanelLink href={`/projects/${projectId}/audit`} label="Full history" />}
+        className="mb-5"
+      >
+        <DigestFeed
+          projectId={projectId}
+          tasks={tasks}
+          milestones={milestones}
+          categories={categories}
+          onOpenTask={(taskId) => {
+            const t = tasks.find((x) => x.id === taskId);
+            if (t) setOpenTask(t);
+          }}
+        />
+      </Panel>
 
       <div className="mb-5 grid gap-4 lg:grid-cols-2">
         <Panel
