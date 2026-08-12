@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { format, parseISO } from "date-fns";
 import { Check, Plus, Flag, PencilLine, Trash2, RotateCcw } from "lucide-react";
 import { useAudit } from "@/lib/api/hooks";
@@ -33,6 +33,9 @@ const KIND_TONE: Record<string, string> = {
   delete: "var(--t-red)",
   reopen: "var(--t-amber)",
 };
+
+/** Rows shown before the day's list is collapsed. */
+const TODAY_LIMIT = 6;
 
 function toneOf(kind: string) {
   return KIND_TONE[kind] ?? "var(--ink-faint)";
@@ -161,6 +164,9 @@ export function DigestFeed({
       ? accentVar(categories.find((c) => c.id === categoryId)?.color)
       : "var(--ink-ghost)";
 
+  const [allToday, setAllToday] = useState(false);
+  const shownToday = allToday ? today : today.slice(0, TODAY_LIMIT);
+
   const weekDone = weekTracks.reduce((n, r) => n + r.done, 0);
 
   return (
@@ -177,12 +183,25 @@ export function DigestFeed({
         {today.length === 0 ? (
           <p className="text-muted-foreground py-1.5 text-[13px]">Nothing yet today.</p>
         ) : (
-          // A spine down the left ties the day's events together as one thread.
-          <ul className="relative max-h-[260px] overflow-y-auto before:absolute before:bottom-2 before:left-[7px] before:top-2 before:w-px before:bg-[var(--line)]">
-            {today.map((ev) => (
-              <TodayRow key={ev.id} ev={ev} onOpen={onOpenTask} />
-            ))}
-          </ul>
+          <>
+            {/* A spine down the left ties the day's events into one thread.
+                Capped by row count rather than height: a pixel cap sliced the
+                last entry through the middle, which reads as broken. */}
+            <ul className="relative before:absolute before:bottom-2 before:left-[7px] before:top-2 before:w-px before:bg-[var(--line)]">
+              {shownToday.map((ev) => (
+                <TodayRow key={ev.id} ev={ev} onOpen={onOpenTask} />
+              ))}
+            </ul>
+            {today.length > shownToday.length && (
+              <button
+                type="button"
+                onClick={() => setAllToday(true)}
+                className="text-muted-foreground hover:text-foreground mt-1 pl-6 text-[12px] font-semibold transition"
+              >
+                Show {today.length - shownToday.length} more
+              </button>
+            )}
+          </>
         )}
       </section>
 
@@ -199,7 +218,7 @@ export function DigestFeed({
         {weekTracks.length === 0 ? (
           <p className="text-muted-foreground py-1.5 text-[13px]">Nothing else this week.</p>
         ) : (
-          <ul className="grid gap-2 sm:grid-cols-2">
+          <ul className="grid gap-2">
             {weekTracks.map((row) => (
               <TrackRow key={row.track} row={row} color={colorOf(row.categoryId)} />
             ))}

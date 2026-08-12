@@ -115,22 +115,13 @@ function ViewSwitch({
 
 /** The command centre. This is where work is meant to start: describe what
  *  happened in plain language and the plan updates, rather than hunting for
- *  the right screen and field. It leads the page for that reason, and the
- *  prompts below it exist to show what "anything" actually means — a blank
- *  box teaches nobody what it can do. */
-const PROMPTS = [
-  "Mark the integration work done and push everything after it out a week",
-  "Log a risk that the vendor is slow to respond, high impact",
-  "Add a task for the security review, due end of next week",
-  "Move everything in the Launch track back by three days",
-];
-
+ *  the right screen and field. It leads the page for that reason. */
 function CommandBar({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [text, setText] = useState("");
 
-  function submit(seed?: string) {
-    const v = (seed ?? text).trim();
+  function submit() {
+    const v = text.trim();
     if (v) sessionStorage.setItem(`plan_draft_${projectId}`, v);
     router.push(`/projects/${projectId}/plan`);
   }
@@ -167,28 +158,12 @@ function CommandBar({ projectId }: { projectId: string }) {
               ⌘/Ctrl + Enter to run · nothing changes until you approve it
             </span>
             <button
-              onClick={() => submit()}
+              onClick={submit}
               className="bg-primary text-primary-foreground hover:bg-[var(--accent-deep)] inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] px-3.5 py-1.5 text-[13px] font-semibold transition"
             >
               <Sparkles className="size-3.5" /> Update plan
             </button>
           </div>
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <span className="text-muted-foreground mr-0.5 text-[11px] font-semibold uppercase tracking-wide">
-            Try
-          </span>
-          {PROMPTS.map((q) => (
-            <button
-              key={q}
-              onClick={() => setText(q)}
-              title={q}
-              className="hover:border-primary/40 hover:bg-primary/5 max-w-[290px] truncate rounded-full border bg-[var(--panel)] px-2.5 py-1 text-left text-[11.5px] transition"
-            >
-              {q}
-            </button>
-          ))}
         </div>
       </div>
     </section>
@@ -537,7 +512,7 @@ export function DashboardModule({ projectId }: { projectId: string }) {
         <div className="min-w-0 flex-1">
           <p className="eyebrow mb-2">{personal ? "Personal view" : "Project overview"}</p>
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h1 className="font-serif-display text-[30px] font-medium leading-[1.15] tracking-[-0.02em]">
+            <h1 className="font-serif-display text-[42px] font-medium leading-[1.08] tracking-[-0.025em]">
               {project.name}
             </h1>
             {project.code && (
@@ -558,6 +533,10 @@ export function DashboardModule({ projectId }: { projectId: string }) {
       </section>
 
       {/* The command centre leads: this is where work is meant to start. */}
+      {/* Main column carries the work; the news rail sits alongside it so
+          "what happened" is readable without displacing what needs doing. */}
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0">
       <CommandBar projectId={projectId} />
 
       {/* Then what needs a decision — one ranked list replacing the old
@@ -571,26 +550,7 @@ export function DashboardModule({ projectId }: { projectId: string }) {
         <AttentionList items={attention} categories={categories} onOpen={setOpenTask} />
       </Panel>
 
-      {/* Full width: the week's track cards need the room, and this is the
-          part of the page people actually read to catch up. */}
-      <Panel
-        title="What's happened"
-        action={<PanelLink href={`/projects/${projectId}/audit`} label="Full history" />}
-        className="mb-4"
-      >
-        <DigestFeed
-          projectId={projectId}
-          tasks={tasks}
-          milestones={milestones}
-          categories={categories}
-          onOpenTask={(taskId) => {
-            const t = tasks.find((x) => x.id === taskId);
-            if (t) setOpenTask(t);
-          }}
-        />
-      </Panel>
-
-      <div className="mb-4 grid items-start gap-4 lg:grid-cols-2">
+      <div className="mb-4 grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
         <RoadAhead
           viewTasks={viewTasks}
           tasks={tasks}
@@ -689,6 +649,30 @@ export function DashboardModule({ projectId }: { projectId: string }) {
             </div>
           )}
         </Panel>
+      </div>
+
+        </div>
+
+        {/* The news rail. Sticky on wide screens so it stays readable while
+            the main column scrolls; it drops under the content below xl. */}
+        <aside className="min-w-0 xl:sticky xl:top-4">
+          <Panel
+            title="What's happened"
+            action={<PanelLink href={`/projects/${projectId}/audit`} label="History" />}
+            className="mb-4"
+          >
+            <DigestFeed
+              projectId={projectId}
+              tasks={tasks}
+              milestones={milestones}
+              categories={categories}
+              onOpenTask={(taskId) => {
+                const t = tasks.find((x) => x.id === taskId);
+                if (t) setOpenTask(t);
+              }}
+            />
+          </Panel>
+        </aside>
       </div>
 
       {openTask && (
