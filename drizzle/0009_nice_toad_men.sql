@@ -1,0 +1,1 @@
+ALTER TABLE "tasks" ADD COLUMN "delay_days" integer DEFAULT 0 NOT NULL;

@@ -62,7 +62,7 @@ export const projects = pgTable(
     glossary: jsonb("glossary").default([]).notNull(),
     kpis: jsonb("kpis").default([]).notNull(),
     financials: jsonb("financials").default({}).notNull(),
-    forecast: jsonb("forecast").default({ bufferPct: 15, weighting: "duration" }).notNull(),
+    forecast: jsonb("forecast").default({ bufferPct: 20, weighting: "duration" }).notNull(),
     startup: jsonb("startup").default({}).notNull(),
     settings: jsonb("settings").default({}).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -104,6 +104,10 @@ export const tasks = pgTable(
      *  planned date; this is what happened, so the two can be compared. Set
      *  automatically when status becomes "done" and cleared if it moves back. */
     completedOn: text("completed_on").default("").notNull(),
+    /** Forecast-only: extra working days added to this task when stress-testing
+     *  the schedule. Kept off `start`/`end` so the plan of record stays intact
+     *  — the forecast models a delay without committing to it. */
+    delayDays: integer("delay_days").default(0).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

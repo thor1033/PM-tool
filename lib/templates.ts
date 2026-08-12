@@ -138,7 +138,7 @@ export function blankProjectDocs() {
     glossary: [] as unknown[],
     kpis: [] as unknown[],
     financials: blankFinancials(),
-    forecast: { bufferPct: 15, weighting: "duration" as "duration" | "size" },
+    forecast: { bufferPct: 20, weighting: "duration" as "duration" | "size" },
     startup: blankStartup(),
     settings: blankSettings(),
   };

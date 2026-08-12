@@ -27,6 +27,7 @@ const taskSchema = z
     comments: z.array(z.any()),
     custom: z.record(z.string(), z.any()),
     completedOn: z.string(),
+    delayDays: z.number(),
   })
   .partial();
 

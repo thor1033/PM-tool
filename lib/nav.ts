@@ -16,7 +16,6 @@ import {
   ListTodo,
   BarChart3,
   TrendingUp,
-  CalendarClock,
   Lightbulb,
   Boxes,
   History,
@@ -56,7 +55,7 @@ export const PROJECT_NAV: NavItem[] = [
   { slug: "features",      label: "Features & packages", icon: Boxes,        hint: "Feature library and bundled packages",group: "strategy" },
   { slug: "capacity",      label: "Capacity",         icon: BarChart3,       hint: "Team load vs capacity heatmap",       group: "delivery" },
   { slug: "financials",    label: "Financials",       icon: TrendingUp,      hint: "Contract, budget and progress",       group: "delivery" },
-  { slug: "forecast",      label: "Forecast",         icon: CalendarClock,   hint: "Buffer model and delay controls",     group: "delivery" },
+  { slug: "forecast",      label: "Forecast",         icon: Gauge,           hint: "Critical path, buffer and delays",    group: "delivery" },
   { slug: "audit",         label: "Audit trail",      icon: History,         hint: "Every change kept for 5 weeks",       group: "delivery" },
   { slug: "plan",          label: "Update plan from chat", icon: BotMessageSquare, hint: "AI-powered plan updates",      group: "delivery" },
 ];
