@@ -108,7 +108,7 @@ function TrackRow({
 
   return (
     <li
-      className="rounded-[var(--radius-md)] border p-3 transition"
+      className="min-w-0 overflow-hidden rounded-[var(--radius-md)] border p-3 transition"
       style={{
         borderColor: `color-mix(in oklch, ${color} 26%, var(--line))`,
         background: `color-mix(in oklch, ${color} 5%, var(--panel))`,
@@ -126,9 +126,14 @@ function TrackRow({
           {row.total}
         </span>
       </div>
-      <p className="text-muted-foreground text-[11.5px] leading-snug">{parts.join(" · ")}</p>
+      <p className="text-muted-foreground min-w-0 truncate text-[11.5px] leading-snug">
+        {parts.join(" · ")}
+      </p>
       {row.highlights.length > 0 && (
-        <p className="text-muted-foreground/80 mt-1 truncate text-[11.5px] italic">
+        <p
+          className="text-muted-foreground/80 mt-1 min-w-0 truncate text-[11.5px] italic"
+          title={row.highlights.join(", ")}
+        >
           {row.highlights.join(", ")}
         </p>
       )}
@@ -218,7 +223,7 @@ export function DigestFeed({
         {weekTracks.length === 0 ? (
           <p className="text-muted-foreground py-1.5 text-[13px]">Nothing else this week.</p>
         ) : (
-          <ul className="grid gap-2">
+          <ul className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
             {weekTracks.map((row) => (
               <TrackRow key={row.track} row={row} color={colorOf(row.categoryId)} />
             ))}
