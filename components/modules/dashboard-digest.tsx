@@ -141,7 +141,10 @@ export function DigestFeed({
   );
 
   return (
-    <div className="flex flex-col gap-4">
+    // Capped with internal scroll: on a project with a bulk import this list
+    // runs to dozens of entries and would otherwise tower over the panel
+    // beside it, leaving the column next to it mostly empty.
+    <div className="flex max-h-[340px] flex-col gap-4 overflow-y-auto pr-1">
       <Group
         label="Today"
         events={today}
