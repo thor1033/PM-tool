@@ -23,6 +23,8 @@ export interface DigestEvent {
   actor: string;
   /** Track label, when the event belongs to one. */
   track: string | null;
+  /** The track's id, for colouring a row from its accent. */
+  categoryId: string | null;
   /** False for reconstructed entries, so the UI can avoid implying a time. */
   exact: boolean;
   /** Task this refers to, so the feed can open it. */
@@ -100,6 +102,7 @@ export function buildDigest({
       text: a.text,
       actor: a.actor ?? "",
       track: trackOf(task, categories),
+      categoryId: task?.category ?? null,
       exact: true,
       taskId: task?.id ?? null,
     };
@@ -117,14 +120,18 @@ export function buildDigest({
         text: `Completed “${t.title}”`,
         actor: (t.assignees ?? [])[0] ?? "",
         track: trackOf(t, categories),
+        categoryId: t.category ?? null,
         exact: false,
         taskId: t.id,
       });
     }
-    // createdAt is a real timestamp, so these are exact even though we're
-    // reconstructing them from the working set rather than the log.
+    // A task's creation stops being news the moment something else happens to
+    // it: "Added X" directly under "Completed X" is the same task reported
+    // twice, and on a bulk import it buries the day entirely. So a creation
+    // is only reported while that is still the only thing that has happened.
     const created = t.createdAt ? new Date(t.createdAt) : null;
-    if (created && localDay(created) >= weekFrom) {
+    const movedOn = t.status !== "backlog" || !!t.completedOn;
+    if (created && !movedOn && localDay(created) >= weekFrom) {
       derived.push({
         id: `d:new:${t.id}`,
         ts: created.toISOString(),
@@ -132,6 +139,7 @@ export function buildDigest({
         text: `Added task “${t.title}”`,
         actor: "",
         track: trackOf(t, categories),
+        categoryId: t.category ?? null,
         exact: true,
         taskId: t.id,
       });
@@ -150,6 +158,7 @@ export function buildDigest({
         text: `Milestone “${m.title}” reached`,
         actor: "",
         track,
+        categoryId: m.category ?? null,
         exact: false,
         taskId: null,
       });
@@ -186,6 +195,68 @@ export function buildDigest({
       return day >= weekFrom && day < today;
     }),
   };
+}
+
+
+// ── weekly roll-up ──────────────────────────────────────────────────────────
+
+export interface TrackRollup {
+  /** Track label, or "No track" for work that isn't filed under one. */
+  track: string;
+  /** Category id, so the UI can colour the row from the track's own accent. */
+  categoryId: string | null;
+  done: number;
+  added: number;
+  milestones: number;
+  updates: number;
+  total: number;
+  /** A few finished task names, to make the row concrete without listing all. */
+  highlights: string[];
+}
+
+/** Collapses a week of events into one line per track.
+ *
+ *  Read task-by-task, a week is noise — a bulk import alone produces dozens of
+ *  near-identical lines. What a reader wants from "this week" is which parts of
+ *  the project moved, so the week is summarised by track and the individual
+ *  entries are left to Today and the full history. */
+export function rollupByTrack(events: DigestEvent[]): TrackRollup[] {
+  const byTrack = new Map<string, TrackRollup>();
+
+  for (const e of events) {
+    const key = e.track ?? "No track";
+    let row = byTrack.get(key);
+    if (!row) {
+      row = {
+        track: key,
+        categoryId: e.categoryId ?? null,
+        done: 0, added: 0, milestones: 0, updates: 0, total: 0,
+        highlights: [],
+      };
+      byTrack.set(key, row);
+    }
+    row.total++;
+    if (e.kind === "done") {
+      row.done++;
+      // Names come from completions only: "added" and "updated" say far less
+      // about what actually moved.
+      if (row.highlights.length < 3) {
+        const name = /[“"]([^”"]+)[”"]/.exec(e.text)?.[1];
+        if (name && !row.highlights.includes(name)) row.highlights.push(name);
+      }
+    } else if (e.kind === "create") row.added++;
+    else if (e.kind === "milestone") row.milestones++;
+    else row.updates++;
+  }
+
+  // Busiest track first; "No track" always sits last, whatever its volume.
+  return [...byTrack.values()].sort(
+    (a, b) =>
+      (a.track === "No track" ? 1 : 0) - (b.track === "No track" ? 1 : 0) ||
+      b.done - a.done ||
+      b.total - a.total ||
+      a.track.localeCompare(b.track),
+  );
 }
 
 /** One-line roll-up of a set of events, e.g. "3 completed · 2 added". */

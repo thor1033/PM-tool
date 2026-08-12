@@ -113,51 +113,84 @@ function ViewSwitch({
 
 // ── command bar ("Update the plan") ─────────────────────────────────────────
 
-/** Collapsed to a single line until focused. It's a first-class feature, but
- *  as a permanent four-row form it pushed the project's actual state below
- *  the fold — an overview should open on what is true, not on an input. */
+/** The command centre. This is where work is meant to start: describe what
+ *  happened in plain language and the plan updates, rather than hunting for
+ *  the right screen and field. It leads the page for that reason, and the
+ *  prompts below it exist to show what "anything" actually means — a blank
+ *  box teaches nobody what it can do. */
+const PROMPTS = [
+  "Mark the integration work done and push everything after it out a week",
+  "Log a risk that the vendor is slow to respond, high impact",
+  "Add a task for the security review, due end of next week",
+  "Move everything in the Launch track back by three days",
+];
+
 function CommandBar({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [text, setText] = useState("");
-  const [open, setOpen] = useState(false);
 
-  function submit() {
-    const v = text.trim();
+  function submit(seed?: string) {
+    const v = (seed ?? text).trim();
     if (v) sessionStorage.setItem(`plan_draft_${projectId}`, v);
     router.push(`/projects/${projectId}/plan`);
   }
 
   return (
-    <section className="border-primary/30 bg-card shadow-xs mb-4 rounded-[16px] border p-2.5">
-      <div className="flex items-center gap-2.5">
-        <span className="bg-primary/10 text-primary ml-1 flex size-7 shrink-0 items-center justify-center rounded-[8px]">
-          <Sparkles className="size-4" />
-        </span>
-        <textarea
-          rows={open ? 3 : 1}
-          value={text}
-          onFocus={() => setOpen(true)}
-          onBlur={() => !text.trim() && setOpen(false)}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
-            if (e.key === "Enter" && !e.shiftKey && !open) e.preventDefault();
-          }}
-          placeholder="Tell it what happened — status changes, delays, new risks, dates…"
-          className="min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[13.5px] leading-relaxed outline-none placeholder:text-muted-foreground/60"
-        />
-        <button
-          onClick={submit}
-          className="bg-primary text-primary-foreground hover:bg-[var(--accent-deep)] inline-flex shrink-0 items-center gap-1.5 self-end rounded-[var(--radius-sm)] px-3 py-1.5 text-[12.5px] font-semibold transition"
-        >
-          Update plan
-        </button>
+    <section className="mb-5 overflow-hidden rounded-[20px] border border-[color-mix(in_oklch,var(--accent-c)_28%,var(--line))] bg-[color-mix(in_oklch,var(--accent-c)_4%,var(--panel))] shadow-sm">
+      <div className="p-5">
+        <div className="mb-3.5 flex items-start gap-3">
+          <span className="bg-primary text-primary-foreground flex size-9 shrink-0 items-center justify-center rounded-[11px] shadow-sm">
+            <Sparkles className="size-[18px]" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-[15.5px] font-bold leading-tight">Update the plan</h2>
+            <p className="text-muted-foreground mt-0.5 text-[12.5px] leading-relaxed">
+              Describe what happened in your own words — statuses, delays, risks, dates, new
+              work. Every change is shown for review before anything is applied.
+            </p>
+          </div>
+        </div>
+
+        <div className="focus-within:border-primary focus-within:ring-primary/15 rounded-[var(--radius-md)] border bg-[var(--panel)] transition focus-within:ring-2">
+          <textarea
+            rows={3}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
+            }}
+            placeholder="e.g. Mark the API integration done, push everything else to next week, and log a risk about the vendor being slow to respond."
+            className="box-border w-full resize-y bg-transparent px-3.5 py-3 text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground/55"
+          />
+          <div className="flex items-center justify-between gap-3 border-t px-3 py-2">
+            <span className="text-muted-foreground text-[11px]">
+              ⌘/Ctrl + Enter to run · nothing changes until you approve it
+            </span>
+            <button
+              onClick={() => submit()}
+              className="bg-primary text-primary-foreground hover:bg-[var(--accent-deep)] inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] px-3.5 py-1.5 text-[13px] font-semibold transition"
+            >
+              <Sparkles className="size-3.5" /> Update plan
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <span className="text-muted-foreground mr-0.5 text-[11px] font-semibold uppercase tracking-wide">
+            Try
+          </span>
+          {PROMPTS.map((q) => (
+            <button
+              key={q}
+              onClick={() => setText(q)}
+              title={q}
+              className="hover:border-primary/40 hover:bg-primary/5 max-w-[290px] truncate rounded-full border bg-[var(--panel)] px-2.5 py-1 text-left text-[11.5px] transition"
+            >
+              {q}
+            </button>
+          ))}
+        </div>
       </div>
-      {open && (
-        <p className="text-muted-foreground mt-1 pl-[42px] text-[11px]">
-          ⌘/Ctrl + Enter to run · nothing changes until you approve it
-        </p>
-      )}
     </section>
   );
 }
@@ -427,8 +460,8 @@ function PurposeLine({ projectId, businessCase }: {
       onDoubleClick={() => { setDraft(purpose); setEditing(true); }}
       title="Double-click to edit"
       className={cn(
-        "font-serif-display -mx-1 mt-1.5 max-w-[620px] cursor-text rounded-[var(--radius-sm)] px-1 text-[15px] leading-[1.5] transition hover:bg-[var(--paper-2)]",
-        purpose ? "text-muted-foreground" : "text-muted-foreground/60 italic",
+        "font-serif-display -mx-1 mt-2 max-w-[680px] cursor-text rounded-[var(--radius-sm)] px-1 text-[16px] leading-[1.55] transition hover:bg-[var(--paper-2)]",
+        purpose ? "text-[var(--ink-soft)]" : "text-muted-foreground/55 italic",
       )}
     >
       {purpose || "Add a business purpose to summarise this project here."}
@@ -524,10 +557,11 @@ export function DashboardModule({ projectId }: { projectId: string }) {
         <ViewSwitch people={people} who={who} onChange={setWho} />
       </section>
 
-      <HealthStrip health={health} projectId={projectId} />
+      {/* The command centre leads: this is where work is meant to start. */}
+      <CommandBar projectId={projectId} />
 
-      {/* The page's lead: one ranked list replacing the old scatter of
-          warning triangles, a risk panel and a dependency grid. */}
+      {/* Then what needs a decision — one ranked list replacing the old
+          scatter of warning triangles, a risk panel and a dependency grid. */}
       <Panel
         title={personal ? `What needs ${firstName}` : "Needs attention"}
         tone="lead"
@@ -537,7 +571,24 @@ export function DashboardModule({ projectId }: { projectId: string }) {
         <AttentionList items={attention} categories={categories} onOpen={setOpenTask} />
       </Panel>
 
-      <CommandBar projectId={projectId} />
+      {/* Full width: the week's track cards need the room, and this is the
+          part of the page people actually read to catch up. */}
+      <Panel
+        title="What's happened"
+        action={<PanelLink href={`/projects/${projectId}/audit`} label="Full history" />}
+        className="mb-4"
+      >
+        <DigestFeed
+          projectId={projectId}
+          tasks={tasks}
+          milestones={milestones}
+          categories={categories}
+          onOpenTask={(taskId) => {
+            const t = tasks.find((x) => x.id === taskId);
+            if (t) setOpenTask(t);
+          }}
+        />
+      </Panel>
 
       <div className="mb-4 grid items-start gap-4 lg:grid-cols-2">
         <RoadAhead
@@ -549,24 +600,6 @@ export function DashboardModule({ projectId }: { projectId: string }) {
           projectId={projectId}
         />
 
-        <Panel
-          title="What's happened"
-          action={<PanelLink href={`/projects/${projectId}/audit`} label="Full history" />}
-        >
-          <DigestFeed
-            projectId={projectId}
-            tasks={tasks}
-            milestones={milestones}
-            categories={categories}
-            onOpenTask={(taskId) => {
-              const t = tasks.find((x) => x.id === taskId);
-              if (t) setOpenTask(t);
-            }}
-          />
-        </Panel>
-      </div>
-
-      <div className="mb-4 grid items-start gap-4 lg:grid-cols-2">
         <Panel
           title={personal ? `${firstName}'s risks` : "Top risks"}
           action={<PanelLink href={`/projects/${projectId}/risks`} label="All risks" />}
@@ -600,7 +633,11 @@ export function DashboardModule({ projectId }: { projectId: string }) {
             })}
           </div>
         </Panel>
+      </div>
 
+      <HealthStrip health={health} projectId={projectId} />
+
+      <div className="mb-4">
         <Panel
           title="Dependencies"
           action={
