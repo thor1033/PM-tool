@@ -10,7 +10,7 @@ import {
   useDeleteEntity,
 } from "@/lib/api/hooks";
 import type { EntityName } from "@/lib/entities";
-import type { Category, Task } from "@/lib/types";
+import type { Category, Task, Stakeholder } from "@/lib/types";
 import { ACCENTS, accent } from "@/lib/colors";
 import { TRACK_ICONS } from "@/lib/tasks";
 import { cn } from "@/lib/utils";
@@ -175,9 +175,10 @@ function TaxSection({
 // TaxSection.
 
 function TrackRow({
-  projectId, cat, tasksIn, otherCategories,
+  projectId, cat, tasksIn, otherCategories, stakeholders,
 }: {
   projectId: string; cat: Category; tasksIn: Task[]; otherCategories: Category[];
+  stakeholders: Stakeholder[];
 }) {
   const update = useUpdateEntity(projectId, "categories");
   const updateTask = useUpdateEntity(projectId, "tasks");
@@ -219,6 +220,38 @@ function TrackRow({
       <div className="mt-2 border-t pt-2">
         <IconPicker value={cat.icon} onChange={(icon) => update.mutate({ id: cat.id, data: { icon } })} />
       </div>
+      {/* Owner is stored as a stakeholder id, so the list is exactly the
+          people on the Stakeholders page — a track cannot be owned by
+          someone who does not exist there. */}
+      <div className="mt-2 flex items-center gap-2 border-t pt-2">
+        <span className="text-muted-foreground shrink-0 text-xs">Responsible</span>
+        <Select
+          value={cat.owner ?? "none"}
+          onValueChange={(v) =>
+            update.mutate(
+              { id: cat.id, data: { owner: v === "none" ? null : v } },
+              { onError: (e) => toast.error((e as Error).message) },
+            )
+          }
+        >
+          <SelectTrigger className="h-8 flex-1 text-xs">
+            <SelectValue placeholder="Nobody yet" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">— nobody —</SelectItem>
+            {stakeholders.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.name}{p.title ? ` · ${p.title}` : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      {stakeholders.length === 0 && (
+        <p className="text-muted-foreground mt-1 text-[11px]">
+          Add people on the Stakeholders page to assign one here.
+        </p>
+      )}
       {confirming && (
         <div className="mt-2 space-y-2 border-t pt-2">
           {otherCategories.length === 0 ? (
@@ -252,9 +285,9 @@ function TrackRow({
 }
 
 function TrackSection({
-  projectId, categories, tasks,
+  projectId, categories, tasks, stakeholders,
 }: {
-  projectId: string; categories: Category[]; tasks: Task[];
+  projectId: string; categories: Category[]; tasks: Task[]; stakeholders: Stakeholder[];
 }) {
   const create = useCreateEntity(projectId, "categories");
   const [label, setLabel] = useState("");
@@ -282,6 +315,7 @@ function TrackSection({
             cat={c}
             tasksIn={tasks.filter((t) => t.category === c.id)}
             otherCategories={categories.filter((x) => x.id !== c.id)}
+            stakeholders={stakeholders}
           />
         ))}
         {categories.length === 0 && (
@@ -333,6 +367,7 @@ export function TaxonomyModule({ projectId }: { projectId: string }) {
           projectId={projectId}
           categories={data.categories}
           tasks={data.tasks}
+          stakeholders={data.stakeholders}
         />
       </div>
     </div>

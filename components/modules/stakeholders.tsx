@@ -11,7 +11,7 @@ import {
 } from "@/lib/api/hooks";
 import type { Stakeholder } from "@/lib/types";
 import { ModuleHeader, EmptyState } from "@/components/project/ui";
-import { GlossaryText } from "@/components/project/glossary-text";
+import { GlossaryText, type Term } from "@/components/project/glossary-text";
 import { initials } from "@/lib/tasks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,54 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
+/** Renders the responsibility field.
+ *
+ *  People naturally type one item per line, often with a leading "*" or "-".
+ *  Rendered as a single paragraph those markers just look like stray
+ *  punctuation, so lines that are clearly a list become one. Anything else
+ *  is left as prose. */
+function ResponsibilityBody({
+  text,
+  glossary,
+}: {
+  text: string;
+  glossary: Term[];
+}) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  // Treat it as a list when every line is bulleted, or when there is simply
+  // more than one line — a stray marker on one line of prose is not a list.
+  const bulleted = lines.map((l) => l.replace(/^[-*\u2022\u2013]\s*/, ""));
+  const isList = lines.length > 1 && bulleted.every((l) => l.length > 0);
+
+  if (!isList) {
+    return (
+      <p className="text-[13.5px] leading-relaxed">
+        <GlossaryText text={bulleted[0] ?? text} terms={glossary} />
+      </p>
+    );
+  }
+
+  return (
+    <ul className="space-y-1">
+      {bulleted.map((line, i) => (
+        <li key={i} className="flex items-baseline gap-2 text-[13.5px] leading-snug">
+          <span
+            className="mt-[6px] size-[3px] shrink-0 rounded-full"
+            style={{ background: "var(--ink-ghost)" }}
+          />
+          <span className="min-w-0">
+            <GlossaryText text={line} terms={glossary} />
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function StakeholderDialog({
   projectId,
@@ -86,7 +134,8 @@ function StakeholderDialog({
             <Textarea
               value={f.responsibility}
               onChange={(e) => set("responsibility", e.target.value)}
-              rows={2}
+              rows={4}
+              placeholder="One responsibility per line"
             />
           </div>
           <div className="space-y-1.5">
@@ -194,9 +243,10 @@ export function StakeholdersModule({ projectId }: { projectId: string }) {
               </header>
 
               {s.responsibility && (
-                <p className="mt-3 text-[13.5px] leading-relaxed">
-                  <GlossaryText text={s.responsibility} terms={glossary} />
-                </p>
+                <div className="mt-3">
+                  <p className="eyebrow mb-1.5">Responsibility</p>
+                  <ResponsibilityBody text={s.responsibility} glossary={glossary} />
+                </div>
               )}
 
               {s.contact && (

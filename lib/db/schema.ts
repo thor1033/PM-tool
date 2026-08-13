@@ -333,6 +333,10 @@ export const categories = pgTable(
     /** Optional key into the curated track-icon set (see TRACK_ICONS) — a
      *  track with no icon shows none, it never falls back to a default. */
     icon: text("icon"),
+    /** Stakeholder accountable for this track. Holds a stakeholder id, not a
+     *  name, so renaming a person on the Stakeholders page carries through and
+     *  a deleted person leaves no dangling label. */
+    owner: text("owner"),
   },
   (t) => [primaryKey({ columns: [t.projectId, t.id] })],
 );

@@ -133,6 +133,7 @@ const categorySchema = z
     label: z.string(),
     color: z.string(),
     icon: z.string().nullable(),
+    owner: z.string().nullable(),
   })
   .partial();
 

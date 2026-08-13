@@ -4,7 +4,7 @@ import { Fragment, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Plus, Trash2, Pencil, ChevronRight, ChevronDown, MessageSquare, GripVertical, Flag, Milestone as MilestoneIcon,
-  TriangleAlert, RotateCw,
+  TriangleAlert, RotateCw, UserRound,
 } from "lucide-react";
 import { useCreateEntity, useUpdateEntity, useDeleteEntity } from "@/lib/api/hooks";
 import type { Task, WorkingSet, Milestone } from "@/lib/types";
@@ -48,6 +48,8 @@ interface Group {
   label: string;
   color: string | null;
   tasks: Task[];
+  /** Stakeholder id accountable for the track, when one is set. */
+  owner?: string | null;
 }
 
 function loadJSON<T>(key: string, fallback: T): T {
@@ -197,7 +199,7 @@ export function ListView({
       // Tracks are structure the user created, so they stay listed even when a
       // filter leaves them empty — a fully-done track shouldn't silently
       // disappear just because Done is hidden. The row explains itself below.
-      out.push({ key: c.id, label: c.label, color: c.color, tasks });
+      out.push({ key: c.id, label: c.label, color: c.color, tasks, owner: c.owner ?? null });
     });
     SYNTH_GROUPS.forEach((g) => {
       const tasks = synthBuckets.get(g.key) ?? [];
@@ -212,6 +214,11 @@ export function ListView({
     }
     return out;
   }, [filtered, ws.categories]);
+
+  // Owners are stored as stakeholder ids so a rename carries through; resolve
+  // to a name here, and show nothing if the person has since been removed.
+  const ownerName = (id: string | null | undefined) =>
+    id ? ws.stakeholders.find((p) => p.id === id)?.name ?? null : null;
 
   // Grouped once per render instead of re-filtering the full task list for
   // every parent row — that per-row filter turned quadratic as task counts grew.
@@ -349,6 +356,14 @@ export function ListView({
                     </span>
                   )}
                   <Badge variant="secondary" className="text-[13px]">{g.tasks.length}</Badge>
+                  {ownerName(g.owner) && (
+                    <span
+                      className="text-muted-foreground inline-flex items-center gap-1 text-[12.5px]"
+                      title={`${ownerName(g.owner)} is responsible for this track`}
+                    >
+                      <UserRound className="size-3.5" /> {ownerName(g.owner)}
+                    </span>
+                  )}
                   {(groupMilestones.length + groupGates.length) > 0 && (
                     <span className="text-muted-foreground flex items-center gap-1 text-[13px]">
                       <Flag className="size-3.5" /> {groupMilestones.length + groupGates.length}
