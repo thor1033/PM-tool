@@ -12,6 +12,13 @@ import { depsOf, statusVar, fmtD, daysBetween, taskIdMap, COLUMNS, TRACK_ICONS }
 import { accent, accentVar } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
@@ -215,10 +222,6 @@ export function ListView({
     return out;
   }, [filtered, ws.categories]);
 
-  // Owners are stored as stakeholder ids so a rename carries through; resolve
-  // to a name here, and show nothing if the person has since been removed.
-  const ownerName = (id: string | null | undefined) =>
-    id ? ws.stakeholders.find((p) => p.id === id)?.name ?? null : null;
 
   // Grouped once per render instead of re-filtering the full task list for
   // every parent row — that per-row filter turned quadratic as task counts grew.
@@ -356,14 +359,6 @@ export function ListView({
                     </span>
                   )}
                   <Badge variant="secondary" className="text-[13px]">{g.tasks.length}</Badge>
-                  {ownerName(g.owner) && (
-                    <span
-                      className="text-muted-foreground inline-flex items-center gap-1 text-[12.5px]"
-                      title={`${ownerName(g.owner)} is responsible for this track`}
-                    >
-                      <UserRound className="size-3.5" /> {ownerName(g.owner)}
-                    </span>
-                  )}
                   {(groupMilestones.length + groupGates.length) > 0 && (
                     <span className="text-muted-foreground flex items-center gap-1 text-[13px]">
                       <Flag className="size-3.5" /> {groupMilestones.length + groupGates.length}
@@ -374,6 +369,34 @@ export function ListView({
               <div className="flex items-center gap-2">
                 {!g.key.startsWith("_") && (
                   <>
+                    {/* Who owns the track, editable here because this is where
+                        tracks are already renamed and deleted — the Taxonomy
+                        page is switched off in most projects. */}
+                    <Select
+                      value={g.owner ?? "none"}
+                      onValueChange={(v) =>
+                        updateCat.mutate(
+                          { id: g.key, data: { owner: v === "none" ? null : v } },
+                          { onError: (e) => toast.error((e as Error).message) },
+                        )
+                      }
+                    >
+                      <SelectTrigger
+                        className="text-muted-foreground h-8 w-auto gap-1.5 border-dashed text-[12.5px]"
+                        title="Who is responsible for this track"
+                      >
+                        <UserRound className="size-3.5 shrink-0" />
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Assign someone</SelectItem>
+                        {ws.stakeholders.map((person) => (
+                          <SelectItem key={person.id} value={person.id}>
+                            {person.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     {/* Adds straight into this track, alongside the toolbar's
                         "Add new" which starts without one pre-selected. */}
                     <Button
