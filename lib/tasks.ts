@@ -25,7 +25,7 @@ export const PRIO: Record<string, { label: string; var: string }> = {
 
 // ── track icons ──────────────────────────────────────────────────────────────
 
-/** Curated icon set a track can optionally pick in Taxonomy. A track with no
+/** Curated icon set a track can optionally pick. A track with no
  *  icon set shows none — there is no default/fallback icon. */
 export const TRACK_ICONS: Record<string, { label: string; Icon: LucideIcon }> = {
   rocket: { label: "Rocket", Icon: Rocket },

@@ -15,7 +15,6 @@ import { OrgModule } from "@/components/modules/org";
 import { CatalogueModule } from "@/components/modules/catalogue";
 import { PlansModule } from "@/components/modules/plans";
 import { KpisModule } from "@/components/modules/kpis";
-import { TaxonomyModule } from "@/components/modules/taxonomy";
 import { GlossaryModule } from "@/components/modules/glossary";
 import { PlanModule } from "@/components/modules/plan";
 import { ActionsModule } from "@/components/modules/actions";
@@ -44,7 +43,6 @@ const MODULES: Record<
   catalogue: CatalogueModule,
   plans: PlansModule,
   kpis: KpisModule,
-  taxonomy: TaxonomyModule,
   glossary: GlossaryModule,
   workspace: WorkspaceModule,
   notes: NotesModule,
