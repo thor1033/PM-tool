@@ -504,6 +504,11 @@ export function TrackModal({
         </div>
 
         <DialogFooter className="bg-muted/50 flex items-center justify-between rounded-b-xl border-t px-6 py-4 sm:justify-between">
+          {/* Save leads on the left; delete stays far from it so the
+              destructive action is never the one under the cursor. */}
+          <Button onClick={save} disabled={create.isPending || update.isPending}>
+            Save
+          </Button>
           {track ? (
             <Button
               variant="ghost"
@@ -516,9 +521,6 @@ export function TrackModal({
           ) : (
             <span />
           )}
-          <Button onClick={save} disabled={create.isPending || update.isPending}>
-            {track ? "Save changes" : "Add track"}
-          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
