@@ -34,17 +34,11 @@ export function blankChangePlan() {
   return { groups: [] as unknown[] };
 }
 
-export function defaultOrgChart() {
-  return [
-    {
-      id: "o_owner",
-      name: "Project Owner",
-      role: "Project Owner",
-      parent: null,
-      note: "Single point of accountability",
-      accent: "indigo",
-    },
-  ];
+/** Reporting lines keyed by stakeholder id. Empty by default: the org chart
+ *  is a view of the stakeholder list, so seeding a person here would invent
+ *  someone who does not exist on the Stakeholders page. */
+export function defaultOrgChart(): Record<string, string | null> {
+  return {};
 }
 
 export function blankFinancials() {

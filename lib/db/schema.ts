@@ -58,7 +58,7 @@ export const projects = pgTable(
     assessment: jsonb("assessment").default([]).notNull(),
     commPlan: jsonb("comm_plan").default([]).notNull(),
     changePlan: jsonb("change_plan").default({ groups: [] }).notNull(),
-    orgChart: jsonb("org_chart").default([]).notNull(),
+    orgChart: jsonb("org_chart").default({}).notNull(),
     glossary: jsonb("glossary").default([]).notNull(),
     kpis: jsonb("kpis").default([]).notNull(),
     financials: jsonb("financials").default({}).notNull(),
