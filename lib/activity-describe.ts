@@ -133,3 +133,49 @@ export function describeUpdate(
     key: `edit:${entity}:${id}`,
   };
 }
+
+/** Human names for the project-level document sections, so an edit to the
+ *  business case reads as that rather than as "businessCase". */
+const SECTION_LABEL: Record<string, string> = {
+  name: "project name",
+  code: "project code",
+  color: "project colour",
+  businessCase: "business case",
+  scope: "scope",
+  assessment: "assessment",
+  commPlan: "communications plan",
+  changePlan: "change plan",
+  orgChart: "org chart",
+  glossary: "glossary",
+  kpis: "KPIs",
+  financials: "financials",
+  forecast: "forecast settings",
+  startup: "start-up",
+  settings: "page settings",
+};
+
+/** Describes an edit to one of the project's document sections. These are
+ *  whole-blob writes, so there is no field-level diff to report — the section
+ *  that changed is the useful unit. */
+export function describeProjectPatch(
+  patch: Record<string, unknown>,
+): DescribedEvent | null {
+  const keys = Object.keys(patch).filter((k) => k in SECTION_LABEL);
+  if (keys.length === 0) return null;
+
+  // A rename carries its new value, which is worth showing.
+  if (keys.length === 1 && keys[0] === "name" && typeof patch.name === "string") {
+    return {
+      kind: "edit",
+      text: `Renamed the project to ${quote(patch.name)}`,
+      key: "edit:project:name",
+    };
+  }
+
+  const named = keys.map((k) => SECTION_LABEL[k]);
+  const text =
+    named.length === 1
+      ? `Updated the ${named[0]}`
+      : `Updated ${named.slice(0, -1).join(", ")} and ${named[named.length - 1]}`;
+  return { kind: "edit", text, key: `edit:project:${keys.sort().join(",")}` };
+}

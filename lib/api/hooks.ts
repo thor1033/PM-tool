@@ -13,6 +13,7 @@ import {
   describeCreate,
   describeUpdate,
   describeDelete,
+  describeProjectPatch,
   type DescribedEvent,
 } from "@/lib/activity-describe";
 import type { ProjectSummary, WorkingSet } from "@/lib/types";
@@ -106,6 +107,9 @@ export function useUpdateProject(id: string) {
     },
     onError: (_e, _patch, ctx) => {
       if (ctx?.previous) qc.setQueryData(projectKey(id), ctx.previous);
+    },
+    onSuccess: (_res, patch) => {
+      record(id, describeProjectPatch(patch));
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: projectKey(id) });
@@ -308,6 +312,7 @@ export function useDeleteMember(projectId: string) {
       if (ctx?.previous) qc.setQueryData(projectKey(projectId), ctx.previous);
     },
     onSuccess: (_data, { name }) => {
+      record(projectId, describeDelete("members", name, ""));
       // cascade to server: patch any tasks that still have this member name
       const ws = qc.getQueryData<WorkingSet>(projectKey(projectId));
       if (!ws) return;
