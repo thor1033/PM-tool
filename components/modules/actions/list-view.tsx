@@ -4,10 +4,10 @@ import { Fragment, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Plus, Trash2, Pencil, ChevronRight, ChevronDown, MessageSquare, GripVertical, Flag, Milestone as MilestoneIcon,
-  TriangleAlert, RotateCw, UserRound, Palette, X,
+  TriangleAlert, RotateCw, UserRound,
 } from "lucide-react";
 import { useCreateEntity, useUpdateEntity, useDeleteEntity } from "@/lib/api/hooks";
-import type { Task, WorkingSet, Milestone } from "@/lib/types";
+import type { Task, WorkingSet, Milestone, Category } from "@/lib/types";
 import { depsOf, statusVar, fmtD, daysBetween, taskIdMap, COLUMNS, TRACK_ICONS } from "@/lib/tasks";
 import { accent, accentVar } from "@/lib/colors";
 import { cn } from "@/lib/utils";
@@ -19,8 +19,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ACCENTS, accent as accentOf } from "@/lib/colors";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
@@ -52,83 +50,6 @@ const SYNTH_GROUPS = [
   { key: "_change", label: "Change management", color: "purple", origin: "change" },
 ] as const;
 
-/** Colour and icon for a track, in a popover so the row stays compact.
- *  These used to live on the Taxonomy page, which was removed. */
-function TrackStyle({
-  color,
-  icon,
-  onChange,
-}: {
-  color: string | null;
-  icon: string | null;
-  onChange: (patch: { color?: string; icon?: string | null }) => void;
-}) {
-  const Current = icon ? TRACK_ICONS[icon]?.Icon : null;
-  return (
-    <Popover>
-      <PopoverTrigger
-        className="text-muted-foreground hover:text-foreground flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] border border-dashed px-2 transition"
-        title="Track colour and icon"
-      >
-        {Current ? <Current className="size-3.5" /> : <Palette className="size-3.5" />}
-        <span
-          className={cn("size-2.5 rounded-full", color ? accentOf(color).dot : "bg-[var(--line-strong)]")}
-        />
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-64 space-y-3">
-        <div>
-          <p className="eyebrow mb-1.5">Colour</p>
-          <div className="flex flex-wrap gap-1.5">
-            {ACCENTS.map((a) => (
-              <button
-                key={a}
-                type="button"
-                onClick={() => onChange({ color: a })}
-                aria-label={a}
-                className={cn(
-                  "size-5 rounded-full transition",
-                  accentOf(a).dot,
-                  color === a && "ring-primary ring-2 ring-offset-1",
-                )}
-              />
-            ))}
-          </div>
-        </div>
-        <div className="border-t pt-2.5">
-          <p className="eyebrow mb-1.5">Icon</p>
-          <div className="flex flex-wrap gap-1">
-            <button
-              type="button"
-              onClick={() => onChange({ icon: null })}
-              title="No icon"
-              className={cn(
-                "text-muted-foreground hover:text-foreground flex size-7 items-center justify-center rounded-[var(--radius-sm)] border",
-                !icon && "border-primary bg-primary/10 text-primary",
-              )}
-            >
-              <X className="size-3.5" />
-            </button>
-            {Object.entries(TRACK_ICONS).map(([key, { label, Icon }]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => onChange({ icon: key })}
-                title={label}
-                className={cn(
-                  "text-muted-foreground hover:text-foreground flex size-7 items-center justify-center rounded-[var(--radius-sm)] border",
-                  icon === key && "border-primary bg-primary/10 text-primary",
-                )}
-              >
-                <Icon className="size-3.5" />
-              </button>
-            ))}
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 interface Group {
   key: string;
   label: string;
@@ -157,12 +78,13 @@ function saveJSON(key: string, value: unknown) {
 }
 
 export function ListView({
-  ws, projectId, filtered, sort, fCat, setFCat, onEdit, onEditMilestone,
+  ws, projectId, filtered, sort, fCat, setFCat, onEdit, onEditMilestone, onEditTrack,
 }: {
   ws: WorkingSet; projectId: string; filtered: Task[]; sort: SortMode;
   fCat: string[]; setFCat: (v: string[]) => void;
   onEdit: (t: Task | null, defaultCategoryId?: string | null) => void;
   onEditMilestone: (m: Milestone | null, defaultCategoryId?: string | null, defaultType?: "milestone" | "gate") => void;
+  onEditTrack: (track: Category) => void;
 }) {
   const create = useCreateEntity(projectId, "tasks");
   const update = useUpdateEntity(projectId, "tasks");
@@ -476,16 +398,18 @@ export function ListView({
                         ))}
                       </SelectContent>
                     </Select>
-                    <TrackStyle
-                      color={g.color}
-                      icon={g.icon ?? null}
-                      onChange={(patch) =>
-                        updateCat.mutate(
-                          { id: g.key, data: patch },
-                          { onError: (e) => toast.error((e as Error).message) },
-                        )
-                      }
-                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-[12.5px]"
+                      onClick={() => {
+                        const cat = ws.categories.find((c) => c.id === g.key);
+                        if (cat) onEditTrack(cat);
+                      }}
+                      title="Edit this track"
+                    >
+                      <Pencil className="size-3.5" /> Track
+                    </Button>
                     {/* Adds straight into this track, alongside the toolbar's
                         "Add new" which starts without one pre-selected. */}
                     <Button

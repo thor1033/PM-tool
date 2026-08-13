@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 import { Rows3, GitBranch, Calendar, KanbanSquare, SlidersHorizontal, ArrowUpDown, Layers, Search, X, Plus, ListTodo } from "lucide-react";
-import { useProject, useCreateEntity } from "@/lib/api/hooks";
+import { useProject } from "@/lib/api/hooks";
 import { taskMatchesFilter, taskIdMap, NO_TRACK_ID } from "@/lib/tasks";
-import type { Task, Milestone } from "@/lib/types";
-import { accentVar, ACCENTS } from "@/lib/colors";
+import { TrackModal } from "@/components/project/track-modal";
+import type { Task, Milestone, Category } from "@/lib/types";
+import { accentVar } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { ModuleHeader } from "@/components/project/ui";
 import { CardModal } from "@/components/project/card-modal";
@@ -245,7 +245,6 @@ function AddNewDropdown({ onNewTask, onNewTrack }: { onNewTask: () => void; onNe
 
 export function ActionsModule({ projectId }: { projectId: string }) {
   const { data: ws } = useProject(projectId);
-  const createCat = useCreateEntity(projectId, "categories");
   const [view, setView] = useState<View>("list");
   const [sort, setSort] = useState<SortMode>("category");
   const [fCat, setFCat] = useState<string[]>([]);
@@ -271,8 +270,7 @@ export function ActionsModule({ projectId }: { projectId: string }) {
   }
   const [taskDialog, setTaskDialog] = useState<{ open: boolean; task: Task | null; defaultCategoryId?: string | null; defaultStatus?: string }>({ open: false, task: null });
   const [msDialog, setMsDialog] = useState<{ open: boolean; milestone: Milestone | null; defaultCategoryId?: string | null; defaultType?: "milestone" | "gate" }>({ open: false, milestone: null });
-  const [addingTrack, setAddingTrack] = useState(false);
-  const [newTrackLabel, setNewTrackLabel] = useState("");
+  const [trackModal, setTrackModal] = useState<{ open: boolean; track: Category | null }>({ open: false, track: null });
 
   // remembers the last-used view (atlas.actions.mode) and sort (atlas.actions.sort)
   useEffect(() => {
@@ -334,17 +332,6 @@ export function ActionsModule({ projectId }: { projectId: string }) {
   const showGlobalFilter = view !== "timeline" && view !== "calendar";
   const showSearch = view !== "timeline" && view !== "calendar";
 
-  const categoriesCount = ws.categories.length;
-  function commitAddTrack() {
-    const name = newTrackLabel.trim();
-    if (!name) return;
-    createCat.mutate(
-      { label: name, color: ACCENTS[categoriesCount % ACCENTS.length] },
-      { onError: (e) => toast.error((e as Error).message) },
-    );
-    setNewTrackLabel("");
-    setAddingTrack(false);
-  }
 
   return (
     <div>
@@ -415,25 +402,10 @@ export function ActionsModule({ projectId }: { projectId: string }) {
 
         {view === "list" && (
           <div className="flex flex-wrap items-center gap-2.5">
-            {addingTrack ? (
-              <div className="flex items-center gap-1.5">
-                <Input
-                  autoFocus
-                  value={newTrackLabel}
-                  onChange={(e) => setNewTrackLabel(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") commitAddTrack();
-                    if (e.key === "Escape") { setAddingTrack(false); setNewTrackLabel(""); }
-                  }}
-                  onBlur={() => { if (!newTrackLabel.trim()) setAddingTrack(false); }}
-                  placeholder="Track name…"
-                  className="h-9 w-44 text-[14px]"
-                />
-                <Button variant="ghost" onClick={commitAddTrack} disabled={!newTrackLabel.trim()}>Add</Button>
-              </div>
-            ) : (
-              <AddNewDropdown onNewTask={() => openTask(null)} onNewTrack={() => setAddingTrack(true)} />
-            )}
+            <AddNewDropdown
+              onNewTask={() => openTask(null)}
+              onNewTrack={() => setTrackModal({ open: true, track: null })}
+            />
           </div>
         )}
       </div>
@@ -443,6 +415,7 @@ export function ActionsModule({ projectId }: { projectId: string }) {
           ws={ws} projectId={projectId} filtered={filtered} sort={sort}
           fCat={fCat} setFCat={setFCat}
           onEdit={openTask} onEditMilestone={openMilestone}
+          onEditTrack={(t) => setTrackModal({ open: true, track: t })}
         />
       )}
       {view === "timeline" && (
@@ -475,6 +448,20 @@ export function ActionsModule({ projectId }: { projectId: string }) {
           ws={ws} projectId={projectId} milestone={msDialog.milestone}
           defaultCategoryId={msDialog.defaultCategoryId} defaultType={msDialog.defaultType}
           open={msDialog.open} onOpenChange={(v) => setMsDialog((d) => ({ ...d, open: v }))}
+        />
+      )}
+      {trackModal.open && (
+        <TrackModal
+          projectId={projectId}
+          track={trackModal.track}
+          open={trackModal.open}
+          onOpenChange={(v) => setTrackModal((d) => ({ ...d, open: v }))}
+          onEditMilestone={(m, cat, type) => {
+            // Close the track editor first: two stacked dialogs trap focus in
+            // the wrong one and the milestone modal lands behind it.
+            setTrackModal((d) => ({ ...d, open: false }));
+            openMilestone(m, cat, type);
+          }}
         />
       )}
     </div>
