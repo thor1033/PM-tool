@@ -29,6 +29,7 @@ const taskSchema = z
     completedOn: z.string(),
     delayDays: z.number(),
     kind: z.string(),
+    milestoneId: z.string().nullable(),
     meeting: z.record(z.string(), z.any()),
   })
   .partial();

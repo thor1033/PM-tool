@@ -10,6 +10,7 @@ import {
 } from "@/lib/api/hooks";
 import { resolveDep, wouldConflict, initials, followupChainOf, fmtD, daysBetween, type ResolvedDep } from "@/lib/tasks";
 import { TASK_KINDS, DEFAULT_KIND, meetingTimeRange } from "@/lib/task-kinds";
+import { milestonesForTask } from "@/lib/milestone-grouping";
 import type { TaskMeeting } from "@/lib/db/schema";
 import type { Task, WorkingSet } from "@/lib/types";
 import type { TaskComment, TaskDep } from "@/lib/db/schema";
@@ -310,10 +311,11 @@ function RiskLinker({
 // ── main card modal ──────────────────────────────────────────────────────────
 
 export function CardModal({
-  ws, projectId, task, defaultCategoryId, defaultStatus, open, onOpenChange,
+  ws, projectId, task, defaultCategoryId, defaultMilestoneId, defaultStatus, open, onOpenChange,
 }: {
   ws: WorkingSet; projectId: string; task: Task | null;
-  defaultCategoryId?: string | null; defaultStatus?: string;
+  defaultCategoryId?: string | null;
+  defaultMilestoneId?: string | null; defaultStatus?: string;
   open: boolean; onOpenChange: (v: boolean) => void;
 }) {
   const create = useCreateEntity(projectId, "tasks");
@@ -349,6 +351,7 @@ export function CardModal({
     end: activeTask?.end ?? "",
     deps: activeTask?.deps ?? ([] as TaskDep[]),
     kind: activeTask?.kind ?? DEFAULT_KIND,
+    milestoneId: activeTask?.milestoneId ?? defaultMilestoneId ?? null,
     mtTime: (activeTask?.meeting as TaskMeeting | undefined)?.time ?? "",
     mtDuration: String((activeTask?.meeting as TaskMeeting | undefined)?.durationMins ?? 60),
     mtLocation: (activeTask?.meeting as TaskMeeting | undefined)?.location ?? "",
@@ -371,6 +374,7 @@ export function CardModal({
       end: activeTask?.end ?? "",
       deps: activeTask?.deps ?? ([] as TaskDep[]),
     kind: activeTask?.kind ?? DEFAULT_KIND,
+      milestoneId: activeTask?.milestoneId ?? defaultMilestoneId ?? null,
     mtTime: (activeTask?.meeting as TaskMeeting | undefined)?.time ?? "",
     mtDuration: String((activeTask?.meeting as TaskMeeting | undefined)?.durationMins ?? 60),
     mtLocation: (activeTask?.meeting as TaskMeeting | undefined)?.location ?? "",
@@ -443,6 +447,17 @@ export function CardModal({
   }
 
   function save() {
+    // A task inside a track has to say which milestone it drives at —
+    // otherwise it sits in the track serving every milestone at once, which
+    // is exactly the ambiguity milestones exist to remove. A task with no
+    // track at all is genuinely unassigned and needs no milestone.
+    const inTrack = form.category !== "none" && !!form.category;
+    const available = milestonesForTask(inTrack ? form.category : null, ws.milestones);
+    if (inTrack && !form.milestoneId && available.length > 0) {
+      toast.error("Pick the milestone this task works toward, or move it out of the track.");
+      return;
+    }
+
     const payload = {
       title: form.title.trim() || "Untitled task",
       description: form.description,
@@ -455,6 +470,7 @@ export function CardModal({
       assignees: form.assignees.split(",").map((s) => s.trim()).filter(Boolean),
       start: form.start, end: form.end, tags: activeTask?.tags ?? [], deps: form.deps,
       kind: form.kind,
+      milestoneId: form.milestoneId,
       // Meeting detail is only kept for meetings — switching kind away from
       // meeting clears it rather than leaving orphaned times behind.
       meeting: form.kind === "meeting"
@@ -651,6 +667,42 @@ export function CardModal({
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            {/* Which outcome this task drives at. Scoped to the chosen track,
+                since a milestone belongs to one track. */}
+            <div className="space-y-1.5">
+              <Label>Milestone</Label>
+              <Select
+                value={form.milestoneId ?? "none"}
+                onValueChange={(v) => set("milestoneId", v === "none" ? null : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">
+                    {form.category !== "none" && form.category
+                      ? "— pick one —"
+                      : "Not tied to a milestone"}
+                  </SelectItem>
+                  {milestonesForTask(
+                    form.category === "none" ? null : form.category,
+                    ws.milestones,
+                  ).map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.title || "Untitled"}{m.date ? ` · ${fmtD(m.date)}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {form.category !== "none" && form.category &&
+                milestonesForTask(form.category, ws.milestones).length === 0 && (
+                  <p className="text-muted-foreground text-[11.5px]">
+                    This track has no milestones yet — add one from the task list to give this
+                    work something to aim at.
+                  </p>
+                )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">

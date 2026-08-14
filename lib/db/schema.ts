@@ -112,6 +112,11 @@ export const tasks = pgTable(
      *  what the editor asks for: a meeting needs a time and attendees, a
      *  build does not. See TASK_KINDS in lib/task-kinds.ts. */
     kind: text("kind").default("build").notNull(),
+    /** Milestone this task works toward. A track says which part of the
+     *  project a task belongs to; the milestone says which outcome it is
+     *  driving at, so tasks sit beneath the milestone they deliver rather
+     *  than all pointing at every milestone in the track at once. */
+    milestoneId: text("milestone_id"),
     /** Meeting-specific details, only meaningful when kind is "meeting".
      *  Held as a blob because the invite mechanism is still being decided —
      *  when it lands, this is where the real event data will live. */

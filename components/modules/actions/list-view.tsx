@@ -4,12 +4,13 @@ import { Fragment, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Plus, Trash2, Pencil, ChevronRight, ChevronDown, MessageSquare, GripVertical, Flag, Milestone as MilestoneIcon,
-  TriangleAlert, RotateCw, UserRound,
+  TriangleAlert, RotateCw, UserRound, Check,
 } from "lucide-react";
 import { useCreateEntity, useUpdateEntity, useDeleteEntity } from "@/lib/api/hooks";
 import type { Task, WorkingSet, Milestone, Category } from "@/lib/types";
 import { depsOf, statusVar, fmtD, daysBetween, taskIdMap, COLUMNS, TRACK_ICONS } from "@/lib/tasks";
 import { kindOf } from "@/lib/task-kinds";
+import { groupByMilestone, type MilestoneGroup } from "@/lib/milestone-grouping";
 import { accent, accentVar } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -83,7 +84,7 @@ export function ListView({
 }: {
   ws: WorkingSet; projectId: string; filtered: Task[]; sort: SortMode;
   fCat: string[]; setFCat: (v: string[]) => void;
-  onEdit: (t: Task | null, defaultCategoryId?: string | null) => void;
+  onEdit: (t: Task | null, defaultCategoryId?: string | null, defaultMilestoneId?: string | null) => void;
   onEditMilestone: (m: Milestone | null, defaultCategoryId?: string | null, defaultType?: "milestone" | "gate") => void;
   onEditTrack: (track: Category) => void;
 }) {
@@ -304,24 +305,36 @@ export function ListView({
         // origin. They're only visually distinguished by the gutter icon in
         // TaskRow (see followupOf), which shows the origin's row number no
         // matter which track the follow-up ends up in.
-        type Row = { kind: "task"; task: Task } | { kind: "gate"; gate: Milestone };
+        // Tasks sit beneath the milestone they drive at, in the order they
+        // should be executed. Gates still interleave by date, since a gate is
+        // a checkpoint the whole track passes rather than one milestone's work.
+        type Row =
+          | { kind: "task"; task: Task }
+          | { kind: "gate"; gate: Milestone }
+          | { kind: "msHeader"; group: MilestoneGroup };
         const rows: Row[] = [];
         const sortedGates = [...groupGates].sort((x, y) => (x.date < y.date ? -1 : 1));
-        const dated = g.tasks.filter((t) => t.end).sort((x, y) => (x.end < y.end ? -1 : 1));
-        const undated = g.tasks.filter((t) => !t.end);
         let gateIdx = 0;
-        dated.forEach((t) => {
-          rows.push({ kind: "task", task: t });
-          while (gateIdx < sortedGates.length && sortedGates[gateIdx].date <= t.end) {
+        const flushGatesUpTo = (date: string) => {
+          while (gateIdx < sortedGates.length && sortedGates[gateIdx].date <= date) {
             rows.push({ kind: "gate", gate: sortedGates[gateIdx] });
             gateIdx++;
           }
-        });
+        };
+
+        for (const mg of groupByMilestone(g.tasks, groupMilestones)) {
+          rows.push({ kind: "msHeader", group: mg });
+          mg.tasks.forEach((t) => rows.push({ kind: "task", task: t }));
+          // Gates land between milestones, never inside one: a gate dropped
+          // mid-group visually orphans the tasks below it from their header.
+          const closesAt = mg.milestone?.date
+            || mg.tasks.reduce((m, t) => (t.end > m ? t.end : m), "");
+          if (closesAt) flushGatesUpTo(closesAt);
+        }
         while (gateIdx < sortedGates.length) {
           rows.push({ kind: "gate", gate: sortedGates[gateIdx] });
           gateIdx++;
         }
-        undated.forEach((t) => rows.push({ kind: "task", task: t }));
 
         const today = new Date().toISOString().slice(0, 10);
         const isUndefined = g.key === "_none";
@@ -357,6 +370,14 @@ export function ListView({
                     <span
                       className={cn("font-serif-display text-[19px] font-semibold", isUndefined && "text-[var(--t-red)]")}
                       onDoubleClick={(e) => { e.stopPropagation(); if (!g.key.startsWith("_")) setEditingTrack(g.key); }}
+                      onClick={(e) => {
+                        // Single click opens the editor; double-click still
+                        // renames in place. The row's own toggle is suppressed.
+                        e.stopPropagation();
+                        const cat = ws.categories.find((c) => c.id === g.key);
+                        if (cat) onEditTrack(cat);
+                      }}
+                      title="Open the track editor · double-click to rename"
                     >
                       {g.label}
                     </span>
@@ -402,28 +423,6 @@ export function ListView({
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-8 text-[12.5px]"
-                      onClick={() => {
-                        const cat = ws.categories.find((c) => c.id === g.key);
-                        if (cat) onEditTrack(cat);
-                      }}
-                      title="Edit this track"
-                    >
-                      <Pencil className="size-3.5" /> Track
-                    </Button>
-                    {/* Adds straight into this track, alongside the toolbar's
-                        "Add new" which starts without one pre-selected. */}
-                    <Button
-                      size="sm"
-                      className="h-8 text-[12.5px]"
-                      onClick={() => onEdit(null, g.key)}
-                      title={`Add a task to ${g.label}`}
-                    >
-                      <Plus className="size-3.5" /> Task
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
                       className="h-8 border-dashed text-[12.5px]"
                       onClick={() => onEditMilestone(null, g.key, "milestone")}
                       title="Add milestone"
@@ -457,54 +456,6 @@ export function ListView({
                   These tasks have no track set.
                 </p>
               )}
-              {/* Milestone strip */}
-              {groupMilestones.length > 0 && (
-                <div className="space-y-2 px-3 pb-2.5 pt-2.5">
-                  {groupMilestones.map((m) => {
-                    const col = a ? accentVar(g.color) : "var(--accent-deep)";
-                    const mOverdue = m.date && m.date < today;
-                    return (
-                      <button
-                        key={m.id}
-                        onClick={() => onEditMilestone(m)}
-                        className="group/ms relative flex w-full items-center gap-3 overflow-hidden rounded-[var(--radius-sm)] border-l-[4px] px-3.5 py-2.5 text-left shadow-sm transition hover:shadow-md"
-                        style={{
-                          borderLeftColor: col,
-                          background: `color-mix(in oklch, ${col} 10%, var(--panel))`,
-                        }}
-                      >
-                        <span className="absolute inset-0 opacity-0 transition group-hover/ms:opacity-5" style={{ background: col }} />
-                        <span
-                          className="relative flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-white shadow-sm"
-                          style={{ background: col }}
-                        >
-                          <MilestoneIcon className="size-4" />
-                        </span>
-                        <div className="relative min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[14px] font-bold">
-                              {m.title || "Untitled milestone"}
-                              <span className={cn("ml-1 font-mono text-[12px] font-normal", mOverdue ? "font-bold text-[var(--t-red)]" : "text-muted-foreground")}>
-                                {" – "}{m.date ? fmtD(m.date) : "No date"}
-                              </span>
-                            </span>
-                            <span
-                              className="rounded-full px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wide"
-                              style={{ background: `color-mix(in oklch, ${col} 18%, transparent)`, color: col }}
-                            >
-                              Milestone
-                            </span>
-                          </div>
-                          <p className="text-muted-foreground mt-0.5 text-[12px]">
-                            Key point in the track&rsquo;s progress
-                          </p>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
               <table className="w-full text-[14.5px]">
                 <thead>
                   <tr className="border-b text-left">
@@ -525,6 +476,27 @@ export function ListView({
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={() => handleDrop(null, g)}
                 >
+                  {groupMilestones.length === 0 && !isUndefined && (
+                    <tr>
+                      <td colSpan={7} className="py-2">
+                        <div className="text-muted-foreground rounded-[var(--radius-sm)] border border-dashed px-4 py-5 text-center text-[13px] leading-relaxed">
+                          <p className="font-semibold">No milestones in this track yet</p>
+                          <p className="mt-1">
+                            Milestones are what the work is aiming at — add one, then tasks can be
+                            assigned to it.
+                          </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-2.5 h-8 text-[12.5px]"
+                            onClick={() => onEditMilestone(null, g.key, "milestone")}
+                          >
+                            <MilestoneIcon className="size-3.5" /> Add a milestone
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {rows.length === 0 && !isUndefined && (
                     <tr
                       onDragOver={(e) => { e.preventDefault(); setDragOverRow(`_empty_${g.key}`); }}
@@ -591,6 +563,71 @@ export function ListView({
                                 {row.gate.date ? fmtD(row.gate.date) : "No date"}
                               </span>
                             </button>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    if (row.kind === "msHeader") {
+                      const mg = row.group;
+                      const m = mg.milestone;
+                      const col = a ? accentVar(g.color) : "var(--accent-deep)";
+                      const overdue = m?.date && m.date < today && !mg.complete;
+                      return (
+                        <tr key={`ms-${mg.key}`}>
+                          <td colSpan={7} className="pb-1 pt-4 first:pt-1">
+                            <div className="flex items-center gap-2.5">
+                              {m ? (
+                                <button
+                                  onClick={() => onEditMilestone(m)}
+                                  className="group/ms flex min-w-0 items-center gap-2.5 text-left"
+                                  title="Edit this milestone"
+                                >
+                                  <span
+                                    className="flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)]"
+                                    style={{ background: `color-mix(in oklch, ${col} 16%, var(--panel))`, color: col }}
+                                  >
+                                    {mg.complete ? <Check className="size-3.5" /> : <MilestoneIcon className="size-3.5" />}
+                                  </span>
+                                  <span className="truncate text-[14px] font-bold group-hover/ms:underline">
+                                    {m.title || "Untitled milestone"}
+                                  </span>
+                                  <span
+                                    className={cn(
+                                      "shrink-0 font-mono text-[12px]",
+                                      overdue ? "font-bold text-[var(--t-red)]" : "text-muted-foreground",
+                                    )}
+                                  >
+                                    {m.date ? fmtD(m.date) : "no date"}
+                                  </span>
+                                </button>
+                              ) : (
+                                <span className="text-muted-foreground flex items-center gap-2.5 text-[13.5px] font-semibold">
+                                  <span className="flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-dashed">
+                                    <MilestoneIcon className="size-3.5" />
+                                  </span>
+                                  Not tied to a milestone
+                                </span>
+                              )}
+                              <span className="text-muted-foreground shrink-0 font-mono text-[11.5px]">
+                                {mg.tasks.length === 0
+                                  ? "no tasks yet"
+                                  : `${mg.doneCount}/${mg.tasks.length}`}
+                              </span>
+                              <span className="h-px flex-1 bg-[var(--line)]" />
+                              {/* Work is added to a milestone, not to the
+                                  track at large — the milestone is what the
+                                  task is for. */}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-muted-foreground hover:text-foreground h-7 shrink-0 text-[12px]"
+                                onClick={() => onEdit(null, g.key, m?.id ?? null)}
+                                title={m ? `Add a task toward “${m.title}”` : "Add a task with no milestone"}
+                              >
+                                <Plus className="size-3.5" /> Task
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       );

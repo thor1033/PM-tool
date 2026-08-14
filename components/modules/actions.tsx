@@ -268,7 +268,7 @@ export function ActionsModule({ projectId }: { projectId: string }) {
     setTimelineLayers(v);
     try { window.localStorage.setItem(TIMELINE_LAYERS_KEY, JSON.stringify(v)); } catch { /* best-effort */ }
   }
-  const [taskDialog, setTaskDialog] = useState<{ open: boolean; task: Task | null; defaultCategoryId?: string | null; defaultStatus?: string }>({ open: false, task: null });
+  const [taskDialog, setTaskDialog] = useState<{ open: boolean; task: Task | null; defaultCategoryId?: string | null; defaultStatus?: string; defaultMilestoneId?: string | null }>({ open: false, task: null });
   const [msDialog, setMsDialog] = useState<{ open: boolean; milestone: Milestone | null; defaultCategoryId?: string | null; defaultType?: "milestone" | "gate" }>({ open: false, milestone: null });
   const [trackModal, setTrackModal] = useState<{ open: boolean; track: Category | null }>({ open: false, track: null });
 
@@ -321,8 +321,13 @@ export function ActionsModule({ projectId }: { projectId: string }) {
 
   if (!ws) return null;
 
-  function openTask(t: Task | null, defaultCategoryId?: string | null, defaultStatus?: string) {
-    setTaskDialog({ open: true, task: t, defaultCategoryId, defaultStatus });
+  function openTask(
+    t: Task | null,
+    defaultCategoryId?: string | null,
+    defaultMilestoneId?: string | null,
+    defaultStatus?: string,
+  ) {
+    setTaskDialog({ open: true, task: t, defaultCategoryId, defaultMilestoneId, defaultStatus });
   }
   function openMilestone(m: Milestone | null, defaultCategoryId?: string | null, defaultType?: "milestone" | "gate") {
     setMsDialog({ open: true, milestone: m, defaultCategoryId, defaultType });
@@ -440,6 +445,7 @@ export function ActionsModule({ projectId }: { projectId: string }) {
         <CardModal
           ws={ws} projectId={projectId} task={taskDialog.task}
           defaultCategoryId={taskDialog.defaultCategoryId} defaultStatus={taskDialog.defaultStatus}
+          defaultMilestoneId={taskDialog.defaultMilestoneId}
           open={taskDialog.open} onOpenChange={(v) => setTaskDialog((d) => ({ ...d, open: v }))}
         />
       )}
