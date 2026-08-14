@@ -477,9 +477,18 @@ export function TimelineView({
       sort === "sequence"
         ? sortBySequence(tasks)
         : orderByDependencyFlow(tasks, new Set(tasks.map((t) => t.id)));
+    // A track earns a band if it has dated work *or* dated milestones. Without
+    // the second, a milestone belonging to an empty track failed the group
+    // lookup below and fell into the "ungrouped" strip, which renders at the
+    // top — so it appeared to sit on whichever track happened to be first.
+    const trackHasMilestone = new Set(
+      inRangeMs.map((m) => m.category).filter((c): c is string => !!c),
+    );
     ws.categories.forEach((c) => {
       const tasks = bycat.get(c.id);
-      if (tasks?.length) groups.push({ id: c.id, label: c.label, color: c.color, tasks: orderTasks(tasks) });
+      if (tasks?.length || trackHasMilestone.has(c.id)) {
+        groups.push({ id: c.id, label: c.label, color: c.color, tasks: orderTasks(tasks ?? []) });
+      }
     });
     const noTrack = bycat.get("_none");
     if (noTrack?.length) groups.push({ id: "_none", label: "No track", color: null, tasks: orderTasks(noTrack) });
