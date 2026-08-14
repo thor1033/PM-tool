@@ -8,6 +8,7 @@ import { useUpdateEntity } from "@/lib/api/hooks";
 import type { Task, WorkingSet, Milestone } from "@/lib/types";
 import { daysBetween, fmtD, NO_TRACK_ID } from "@/lib/tasks";
 import { accentVar } from "@/lib/colors";
+import { stackMarkers } from "@/lib/marker-stack";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { UnscheduledTray, UNSCHEDULED_DRAG_TYPE } from "@/components/modules/actions/unscheduled-tray";
@@ -36,6 +37,9 @@ const SORT_OPTIONS: { id: TimelineSortMode; label: string }[] = [
 
 const MAX_VISIBLE_ROWS = 8;
 const ROW_H = 48, HDR_H = 44, TRACK_H = 40, SUB_ROW_H = 34;
+/** Minimum clear space between two markers before one drops to the next row,
+ *  and the height of each of those rows. */
+const MARKER_GAP = 26, MARKER_ROW_H = 21;
 const LABEL_W = 250;
 
 
@@ -767,33 +771,47 @@ export function TimelineView({
           {/* Milestones/gates with no track (or in deadline-sort mode, which
               drops track grouping entirely) have no band of their own to
               live in — surfaced here instead, pinned under the header. */}
-          {(ungroupedGates.length > 0 || ungroupedMilestones.length > 0) && (
-            <div className="pointer-events-none sticky z-40 h-0" style={{ top: HDR_H + 6 }}>
-              {ungroupedGates.map((g) => (
-                <button
-                  key={g.id}
-                  onClick={() => onEditMilestone(g)}
-                  className="pointer-events-auto absolute -translate-x-1/2 cursor-pointer whitespace-nowrap rounded bg-[var(--t-red)] px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wide text-white"
-                  style={{ left: LABEL_W + g.left }}
-                  title={`${g.title} (gate) — ${fmtD(g.date)} — no track`}
-                >
-                  Gate
-                </button>
-              ))}
-              {ungroupedMilestones.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => onEditMilestone(m)}
-                  className="pointer-events-auto absolute flex -translate-x-1/2 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full py-0.5 pl-1 pr-2 font-mono text-[11px] font-bold text-white transition hover:brightness-110"
-                  style={{ left: LABEL_W + m.left, background: m.color }}
-                  title={`${m.title} — ${fmtD(m.date)} — no track`}
-                >
-                  <span className="text-[15px] leading-none">◆</span>
-                  {m.title}
-                </button>
-              ))}
-            </div>
-          )}
+          {(ungroupedGates.length > 0 || ungroupedMilestones.length > 0) && (() => {
+            // Diamonds, not labelled pills: a title needs ~19 days of room at
+            // this zoom and often has two, so inline text always collided.
+            // Anything still too close drops to the next row.
+            const marks = [
+              ...ungroupedGates.map((g) => ({ ...g, isGate: true as const })),
+              ...ungroupedMilestones.map((m) => ({ ...m, isGate: false as const })),
+            ];
+            const { placed, rows } = stackMarkers(marks, MARKER_GAP);
+            return (
+              <div
+                className="pointer-events-none sticky z-40 h-0"
+                style={{ top: HDR_H + 6 }}
+              >
+                {placed.map(({ item, row }) => (
+                  <button
+                    key={item.id}
+                    onClick={() => onEditMilestone(item)}
+                    className="group/mk pointer-events-auto absolute flex size-[18px] -translate-x-1/2 cursor-pointer items-center justify-center rounded-[4px] text-white transition hover:scale-110 hover:brightness-110"
+                    style={{
+                      left: LABEL_W + item.left,
+                      top: row * MARKER_ROW_H,
+                      background: item.isGate ? "var(--t-red)" : item.color,
+                    }}
+                    title={`${item.title || "Untitled"}${item.isGate ? " (gate)" : ""} — ${fmtD(item.date)}`}
+                  >
+                    <span className="text-[11px] leading-none">{item.isGate ? "▮" : "◆"}</span>
+                    {/* The title on demand, so the band stays readable while
+                        the detail is still one hover away. */}
+                    <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 hidden -translate-x-1/2 whitespace-nowrap rounded-[var(--radius-sm)] border bg-[var(--panel)] px-2 py-1 text-[11.5px] font-medium text-[var(--ink)] shadow-md group-hover/mk:block">
+                      {item.title || "Untitled"}
+                      <span className="text-muted-foreground ml-1.5 font-mono text-[10.5px]">
+                        {fmtD(item.date)}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+                <span style={{ display: "block", height: rows * MARKER_ROW_H }} />
+              </div>
+            );
+          })()}
 
           {/* Groups */}
           {groups.map((g) => {
@@ -821,18 +839,32 @@ export function TimelineView({
                           Gate
                         </button>
                       ))}
-                      {(milestonesByGroup.get(g.id) ?? []).map((m) => (
-                        <button
-                          key={m.id}
-                          onClick={() => onEditMilestone(m)}
-                          className="absolute top-1/2 flex -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full py-0.5 pl-1 pr-2 font-mono text-[11px] font-bold text-white transition hover:brightness-110"
-                          style={{ left: m.left, background: m.color }}
-                          title={`${m.title} — ${fmtD(m.date)}`}
-                        >
-                          <span className="text-[13px] leading-none">◆</span>
-                          {m.title}
-                        </button>
-                      ))}
+                      {/* Same treatment as the ungrouped band: diamonds that
+                          stack rather than titles that collide. */}
+                      {stackMarkers(milestonesByGroup.get(g.id) ?? [], MARKER_GAP, 2).placed.map(
+                        ({ item: m, row }) => (
+                          <button
+                            key={m.id}
+                            onClick={() => onEditMilestone(m)}
+                            className="group/tm absolute flex size-[17px] -translate-x-1/2 cursor-pointer items-center justify-center rounded-[4px] text-white transition hover:scale-110 hover:brightness-110"
+                            style={{
+                              left: m.left,
+                              top: `calc(50% + ${(row - 0.5) * 18}px)`,
+                              transform: "translate(-50%, -50%)",
+                              background: m.color,
+                            }}
+                            title={`${m.title || "Untitled"} — ${fmtD(m.date)}`}
+                          >
+                            <span className="text-[10px] leading-none">◆</span>
+                            <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 hidden -translate-x-1/2 whitespace-nowrap rounded-[var(--radius-sm)] border bg-[var(--panel)] px-2 py-1 text-[11.5px] font-medium text-[var(--ink)] shadow-md group-hover/tm:block">
+                              {m.title || "Untitled"}
+                              <span className="text-muted-foreground ml-1.5 font-mono text-[10.5px]">
+                                {fmtD(m.date)}
+                              </span>
+                            </span>
+                          </button>
+                        ),
+                      )}
                     </div>
                   </div>
                 )}
