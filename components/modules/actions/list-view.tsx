@@ -9,6 +9,7 @@ import {
 import { useCreateEntity, useUpdateEntity, useDeleteEntity } from "@/lib/api/hooks";
 import type { Task, WorkingSet, Milestone, Category } from "@/lib/types";
 import { depsOf, statusVar, fmtD, daysBetween, taskIdMap, COLUMNS, TRACK_ICONS } from "@/lib/tasks";
+import { kindOf } from "@/lib/task-kinds";
 import { accent, accentVar } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -740,6 +741,20 @@ function SequenceList({
                 <td className="py-4 pr-6">
                   <span className="flex items-center gap-3">
                     <span className="size-2.5 shrink-0 rounded-full" style={{ background: statusVar(t.status) }} />
+                    {/* How the task gets done, so a meeting is recognisable
+                        without opening it. Build is the default and unremarkable,
+                        so it stays unmarked. */}
+                    {t.kind && t.kind !== "build" && (() => {
+                      const k = kindOf(t.kind);
+                      const KIcon = k.Icon;
+                      return (
+                        <KIcon
+                          className="size-3.5 shrink-0"
+                          style={{ color: k.tone }}
+                          aria-label={k.label}
+                        />
+                      );
+                    })()}
                     <span className="font-medium">{t.title}</span>
                     {blocked && <span className="text-[11px] font-bold text-[var(--t-red)]" title="Dependency block">⛔</span>}
                   </span>

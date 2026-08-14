@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
-  Plus, X, Trash2, MessageSquare, TriangleAlert, Link2, Target, Package, GitBranch, ListChecks, Check,
+  Plus, X, Trash2, MessageSquare, TriangleAlert, Link2, Target, Package, GitBranch, ListChecks, Check, Users,
 } from "lucide-react";
 import {
   useCreateEntity, useUpdateEntity, useDeleteEntity,
 } from "@/lib/api/hooks";
 import { resolveDep, wouldConflict, initials, followupChainOf, fmtD, daysBetween, type ResolvedDep } from "@/lib/tasks";
+import { TASK_KINDS, DEFAULT_KIND, meetingTimeRange } from "@/lib/task-kinds";
+import type { TaskMeeting } from "@/lib/db/schema";
 import type { Task, WorkingSet } from "@/lib/types";
 import type { TaskComment, TaskDep } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
@@ -346,6 +348,12 @@ export function CardModal({
     start: defaultStart(activeTask),
     end: activeTask?.end ?? "",
     deps: activeTask?.deps ?? ([] as TaskDep[]),
+    kind: activeTask?.kind ?? DEFAULT_KIND,
+    mtTime: (activeTask?.meeting as TaskMeeting | undefined)?.time ?? "",
+    mtDuration: String((activeTask?.meeting as TaskMeeting | undefined)?.durationMins ?? 60),
+    mtLocation: (activeTask?.meeting as TaskMeeting | undefined)?.location ?? "",
+    mtAttendees: ((activeTask?.meeting as TaskMeeting | undefined)?.attendees ?? []).join(", "),
+    mtAgenda: (activeTask?.meeting as TaskMeeting | undefined)?.agenda ?? "",
   }));
   const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -362,6 +370,12 @@ export function CardModal({
       start: defaultStart(activeTask),
       end: activeTask?.end ?? "",
       deps: activeTask?.deps ?? ([] as TaskDep[]),
+    kind: activeTask?.kind ?? DEFAULT_KIND,
+    mtTime: (activeTask?.meeting as TaskMeeting | undefined)?.time ?? "",
+    mtDuration: String((activeTask?.meeting as TaskMeeting | undefined)?.durationMins ?? 60),
+    mtLocation: (activeTask?.meeting as TaskMeeting | undefined)?.location ?? "",
+    mtAttendees: ((activeTask?.meeting as TaskMeeting | undefined)?.attendees ?? []).join(", "),
+    mtAgenda: (activeTask?.meeting as TaskMeeting | undefined)?.agenda ?? "",
     });
     // Also keyed on whether the row has resolved, so a follow-up that arrives
     // after the refetch repopulates the form instead of leaving it blank.
@@ -440,6 +454,18 @@ export function CardModal({
       phase: activeTask?.phase ?? null,
       assignees: form.assignees.split(",").map((s) => s.trim()).filter(Boolean),
       start: form.start, end: form.end, tags: activeTask?.tags ?? [], deps: form.deps,
+      kind: form.kind,
+      // Meeting detail is only kept for meetings — switching kind away from
+      // meeting clears it rather than leaving orphaned times behind.
+      meeting: form.kind === "meeting"
+        ? {
+            time: form.mtTime || undefined,
+            durationMins: Number(form.mtDuration) || undefined,
+            location: form.mtLocation.trim() || undefined,
+            attendees: form.mtAttendees.split(",").map((x) => x.trim()).filter(Boolean),
+            agenda: form.mtAgenda.trim() || undefined,
+          }
+        : {},
       comments: activeTask?.comments ?? [],
       custom: (() => {
         const next = { ...(activeTask?.custom as Record<string, unknown> ?? {}) };
@@ -506,6 +532,95 @@ export function CardModal({
                   rows={2}
                   placeholder="Why did this follow-up become necessary?"
                 />
+              </div>
+            )}
+
+            {/* How the work gets done. A meeting needs a time and people;
+                a build does not — so the kind decides what we ask for. */}
+            <div className="space-y-1.5">
+              <Label>Kind</Label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {Object.entries(TASK_KINDS).map(([key, k]) => {
+                  const Icon = k.Icon;
+                  const on = form.kind === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => set("kind", key)}
+                      title={k.hint}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-[var(--radius-sm)] border px-2.5 py-2 text-[12.5px] font-medium transition",
+                        on ? "bg-foreground text-background border-foreground" : "hover:bg-muted",
+                      )}
+                    >
+                      <Icon className="size-3.5 shrink-0" style={{ color: on ? undefined : k.tone }} />
+                      {k.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {form.kind === "meeting" && (
+              <div className="space-y-3 rounded-[var(--radius-md)] border bg-[var(--paper-2)] p-3">
+                <div className="flex items-center gap-2">
+                  <Users className="size-3.5 shrink-0 text-[var(--t-blue)]" />
+                  <span className="text-[12.5px] font-semibold">Meeting details</span>
+                  {meetingTimeRange(form.mtTime, Number(form.mtDuration)) && (
+                    <span className="text-muted-foreground ml-auto font-mono text-[11.5px]">
+                      {meetingTimeRange(form.mtTime, Number(form.mtDuration))}
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Time</Label>
+                    <Input type="time" value={form.mtTime} onChange={(e) => set("mtTime", e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Duration (mins)</Label>
+                    <Input
+                      type="number" min={0} step={15}
+                      value={form.mtDuration}
+                      onChange={(e) => set("mtDuration", e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Where</Label>
+                  <Input
+                    value={form.mtLocation}
+                    onChange={(e) => set("mtLocation", e.target.value)}
+                    placeholder="Room, address, or a video link"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Attendees (comma-separated)</Label>
+                  <Input
+                    value={form.mtAttendees}
+                    onChange={(e) => set("mtAttendees", e.target.value)}
+                    placeholder="Ditlev Brygmann, Thor Bøje Simonsen"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Agenda</Label>
+                  <Textarea
+                    value={form.mtAgenda}
+                    onChange={(e) => set("mtAgenda", e.target.value)}
+                    rows={2}
+                    placeholder="What needs to be covered"
+                  />
+                </div>
+                {/* The invite itself is still being decided, so this says so
+                    rather than pretending to be a working calendar hook. */}
+                <div className="rounded-[var(--radius-sm)] border border-dashed p-2.5">
+                  <p className="text-muted-foreground text-[11.5px] leading-relaxed">
+                    <strong>Invite — not wired up yet.</strong> The details above are recorded on
+                    the task. How they reach a calendar (an .ics download, a Google/Outlook link,
+                    or a real integration) is still to be decided.
+                  </p>
+                </div>
               </div>
             )}
 

@@ -108,6 +108,14 @@ export const tasks = pgTable(
      *  the schedule. Kept off `start`/`end` so the plan of record stays intact
      *  — the forecast models a delay without committing to it. */
     delayDays: integer("delay_days").default(0).notNull(),
+    /** How this task gets done — build, meeting, decision and so on. Shapes
+     *  what the editor asks for: a meeting needs a time and attendees, a
+     *  build does not. See TASK_KINDS in lib/task-kinds.ts. */
+    kind: text("kind").default("build").notNull(),
+    /** Meeting-specific details, only meaningful when kind is "meeting".
+     *  Held as a blob because the invite mechanism is still being decided —
+     *  when it lands, this is where the real event data will live. */
+    meeting: jsonb("meeting").$type<TaskMeeting>().default({}).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
@@ -349,6 +357,22 @@ export const categories = pgTable(
  *  `"followup"` is provenance, not a dependency — `refId` points at the task
  *  this one was spun off from. It's excluded from blocking/scheduling logic
  *  (resolveDep/depsOf/sequenceTasks) and only used to trace lineage. */
+/** Meeting details on a task. Deliberately loose: the invite mechanism is
+ *  still undecided, so this records what a meeting *is* without committing
+ *  to how it gets onto anyone's calendar. */
+export type TaskMeeting = {
+  /** Local time the meeting starts, "HH:MM". The date comes from task.start. */
+  time?: string;
+  /** Length in minutes. */
+  durationMins?: number;
+  /** Room, address, or a video link. */
+  location?: string;
+  /** Who is expected — free text names, matching how assignees work today. */
+  attendees?: string[];
+  /** Agenda or joining notes. */
+  agenda?: string;
+};
+
 export type TaskDep = {
   id: string;
   type: "task" | "deliverable" | "ext" | "external" | "followup";

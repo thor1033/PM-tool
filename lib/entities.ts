@@ -28,6 +28,8 @@ const taskSchema = z
     custom: z.record(z.string(), z.any()),
     completedOn: z.string(),
     delayDays: z.number(),
+    kind: z.string(),
+    meeting: z.record(z.string(), z.any()),
   })
   .partial();
 
