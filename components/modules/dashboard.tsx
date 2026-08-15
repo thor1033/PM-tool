@@ -13,7 +13,7 @@ import {
   Link2,
 } from "lucide-react";
 import { useProject, useUpdateProject } from "@/lib/api/hooks";
-import { accent, accentVar } from "@/lib/colors";
+import { accentVar } from "@/lib/colors";
 import { computeHealth, attentionList } from "@/lib/project-health";
 import { cn } from "@/lib/utils";
 import type { Task, WorkingSet } from "@/lib/types";
@@ -448,7 +448,11 @@ function PurposeLine({ projectId, businessCase }: {
 
 export function DashboardModule({ projectId }: { projectId: string }) {
   const { data } = useProject(projectId);
-  const [openTask, setOpenTask] = useState<Task | null>(null);
+  const router = useRouter();
+  // Every task on this page opens where it lives, so the reader lands
+  // somewhere they can act rather than in a preview.
+  const openTask = (t: Task) =>
+    router.push(`/projects/${projectId}/actions?task=${t.id}`);
   const [who, setWho] = useState("");
 
   // Every hook runs before the loading guard below. These used to sit after
@@ -547,7 +551,7 @@ export function DashboardModule({ projectId }: { projectId: string }) {
         action={<PanelLink href={`/projects/${projectId}/actions`} label="All tasks" />}
         className="mb-4"
       >
-        <AttentionList items={attention} categories={categories} onOpen={setOpenTask} />
+        <AttentionList items={attention} categories={categories} onOpen={openTask} />
       </Panel>
 
       <div className="mb-4 grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
@@ -556,7 +560,7 @@ export function DashboardModule({ projectId }: { projectId: string }) {
           tasks={tasks}
           milestones={milestones}
           categories={categories}
-          onOpen={setOpenTask}
+          onOpen={openTask}
           projectId={projectId}
         />
 
@@ -617,7 +621,7 @@ export function DashboardModule({ projectId }: { projectId: string }) {
               {depTasks.slice(0, 6).map((t) => (
                 <div
                   key={t.id}
-                  onClick={() => setOpenTask(t)}
+                  onClick={() => openTask(t)}
                   className="cursor-pointer rounded-[var(--radius-sm)] px-1.5 py-[7px] transition hover:bg-[var(--paper-2)]"
                 >
                   <div className="mb-1 truncate text-[13px] font-medium">{t.title}</div>
@@ -666,57 +670,18 @@ export function DashboardModule({ projectId }: { projectId: string }) {
               tasks={tasks}
               milestones={milestones}
               categories={categories}
-              onOpenTask={(taskId) => {
-                const t = tasks.find((x) => x.id === taskId);
-                if (t) setOpenTask(t);
-              }}
+              // Send the reader to the task where it lives, in the list with
+              // its track and milestone around it, rather than a detached
+              // preview that shows the title and nothing to act on.
+              onOpenTask={(taskId) =>
+                router.push(`/projects/${projectId}/actions?task=${taskId}`)
+              }
             />
           </Panel>
         </aside>
       </div>
 
-      {openTask && (
-        <TaskPeekDialog task={openTask} onClose={() => setOpenTask(null)} accent={accent} />
-      )}
     </div>
   );
 }
 
-// ── minimal task peek (click-through from dashboard rows) ───────────────────
-
-function TaskPeekDialog({
-  task,
-  onClose,
-}: {
-  task: Task;
-  onClose: () => void;
-  accent: typeof accent;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[oklch(0.22_0.02_285/0.42)] p-14 backdrop-blur-[3px]"
-      onClick={onClose}
-    >
-      <div
-        className="shadow-xl w-full max-w-lg rounded-[22px] bg-[var(--panel)]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="border-b p-5">
-          <p className="eyebrow mb-1.5">Task</p>
-          <h3 className="font-serif-display text-xl font-medium">{task.title}</h3>
-        </div>
-        {task.description && (
-          <div className="p-5 text-sm leading-relaxed">{task.description}</div>
-        )}
-        <div className="flex justify-end gap-2 border-t bg-[var(--paper-2)] p-4">
-          <button
-            onClick={onClose}
-            className="shadow-xs rounded-[var(--radius-sm)] border bg-[var(--panel)] px-3.5 py-2 text-[13px] font-semibold"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}

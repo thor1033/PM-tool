@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import { Rows3, GitBranch, Calendar, KanbanSquare, SlidersHorizontal, ArrowUpDown, Search, X, Plus } from "lucide-react";
 import { useProject } from "@/lib/api/hooks";
 import { taskMatchesFilter, taskIdMap, NO_TRACK_ID } from "@/lib/tasks";
@@ -286,6 +288,30 @@ export function ActionsModule({ projectId }: { projectId: string }) {
     () => filteredNoStatus.filter((t) => fStatus.length === 0 || fStatus.includes(t.status)),
     [filteredNoStatus, fStatus],
   );
+
+  // Deep link from elsewhere in the app: /actions?task=<id> opens that task's
+  // editor here, in the list it actually lives in, rather than a detached
+  // preview.
+  //
+  // This runs in an effect rather than during render: navigating and setting
+  // dialog state are both side effects, and doing them inline triggered
+  // React's "cannot update a component while rendering a different one".
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const linkedTaskId = searchParams.get("task");
+  useEffect(() => {
+    if (!linkedTaskId || !ws) return;
+    const target = ws.tasks.find((t) => t.id === linkedTaskId);
+    if (target) {
+      setTaskDialog({ open: true, task: target });
+      // Keep the row visible even when the default filter hides done work.
+      if (target.status === "done") setFStatus(STATUS_FILTERS.map((st) => st.id));
+    } else {
+      toast.error("That task no longer exists.");
+    }
+    // Clear the param so a refresh or a later close doesn't reopen it.
+    router.replace(`/projects/${projectId}/actions`, { scroll: false });
+  }, [linkedTaskId, ws, router, projectId]);
 
   if (!ws) return null;
 
