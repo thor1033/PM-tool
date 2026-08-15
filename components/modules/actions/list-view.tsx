@@ -463,25 +463,21 @@ export function ListView({
                     </span>
                   )}
                   <Badge variant="secondary" className="text-[13px]">{g.tasks.length}</Badge>
-                  {/* One icon per concept: the milestone glyph counts
-                      milestones, the gate glyph counts gates. They were
-                      previously summed behind a single flag, which is the
-                      gate icon. */}
+                  {/* Icon only: the milestones themselves are listed directly
+                      below with their own headers, so a count here just says
+                      the same thing twice. One glyph per concept — the
+                      milestone mark for milestones, the flag for gates. */}
                   {groupMilestones.length > 0 && (
-                    <span
-                      className="text-muted-foreground flex items-center gap-1 text-[13px]"
-                      title={`${groupMilestones.length} milestone${groupMilestones.length === 1 ? "" : "s"}`}
-                    >
-                      <MilestoneIcon className="size-3.5" /> {groupMilestones.length}
-                    </span>
+                    <MilestoneIcon
+                      className="text-muted-foreground size-3.5"
+                      aria-label={`${groupMilestones.length} milestone${groupMilestones.length === 1 ? "" : "s"}`}
+                    />
                   )}
                   {groupGates.length > 0 && (
-                    <span
-                      className="flex items-center gap-1 text-[13px] text-[var(--t-red)]"
-                      title={`${groupGates.length} gate${groupGates.length === 1 ? "" : "s"}`}
-                    >
-                      <Flag className="size-3.5" /> {groupGates.length}
-                    </span>
+                    <Flag
+                      className="size-3.5 text-[var(--t-red)]"
+                      aria-label={`${groupGates.length} gate${groupGates.length === 1 ? "" : "s"}`}
+                    />
                   )}
                 </button>
               </CollapsibleTrigger>
