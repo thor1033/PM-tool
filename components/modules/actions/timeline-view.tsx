@@ -446,6 +446,31 @@ export function TimelineView({
     cur = addMonths(cur, 1);
   }
 
+  // Month labels alone leave no way to read an actual due date off the grid.
+  // A second row of day ticks fixes that, spaced so the labels never collide:
+  // every day when zoomed in, weekly further out, fortnightly beyond that.
+  const dayStep = DAYW >= 26 ? 1 : DAYW >= 12 ? 7 : 14;
+  const ticks: { left: number; label: string; strong: boolean }[] = [];
+  {
+    const first = new Date(`${minStr}T00:00:00`);
+    // Weekly and fortnightly scales start on a Monday so the marks land on
+    // week boundaries rather than an arbitrary offset from the range start.
+    if (dayStep > 1) {
+      const dow = (first.getDay() + 6) % 7;
+      if (dow) first.setDate(first.getDate() + (7 - dow));
+    }
+    const cursor = new Date(first);
+    while (cursor <= rangeMax) {
+      const iso = cursor.toISOString().slice(0, 10);
+      ticks.push({
+        left: daysBetween(minStr, iso) * DAYW,
+        label: String(cursor.getDate()),
+        strong: cursor.getDate() <= dayStep,
+      });
+      cursor.setDate(cursor.getDate() + dayStep);
+    }
+  }
+
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayLeft = todayStr >= minStr && todayStr <= rangeMax.toISOString().slice(0, 10)
     ? daysBetween(minStr, todayStr) * DAYW : null;
@@ -458,6 +483,9 @@ export function TimelineView({
   if (deadlineMode) {
     const flat = [...inRangeDated].sort((a, b) => a.end.localeCompare(b.end));
     groups.push({ id: "_deadline", label: "Upcoming deadlines", color: null, tasks: flat });
+    // Milestones and gates are deadlines too. In this mode there are no track
+    // bands to hold them, so they render in the strip above the flat list —
+    // still on their real dates, so they line up with the work driving them.
   } else {
     const bycat = new Map<string, Task[]>();
     inRangeDated.forEach((t) => {
@@ -754,9 +782,21 @@ export function TimelineView({
             </div>
             <div className="relative flex-1 overflow-hidden" style={{ width: totalW }}>
               {months.map((m, i) => (
-                <div key={i} className="text-muted-foreground absolute top-0 border-l px-2.5 py-2.5 font-mono text-[12px]" style={{ left: m.left, width: m.width, overflow: "hidden", whiteSpace: "nowrap" }}>
+                <div key={i} className="text-muted-foreground absolute top-0 border-l px-2.5 pt-1.5 font-mono text-[12px]" style={{ left: m.left, width: m.width, overflow: "hidden", whiteSpace: "nowrap" }}>
                   {m.label}
                 </div>
+              ))}
+              {ticks.map((t, i) => (
+                <span
+                  key={`tk-${i}`}
+                  className={cn(
+                    "absolute bottom-1 font-mono text-[10px] tabular-nums",
+                    t.strong ? "text-[var(--ink-soft)]" : "text-muted-foreground/60",
+                  )}
+                  style={{ left: t.left + 2 }}
+                >
+                  {t.label}
+                </span>
               ))}
             </div>
           </div>

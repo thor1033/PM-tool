@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Rows3, GitBranch, Calendar, KanbanSquare, SlidersHorizontal, ArrowUpDown, Layers, Search, X, Plus, ListTodo } from "lucide-react";
+import { Rows3, GitBranch, Calendar, KanbanSquare, SlidersHorizontal, ArrowUpDown, Search, X, Plus } from "lucide-react";
 import { useProject } from "@/lib/api/hooks";
 import { taskMatchesFilter, taskIdMap, NO_TRACK_ID } from "@/lib/tasks";
 import { TrackModal } from "@/components/project/track-modal";
@@ -208,38 +208,6 @@ function SortByDropdown({ sort, onChange }: { sort: SortMode; onChange: (v: Sort
   );
 }
 
-function AddNewDropdown({ onNewTask, onNewTrack }: { onNewTask: () => void; onNewTrack: () => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    function h(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, []);
-  return (
-    <div className="relative" ref={ref}>
-      <Button onClick={() => setOpen((o) => !o)}>
-        <Plus className="size-4" /> Add new
-      </Button>
-      {open && (
-        <div className="bg-popover absolute right-0 z-[70] mt-1.5 w-48 rounded-[var(--radius-md)] border p-1.5 shadow-lg">
-          <button
-            onClick={() => { setOpen(false); onNewTask(); }}
-            className="hover:bg-muted flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-left text-[14px] transition"
-          >
-            <ListTodo className="size-4" /> New task
-          </button>
-          <button
-            onClick={() => { setOpen(false); onNewTrack(); }}
-            className="hover:bg-muted flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-left text-[14px] transition"
-          >
-            <Layers className="size-4" /> New track
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ── module ────────────────────────────────────────────────────────────────────
 
@@ -407,10 +375,12 @@ export function ActionsModule({ projectId }: { projectId: string }) {
 
         {view === "list" && (
           <div className="flex flex-wrap items-center gap-2.5">
-            <AddNewDropdown
-              onNewTask={() => openTask(null)}
-              onNewTrack={() => setTrackModal({ open: true, track: null })}
-            />
+            {/* Tasks, milestones and gates are added from the track they
+                belong to; a track is the only thing with nowhere else to
+                live. */}
+            <Button onClick={() => setTrackModal({ open: true, track: null })}>
+              <Plus className="size-4" /> New track
+            </Button>
           </div>
         )}
       </div>

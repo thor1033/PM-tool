@@ -1,10 +1,10 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Plus, Trash2, Pencil, ChevronRight, ChevronDown, MessageSquare, GripVertical, Flag, Milestone as MilestoneIcon,
-  TriangleAlert, RotateCw, UserRound, Check,
+  TriangleAlert, RotateCw, UserRound, Check, ListTodo,
 } from "lucide-react";
 import { useCreateEntity, useUpdateEntity, useDeleteEntity } from "@/lib/api/hooks";
 import type { Task, WorkingSet, Milestone, Category } from "@/lib/types";
@@ -51,6 +51,77 @@ const SYNTH_GROUPS = [
   { key: "_comms", label: "Communications", color: "teal", origin: "comms" },
   { key: "_change", label: "Change management", color: "purple", origin: "change" },
 ] as const;
+
+/** Adds anything that lives inside a track. One button per track rather
+ *  than one for the whole page, so what gets created is never ambiguous
+ *  about where it lands. */
+function TrackAddMenu({
+  trackLabel,
+  hasMilestones,
+  onTask,
+  onMilestone,
+  onGate,
+}: {
+  trackLabel: string;
+  hasMilestones: boolean;
+  onTask: () => void;
+  onMilestone: () => void;
+  onGate: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function h(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  const pick = (fn: () => void) => () => { setOpen(false); fn(); };
+
+  return (
+    <div className="relative" ref={ref}>
+      <Button
+        size="sm"
+        className="h-8 text-[12.5px]"
+        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+        title={`Add to ${trackLabel}`}
+      >
+        <Plus className="size-3.5" /> Add new
+      </Button>
+      {open && (
+        <div className="bg-popover absolute right-0 z-[70] mt-1.5 w-52 rounded-[var(--radius-md)] border p-1.5 shadow-lg">
+          <button
+            onClick={pick(onTask)}
+            disabled={!hasMilestones}
+            title={hasMilestones ? undefined : "Add a milestone first — tasks are assigned to one"}
+            className="hover:bg-muted disabled:hover:bg-transparent flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-left text-[13.5px] transition disabled:opacity-40"
+          >
+            <ListTodo className="size-4" /> Task
+          </button>
+          <button
+            onClick={pick(onMilestone)}
+            className="hover:bg-muted flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-left text-[13.5px] transition"
+          >
+            <MilestoneIcon className="size-4" /> Milestone
+          </button>
+          <button
+            onClick={pick(onGate)}
+            className="hover:bg-muted flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-left text-[13.5px] text-[var(--t-red)] transition"
+          >
+            <Flag className="size-4" /> Gate
+          </button>
+          {!hasMilestones && (
+            <p className="text-muted-foreground border-t px-3 pb-1 pt-2 text-[11.5px] leading-snug">
+              Add a milestone first — tasks are assigned to one.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface Group {
   key: string;
@@ -168,6 +239,15 @@ export function ListView({
       .sort((a, b) => a.end.localeCompare(b.end));
   }, [filtered]);
 
+  // Milestones and gates are deadlines too — a list of what is coming that
+  // omits them tells you when the work lands but not what it is for.
+  const upcomingMarkers = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return ws.milestones
+      .filter((m) => m.date && m.date >= today)
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [ws.milestones]);
+
   // Categories default to expanded — a group only collapses once the user
   // explicitly closes it (and that choice is what's persisted).
   function toggleGroup(key: string) {
@@ -282,7 +362,7 @@ export function ListView({
   const seqByTaskId = useMemo(() => taskIdMap(ws.tasks), [ws.tasks]);
 
   if (sort === "upcoming") {
-    return <SequenceList ws={ws} tasks={upcoming} onEdit={onEdit} showDueIn emptyLabel="Nothing due from today onward." />;
+    return <SequenceList ws={ws} tasks={upcoming} markers={upcomingMarkers} onEditMilestone={onEditMilestone} onEdit={onEdit} showDueIn emptyLabel="Nothing due from today onward." />;
   }
   if (FLAT_SORTERS[sort]) {
     return <SequenceList ws={ws} tasks={flatSorted} onEdit={onEdit} />;
@@ -383,9 +463,24 @@ export function ListView({
                     </span>
                   )}
                   <Badge variant="secondary" className="text-[13px]">{g.tasks.length}</Badge>
-                  {(groupMilestones.length + groupGates.length) > 0 && (
-                    <span className="text-muted-foreground flex items-center gap-1 text-[13px]">
-                      <Flag className="size-3.5" /> {groupMilestones.length + groupGates.length}
+                  {/* One icon per concept: the milestone glyph counts
+                      milestones, the gate glyph counts gates. They were
+                      previously summed behind a single flag, which is the
+                      gate icon. */}
+                  {groupMilestones.length > 0 && (
+                    <span
+                      className="text-muted-foreground flex items-center gap-1 text-[13px]"
+                      title={`${groupMilestones.length} milestone${groupMilestones.length === 1 ? "" : "s"}`}
+                    >
+                      <MilestoneIcon className="size-3.5" /> {groupMilestones.length}
+                    </span>
+                  )}
+                  {groupGates.length > 0 && (
+                    <span
+                      className="flex items-center gap-1 text-[13px] text-[var(--t-red)]"
+                      title={`${groupGates.length} gate${groupGates.length === 1 ? "" : "s"}`}
+                    >
+                      <Flag className="size-3.5" /> {groupGates.length}
                     </span>
                   )}
                 </button>
@@ -420,24 +515,13 @@ export function ListView({
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 border-dashed text-[12.5px]"
-                      onClick={() => onEditMilestone(null, g.key, "milestone")}
-                      title="Add milestone"
-                    >
-                      <MilestoneIcon className="size-3.5" /> Milestone
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 border-dashed border-[var(--t-red)]/40 text-[12.5px] text-[var(--t-red)] hover:bg-[var(--t-red)]/10 hover:text-[var(--t-red)]"
-                      onClick={() => onEditMilestone(null, g.key, "gate")}
-                      title="Add gate"
-                    >
-                      <Flag className="size-3.5" /> Gate
-                    </Button>
+                    <TrackAddMenu
+                      trackLabel={g.label}
+                      hasMilestones={groupMilestones.length > 0}
+                      onTask={() => onEdit(null, g.key, groupMilestones[0]?.id ?? null)}
+                      onMilestone={() => onEditMilestone(null, g.key, "milestone")}
+                      onGate={() => onEditMilestone(null, g.key, "gate")}
+                    />
                     <button
                       onClick={() => deleteTrack(g)}
                       title="Delete this track"
@@ -727,8 +811,12 @@ export function ListView({
 
 function SequenceList({
   ws, tasks, onEdit, showDueIn = false, emptyLabel = "No tasks match the current filters.",
+  markers = [], onEditMilestone,
 }: {
   ws: WorkingSet; tasks: Task[]; onEdit: (t: Task | null) => void;
+  /** Milestones and gates to interleave by date, when this is a deadline view. */
+  markers?: Milestone[];
+  onEditMilestone?: (m: Milestone | null) => void;
   /** Adds a "Due in" column — how long until (or since) each end date. */
   showDueIn?: boolean;
   emptyLabel?: string;
@@ -736,20 +824,27 @@ function SequenceList({
   const catMap = new Map(ws.categories.map((c) => [c.id, c]));
   const today = new Date().toISOString().slice(0, 10);
 
-  if (tasks.length === 0) {
+  // Rows are tasks and markers merged on date, so the reader sees the
+  // milestone a run of work is driving at, in sequence with that work.
+  const merged: ({ t: Task; d: string } | { m: Milestone; d: string })[] = [
+    ...tasks.map((t) => ({ t, d: t.end })),
+    ...markers.map((m) => ({ m, d: m.date })),
+  ].sort((a, b) => a.d.localeCompare(b.d));
+
+  if (merged.length === 0) {
     return <p className="text-muted-foreground py-12 text-center text-sm">{emptyLabel}</p>;
   }
 
   return (
     <div className="overflow-x-auto rounded-[var(--radius-lg)] border">
-      <table className="w-full text-[14.5px]">
+      <table className="w-full table-fixed text-[14.5px]">
         <thead>
           <tr className="border-b bg-[var(--paper-2)] text-left">
             <th className="w-12 py-4 pl-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">#</th>
-            <th className="py-4 pr-6 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">Task name</th>
+            <th className="w-[46%] py-4 pr-6 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">Task name</th>
             <th className="w-36 py-4 pr-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">Track</th>
-            <th className="w-56 py-4 pr-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">Depends on</th>
-            <th className="w-32 py-4 pr-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">Owner</th>
+            <th className="w-36 py-4 pr-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">Depends on</th>
+            <th className="w-28 py-4 pr-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">Owner</th>
             <th className="w-40 py-4 pr-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">Start → End date</th>
             {showDueIn && (
               <th className="w-28 py-4 pr-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)] whitespace-nowrap">Due in</th>
@@ -758,7 +853,45 @@ function SequenceList({
           </tr>
         </thead>
         <tbody>
-          {tasks.map((t, i) => {
+          {merged.map((row, i) => {
+            if ("m" in row) {
+              const m = row.m;
+              const isGate = m.type === "gate";
+              const cat = m.category ? catMap.get(m.category) : null;
+              return (
+                <tr
+                  key={`mk-${m.id}`}
+                  onClick={() => onEditMilestone?.(m)}
+                  className="cursor-pointer border-b border-[var(--line)] transition last:border-0 hover:bg-[var(--paper-2)]"
+                  style={{ background: isGate
+                    ? "color-mix(in oklch, var(--t-red) 5%, transparent)"
+                    : "color-mix(in oklch, var(--accent-c) 5%, transparent)" }}
+                >
+                  <td className="text-muted-foreground py-4 pl-4 font-mono text-[13px]">{i + 1}</td>
+                  <td className="py-4 pr-6">
+                    <span className="flex items-center gap-2.5">
+                      {isGate
+                        ? <Flag className="size-3.5 shrink-0 text-[var(--t-red)]" />
+                        : <MilestoneIcon className="size-3.5 shrink-0 text-[var(--accent-deep)]" />}
+                      <span
+                        className="font-semibold"
+                        style={{ color: isGate ? "var(--t-red)" : "var(--accent-deep)" }}
+                      >
+                        {m.title || "Untitled"}
+                      </span>
+                    </span>
+                  </td>
+                  <td className="text-muted-foreground py-4 pr-4 text-[12.5px]">{cat?.label ?? ""}</td>
+                  <td className="py-4 pr-4" />
+                  <td className="py-4 pr-4" />
+                  <td className="py-4 pr-4" />
+                  <td className="text-muted-foreground py-4 pr-4 font-mono text-[13px]">{fmtD(m.date)}</td>
+                  {showDueIn && <td className="py-4 pr-4" />}
+                  <td className="py-4 pr-4" />
+                </tr>
+              );
+            }
+            const t = row.t;
             const cat = t.category ? catMap.get(t.category) : null;
             const catIcon = cat?.icon ? TRACK_ICONS[cat.icon] : null;
             const deps = depsOf(t, { tasks: ws.tasks, products: ws.products, externals: ws.externals });
