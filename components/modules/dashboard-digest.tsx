@@ -212,7 +212,7 @@ export function DigestFeed({
 
       <section className="border-t pt-4">
         <div className="mb-2 flex items-baseline justify-between gap-3">
-          <h3 className="text-[12px] font-bold uppercase tracking-wide">Earlier this week</h3>
+          <h3 className="text-[12px] font-bold uppercase tracking-wide">Previous 7 days</h3>
           {weekDone > 0 && (
             <span className="text-muted-foreground text-[11.5px]">
               {weekDone} completed across {weekTracks.length}{" "}
@@ -221,7 +221,7 @@ export function DigestFeed({
           )}
         </div>
         {weekTracks.length === 0 ? (
-          <p className="text-muted-foreground py-1.5 text-[13px]">Nothing else this week.</p>
+          <p className="text-muted-foreground py-1.5 text-[13px]">Nothing else in the last week.</p>
         ) : (
           <ul className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
             {weekTracks.map((row) => (

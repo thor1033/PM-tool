@@ -361,16 +361,10 @@ export function CardModal({
   }));
   const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
 
-  // Assignees stay a comma-joined string on the form so save() is unchanged;
-  // these two just make it behave like a set of picks.
-  const assigneeList = form.assignees.split(",").map((x) => x.trim()).filter(Boolean);
-  const toggleAssignee = (name: string) => {
-    const has = assigneeList.some((n) => n.toLowerCase() === name.toLowerCase());
-    const next = has
-      ? assigneeList.filter((n) => n.toLowerCase() !== name.toLowerCase())
-      : [...assigneeList, name];
-    set("assignees", next.join(", "));
-  };
+  // A task has one owner. Storage stays an array — capacity splits load
+  // across it and filters match any entry — but the editor writes a single
+  // name, which is all any task here has ever had.
+  const ownerName = form.assignees.split(",").map((x) => x.trim()).filter(Boolean)[0] ?? "";
 
   // Re-sync the form whenever the modal swaps to a different task in-place.
   useEffect(() => {
@@ -763,54 +757,36 @@ export function CardModal({
             </div>
 
             <div className="space-y-1.5">
-              <Label>Assignees</Label>
-              {/* Picked from the Stakeholders page rather than typed, so a
-                  name always matches what the filters look for. Free text
-                  produced people like "Thor" who existed on no list. */}
-              <div className="flex flex-wrap gap-1.5">
-                {peopleOf(ws).map((person) => {
-                  const picked = assigneeList.some(
-                    (n) => n.toLowerCase() === person.name.toLowerCase(),
-                  );
-                  return (
-                    <button
-                      key={person.id}
-                      type="button"
-                      onClick={() => toggleAssignee(person.name)}
-                      title={person.title || undefined}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition",
-                        picked ? "bg-foreground text-background border-foreground" : "hover:bg-muted",
-                      )}
-                    >
-                      {picked && <Check className="size-3" />}
-                      {person.name}
-                    </button>
-                  );
-                })}
-                {peopleOf(ws).length === 0 && (
-                  <p className="text-muted-foreground text-[12.5px]">
-                    No people yet — add them on the Stakeholders page.
-                  </p>
-                )}
-              </div>
-              {/* A name already on the task that is not on the list: kept so
-                  saving never silently drops it, and removable. */}
-              {assigneeList
-                .filter((n) => !peopleOf(ws).some((p) => p.name.toLowerCase() === n.toLowerCase()))
-                .map((n) => (
-                  <button
-                    key={`stale-${n}`}
-                    type="button"
-                    onClick={() => toggleAssignee(n)}
-                    title="Not on the Stakeholders page — click to remove"
-                    className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1.5 text-[13px] font-medium transition hover:bg-muted"
-                  >
-                    <span className="size-2 rounded-full bg-[var(--t-amber)]" />
-                    {n}
-                    <X className="size-3" />
-                  </button>
-                ))}
+              <Label>Owner</Label>
+              {/* Chosen from the Stakeholders page, so the name always
+                  matches what the filters and the owner column look for. */}
+              <Select
+                value={ownerName || "none"}
+                onValueChange={(v) => set("assignees", v === "none" ? "" : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Unassigned</SelectItem>
+                  {peopleOf(ws).map((person) => (
+                    <SelectItem key={person.id} value={person.name}>
+                      {person.name}{person.title ? ` · ${person.title}` : ""}
+                    </SelectItem>
+                  ))}
+                  {/* A name already on the task that is not on the list —
+                      offered so opening and saving never silently drops it. */}
+                  {ownerName &&
+                    !peopleOf(ws).some((p) => p.name.toLowerCase() === ownerName.toLowerCase()) && (
+                      <SelectItem value={ownerName}>{ownerName} (not a stakeholder)</SelectItem>
+                    )}
+                </SelectContent>
+              </Select>
+              {peopleOf(ws).length === 0 && (
+                <p className="text-muted-foreground text-[11.5px]">
+                  No people yet — add them on the Stakeholders page.
+                </p>
+              )}
             </div>
 
             {/* custom fields — "occurrence" has its own dedicated field above */}

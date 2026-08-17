@@ -46,11 +46,13 @@ export function localDay(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-/** Start of the week containing `d`, Monday-based. */
+/** Start of the rolling week ending today — seven days back, not the most
+ *  recent Monday. A calendar week collapses to nothing on a Monday morning,
+ *  which made "earlier this week" blank exactly when someone arriving after
+ *  the weekend most wanted to see what had happened. */
 export function weekStart(d: Date): Date {
   const out = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const dow = (out.getDay() + 6) % 7; // Mon = 0
-  out.setDate(out.getDate() - dow);
+  out.setDate(out.getDate() - 6);
   return out;
 }
 
