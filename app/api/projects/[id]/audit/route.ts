@@ -4,6 +4,7 @@ import { requireApiAuth } from "@/lib/api/guard";
 import { withTenant } from "@/lib/db/tenant";
 import { schema } from "@/lib/db/client";
 import { genId } from "@/lib/entities";
+import { resolveActor } from "@/lib/actor";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -55,8 +56,19 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   if (!text) return NextResponse.json({ error: "text required" }, { status: 400 });
 
   const kind = String(body.kind ?? "edit");
-  const actor = String(body.actor ?? "");
   const key = body.key ? String(body.key) : null;
+
+  // Who made the change is decided here, from the signed-in session — never
+  // from the request body, which the client could set to anyone. The account
+  // is matched to a stakeholder on this project so the trail reads in the
+  // project's own vocabulary ("Thor Bøje Simonsen", not "Thor").
+  const actor = await withTenant(ctx.orgId, async (tx) => {
+    const people = await tx
+      .select({ id: schema.stakeholders.id, name: schema.stakeholders.name, contact: schema.stakeholders.contact })
+      .from(schema.stakeholders)
+      .where(eq(schema.stakeholders.projectId, id));
+    return resolveActor({ name: ctx.name, email: ctx.email }, people).name;
+  });
 
   // Coalesce: if an entry with the same key (or same text when no key) was
   // written in the last 5 min, update it instead of inserting a new entry.
