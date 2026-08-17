@@ -149,15 +149,25 @@ export function CalendarView({
                       </div>
                     )}
                     <div className="space-y-1">
-                      {milestones.map((m) => (
-                        <button
-                          key={m.id}
-                          onClick={() => onEditMilestone(m)}
-                          className="flex w-full items-center gap-1 truncate rounded bg-[var(--accent-soft)] px-1.5 py-1 text-left text-[11.5px] font-semibold text-[var(--accent-deep)]"
-                        >
-                          ◆ {m.title}
-                        </button>
-                      ))}
+                      {milestones.map((m) => {
+                        // Coloured by the track it belongs to, so a day reads
+                        // as "which part of the project" at a glance.
+                        const mCat = m.category ? catMap.get(m.category) : null;
+                        const mVar = mCat ? accentVar(mCat.color) : "var(--accent-c)";
+                        return (
+                          <button
+                            key={m.id}
+                            onClick={() => onEditMilestone(m)}
+                            className="flex w-full items-center gap-1 truncate rounded px-1.5 py-1 text-left text-[11.5px] font-semibold"
+                            style={{
+                              background: `color-mix(in oklch, ${mVar} 16%, var(--panel))`,
+                              color: `color-mix(in oklch, ${mVar} 72%, var(--ink))`,
+                            }}
+                          >
+                            ◆ {m.title}
+                          </button>
+                        );
+                      })}
                       {tasks.slice(0, 3).map(({ task: t, label }) => {
                         const cat = t.category ? catMap.get(t.category) : null;
                         const overdue = t.status !== "done" && k < todayKey;
@@ -166,10 +176,15 @@ export function CalendarView({
                             key={`${t.id}-${label ?? "single"}`}
                             onClick={() => onEdit(t)}
                             className="w-full truncate rounded px-1.5 py-1 text-left text-[11.5px] leading-tight"
+                            // The track colour always shows through; overdue is
+                            // marked with a red edge rather than by replacing
+                            // the colour that says which track this is.
                             style={{
-                              background: overdue ? "color-mix(in oklch, var(--t-red) 14%, var(--panel))" : cat ? `color-mix(in oklch, ${accentVar(cat.color)} 16%, var(--panel))` : "var(--paper-2)",
-                              color: overdue ? "var(--t-red)" : cat ? accentVar(cat.color) : "var(--ink-soft)",
+                              background: cat ? `color-mix(in oklch, ${accentVar(cat.color)} 16%, var(--panel))` : "var(--paper-2)",
+                              color: cat ? `color-mix(in oklch, ${accentVar(cat.color)} 74%, var(--ink))` : "var(--ink-soft)",
+                              boxShadow: overdue ? "inset 3px 0 0 0 var(--t-red)" : undefined,
                             }}
+                            title={overdue ? `${t.title} — overdue` : t.title}
                           >
                             {label === "start" ? `(Start) ${t.title}` : label === "end" ? `(End) ${t.title}` : t.title}
                           </button>

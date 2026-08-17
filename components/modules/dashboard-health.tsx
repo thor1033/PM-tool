@@ -10,6 +10,7 @@ import {
   Timer,
   UserMinus,
 } from "lucide-react";
+import { accentVar } from "@/lib/colors";
 import type { Health, AttentionItem, Severity } from "@/lib/project-health";
 import type { Task, Category } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -217,14 +218,20 @@ const SEV_FG: Record<Severity, string> = {
 function AttentionRow({
   item,
   trackLabel,
+  trackColor,
   onOpen,
 }: {
   item: AttentionItem;
   trackLabel: string | null;
+  trackColor: string | null;
   onOpen: (t: Task) => void;
 }) {
   const Icon = item.label === "Unassigned" ? UserMinus : SEV_ICON[item.severity];
-  const fg = SEV_FG[item.severity];
+  // The chip is tinted by the track, so a glance says which part of the
+  // project needs attention. Severity is still carried by the icon and the
+  // written word, which is what has to survive without colour anyway —
+  // falling back to the severity hue when a task has no track.
+  const fg = trackColor ?? SEV_FG[item.severity];
 
   return (
     <li
@@ -251,7 +258,12 @@ function AttentionRow({
         </span>
       </span>
       {trackLabel && (
-        <span className="text-muted-foreground shrink-0 text-[11.5px]">{trackLabel}</span>
+        <span
+          className="shrink-0 text-[11.5px] font-medium"
+          style={trackColor ? { color: `color-mix(in oklch, ${trackColor} 74%, var(--ink))` } : undefined}
+        >
+          {trackLabel}
+        </span>
       )}
     </li>
   );
@@ -280,8 +292,8 @@ export function AttentionList({
   }
 
   const shown = items.slice(0, limit);
-  const trackOf = (t: Task) =>
-    t.category ? categories.find((c) => c.id === t.category)?.label ?? null : null;
+  const catOf = (t: Task) =>
+    t.category ? categories.find((c) => c.id === t.category) ?? null : null;
 
   return (
     <>
@@ -290,7 +302,11 @@ export function AttentionList({
           <AttentionRow
             key={item.task.id}
             item={item}
-            trackLabel={trackOf(item.task)}
+            trackLabel={catOf(item.task)?.label ?? null}
+            trackColor={(() => {
+              const c = catOf(item.task);
+              return c ? accentVar(c.color) : null;
+            })()}
             onOpen={onOpen}
           />
         ))}
