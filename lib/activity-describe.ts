@@ -41,7 +41,6 @@ const NAMED_FIELDS: Record<string, string> = {
   end: "rescheduled",
   assignees: "reassigned",
   category: "moved",
-  priority: "reprioritised",
   description: "updated the description of",
 };
 

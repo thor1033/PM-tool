@@ -345,7 +345,6 @@ export function CardModal({
     description: activeTask?.description ?? "",
     occurrence: (activeTask?.custom as Record<string, unknown> | undefined)?.occurrence as string ?? "",
     status: activeTask?.status ?? defaultStatus ?? "backlog",
-    priority: activeTask?.priority ?? "med",
     category: activeTask?.category ?? defaultCategoryId ?? ws.categories[0]?.id ?? "none",
     assignees: (activeTask?.assignees ?? []).join(", "),
     start: defaultStart(activeTask),
@@ -373,7 +372,6 @@ export function CardModal({
       description: activeTask?.description ?? "",
       occurrence: (activeTask?.custom as Record<string, unknown> | undefined)?.occurrence as string ?? "",
       status: activeTask?.status ?? defaultStatus ?? "backlog",
-      priority: activeTask?.priority ?? "med",
       category: activeTask?.category ?? defaultCategoryId ?? ws.categories[0]?.id ?? "none",
       assignees: (activeTask?.assignees ?? []).join(", "),
       start: defaultStart(activeTask),
@@ -400,7 +398,7 @@ export function CardModal({
     if (!activeTask || !title) return;
     create.mutate(
       {
-        title, status: "backlog", priority: activeTask.priority,
+        title, status: "backlog",
         category: activeTask.category, origin: activeTask.origin,
         parentId: activeTask.id, assignees: [], tags: [],
         deps: [], comments: [], custom: {},
@@ -419,7 +417,7 @@ export function CardModal({
       {
         title: "",
         description: `Follow-up task from ${activeTask.title || "Untitled task"}`,
-        status: "inprogress", priority: "med",
+        status: "inprogress",
         category: activeTask.category, origin: null,
         parentId: null, assignees: [...(activeTask.assignees ?? [])], tags: [],
         // Starts where the originating task ends — end is left for the user
@@ -467,7 +465,6 @@ export function CardModal({
       title: form.title.trim() || "Untitled task",
       description: form.description,
       status: form.status,
-      priority: form.priority,
       category: form.category === "none" ? null : form.category,
       // Phase/Tags aren't editable from this form anymore — pass through
       // whatever the task already had so save doesn't wipe them.
@@ -689,18 +686,7 @@ export function CardModal({
               <StatusSeg value={form.status} onChange={(v) => set("status", v)} />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Priority</Label>
-                <Select value={form.priority} onValueChange={(v) => set("priority", v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="med">Medium</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="grid grid-cols-1 gap-3">
               <div className="space-y-1.5">
                 <Label>Track</Label>
                 <Select value={form.category} onValueChange={(v) => set("category", v)}>

@@ -147,7 +147,6 @@ async function insertChildren(
     status: str(t.status, "backlog"),
     phase: strOrNull(t.phase),
     category: strOrNull(t.category),
-    priority: str(t.priority, "med"),
     description: str(t.desc),
     start: str(t.start),
     end: str(t.end),

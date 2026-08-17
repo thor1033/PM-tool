@@ -194,7 +194,7 @@ export function ListView({
     if (!title) { setSubTitle(""); return; }
     create.mutate(
       {
-        title, status: "backlog", priority: parent.priority,
+        title, status: "backlog",
         category: parent.category, origin: parent.origin,
         parentId: parent.id, assignees: parent.assignees, tags: parent.tags,
         deps: [], comments: [], custom: {},

@@ -36,7 +36,7 @@ const OP_ICON: Record<string, React.ElementType> = {
   dependency: Link2, remove_dep: Link2, scope_in: Check, scope_out: X,
   finding: Lightbulb, glossary: Tag, tag: Tag, untag: Tag,
   milestone: Flag, dates: CalendarClock, shift_all: CalendarClock,
-  assign: Users, member: Users, edit_member: Users, priority: Flag,
+  assign: Users, member: Users, edit_member: Users,
   delete: Trash2, remove: Trash2, deliverable: Package,
   track: List, move_track: List, strategy: LayoutGrid, feature: Boxes,
   favorite: Star, setting: Settings, budget: Coins, org_report: Network,
@@ -52,7 +52,6 @@ const OP_ICON: Record<string, React.ElementType> = {
 function opLabel(op: PlanOp): string {
   const t = op.type as string;
   if (t === "status") return `Set "${op.taskTitle}" to ${op.to}`;
-  if (t === "priority") return `Set "${op.taskTitle}" priority to ${op.to}`;
   if (t === "dates") return `Reschedule "${op.taskTitle}" ${op.start ?? "?"} → ${op.end ?? "?"}`;
   if (t === "shift_all") return `Shift whole plan by ${op.days} days`;
   if (t === "assign") return `${op.clear ? "Unassign" : "Assign"} ${op.who} ${op.clear ? "from" : "to"} "${op.taskTitle}"`;
@@ -141,10 +140,6 @@ async function applyOp(op: PlanOp, h: Hooks): Promise<string | null> {
     await mut(h.updateTask.mutateAsync({ id: op.taskId!, data: { status: op.to } }));
     return `Set "${op.taskTitle}" to ${op.to}`;
   }
-  if (op.type === "priority") {
-    await mut(h.updateTask.mutateAsync({ id: op.taskId!, data: { priority: op.to } }));
-    return `Set "${op.taskTitle}" priority to ${op.to}`;
-  }
   if (op.type === "dates") {
     await mut(h.updateTask.mutateAsync({ id: op.taskId!, data: { start: op.start ?? "", end: op.end ?? "" } }));
     return `Rescheduled "${op.taskTitle}"`;
@@ -216,11 +211,11 @@ async function applyOp(op: PlanOp, h: Hooks): Promise<string | null> {
     return `Comment on "${op.taskTitle}"`;
   }
   if (op.type === "subtask") {
-    await mut(h.createTask.mutateAsync({ title: String(op.title ?? "Subtask"), status: "backlog", parentId: op.parentId, priority: "med", tags: [], assignees: [], deps: [], comments: [], custom: {} }));
+    await mut(h.createTask.mutateAsync({ title: String(op.title ?? "Subtask"), status: "backlog", parentId: op.parentId, tags: [], assignees: [], deps: [], comments: [], custom: {} }));
     return `Added subtask "${op.title}"`;
   }
   if (op.type === "create") {
-    await mut(h.createTask.mutateAsync({ title: String(op.title ?? "New task"), status: op.status ?? "backlog", priority: op.priority ?? "med", category: op.track ?? null, assignees: op.assignee ? [op.assignee] : [], start: op.start ?? "", end: op.end ?? "", tags: [], deps: [], comments: [], custom: {} }));
+    await mut(h.createTask.mutateAsync({ title: String(op.title ?? "New task"), status: op.status ?? "backlog", category: op.track ?? null, assignees: op.assignee ? [op.assignee] : [], start: op.start ?? "", end: op.end ?? "", tags: [], deps: [], comments: [], custom: {} }));
     return `Created "${op.title}"`;
   }
   if (op.type === "dependency") {
@@ -250,7 +245,6 @@ async function applyOp(op: PlanOp, h: Hooks): Promise<string | null> {
     for (const id of ids) {
       const patch: Record<string, unknown> = {};
       if (set.status) patch.status = set.status;
-      if (set.priority) patch.priority = set.priority;
       if (set.track) patch.category = set.track;
       if (set.assign) patch.assignees = [set.assign];
       if (days !== 0) {

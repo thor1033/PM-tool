@@ -89,7 +89,6 @@ export const tasks = pgTable(
     /** Non-track provenance for tasks spun up from comms/change-management
      *  flows — the List view pins these into their own synthetic groups. */
     origin: text("origin"),
-    priority: text("priority").default("med").notNull(),
     description: text("description").default("").notNull(),
     start: text("start").default("").notNull(),
     end: text("end").default("").notNull(),

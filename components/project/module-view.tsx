@@ -5,7 +5,6 @@ import { EmptyState } from "@/components/project/ui";
 import { Button } from "@/components/ui/button";
 import { PROJECT_NAV } from "@/lib/nav";
 import { DashboardModule } from "@/components/modules/dashboard";
-import { BoardModule } from "@/components/modules/board";
 import { BusinessCaseModule } from "@/components/modules/business-case";
 import { ScopeModule } from "@/components/modules/scope";
 import { PreAnalysisModule } from "@/components/modules/preanalysis";

@@ -37,9 +37,14 @@ export function SaveIndicator() {
   return (
     <div
       className={cn(
-        "pointer-events-none fixed bottom-5 left-1/2 z-[90] -translate-x-1/2",
-        "flex items-center gap-2 rounded-full border bg-[var(--panel)] px-3.5 py-1.5",
-        "shadow-lg transition-opacity",
+        // Above every modal (100–110): edits now autosave from inside the
+        // task and track editors, so the confirmation has to be visible
+        // exactly where those dialogs cover the page.
+        "pointer-events-none fixed bottom-5 left-1/2 z-[200] -translate-x-1/2",
+        "flex items-center gap-2 rounded-full border px-4 py-2 shadow-lg transition-opacity",
+        state === "saved"
+          ? "border-[color-mix(in_oklch,var(--hue-done)_38%,transparent)] bg-[color-mix(in_oklch,var(--hue-done)_14%,var(--panel))]"
+          : "bg-[var(--panel)]",
       )}
       role="status"
       aria-live="polite"
@@ -51,8 +56,13 @@ export function SaveIndicator() {
         </>
       ) : (
         <>
-          <Check className="size-3.5 text-[var(--hue-done)]" />
-          <span className="text-[12.5px] font-medium">Saved</span>
+          <Check className="size-4 text-[var(--hue-done)]" />
+          <span
+            className="text-[13px] font-semibold"
+            style={{ color: "color-mix(in oklch, var(--hue-done) 72%, var(--ink))" }}
+          >
+            Saved
+          </span>
         </>
       )}
     </div>

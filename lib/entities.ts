@@ -15,7 +15,6 @@ const taskSchema = z
     phase: z.string().nullable(),
     category: z.string().nullable(),
     origin: z.string().nullable(),
-    priority: z.string(),
     description: z.string(),
     start: z.string(),
     end: z.string(),

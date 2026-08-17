@@ -26,7 +26,7 @@ function KCard({
     if (!title) { setAddingSub(false); setSubTitle(""); return; }
     create.mutate(
       {
-        title, status: "backlog", priority: task.priority,
+        title, status: "backlog",
         category: task.category, origin: task.origin,
         parentId: task.id, assignees: task.assignees, tags: task.tags,
         deps: [], comments: [], custom: {},

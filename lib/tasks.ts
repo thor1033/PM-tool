@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import type { Task, Product, External, TaskDep } from "@/lib/db/schema";
 
-// ── status / priority constants ─────────────────────────────────────────────
+// ── status constants ─────────────────────────────────────────────
 
 export const COLUMNS = [
   { id: "backlog", label: "Backlog", var: "--hue-backlog" },

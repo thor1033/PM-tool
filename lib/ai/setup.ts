@@ -82,7 +82,7 @@ export async function buildAiProject(
       `${ctx} Budget context: ${form.budget || "not specified"}. Respond with ONLY minified JSON. Keys: purpose (1 sentence), problem (2 sentences), outcomes (array of exactly 4 short outcome strings), financial (array of exactly 4 objects each {label,value,note}: one-off programme cost, annual run cost, annual saving, payback period — invent plausible figures if none given), justification (2 sentences), effective (2 sentences on phased delivery & benefit tracking).`,
     ),
     askJSON<Record<string, unknown>[]>(
-      `${ctx} Team: ${teamNames.length ? teamNames.join(", ") : "invent 3-4 names"}. Ids: ${tax}. Starts ${startISO}, runs ~${weeks} weeks. Respond with ONLY minified JSON — an array of exactly 6 task objects. Keys per task: t(title, max 6 words), s(status: backlog|inprogress|done — 1 done, 2 inprogress, rest backlog), p(phase id), c(category id), g(array of 0-1 tag id), pr(priority high|med|low), a(array of 1-2 team names), o(offsetDays int from start), d(durationDays int 5-15). Order chronologically. No description field.`,
+      `${ctx} Team: ${teamNames.length ? teamNames.join(", ") : "invent 3-4 names"}. Ids: ${tax}. Starts ${startISO}, runs ~${weeks} weeks. Respond with ONLY minified JSON — an array of exactly 6 task objects. Keys per task: t(title, max 6 words), s(status: backlog|inprogress|done — 1 done, 2 inprogress, rest backlog), p(phase id), c(category id), g(array of 0-1 tag id), pr(a(array of 1-2 team names), o(offsetDays int from start), d(durationDays int 5-15). Order chronologically. No description field.`,
     ),
     askJSON<Record<string, unknown>>(
       `${ctx} Known team: ${teamNames.length ? teamNames.join(", ") : "invent names"}. Respond with ONLY minified JSON with two keys. "stakeholders": array of 3-5 objects {name, title, role (one of ${ROLE_SET.join("|")}), responsibility (1 sentence), influence (high|med|low), interest (high|med|low)}. "org": array of 3-6 objects {name, role, manager} where manager is the exact name of that person's manager, or null for the most senior. Make reporting lines consistent (every non-null manager also appears as a name).`,
@@ -134,7 +134,6 @@ export async function buildAiProject(
           phase: phaseIds.includes(String(t.p)) ? String(t.p) : null,
           category: catIds.includes(String(t.c)) ? String(t.c) : null,
           tags: g.filter((x) => tagIds.includes(x)).slice(0, 3),
-          priority: pick(String(t.pr), ["high", "med", "low"], "med"),
           assignees: a.filter(Boolean).slice(0, 3),
           start: isoAdd(startISO, off),
           end: isoAdd(startISO, off + dur),

@@ -39,10 +39,6 @@ const STATUS_ORDER = [
 const statusVarOf = (id: string) =>
   STATUS_ORDER.find((s) => s.id === id)?.var ?? "--hue-backlog";
 
-const PRIO_VAR: Record<string, string> = {
-  high: "--t-red", med: "--t-amber", low: "--ink-ghost",
-};
-
 const RISK_SCORE: Record<string, number> = { high: 3, med: 2, low: 1 };
 
 const FILE_META: Record<string, { color: string; Icon: typeof FileIcon }> = {
@@ -247,7 +243,7 @@ function WSHub({ task, ws, projectId, wide, onOpenTask, onSelectTask }: {
   return (
     <div className="space-y-4">
       {/* Head — status/dates + lineage, then title, description, and a footer
-          row with track/priority on the left against the owner on the right.
+          row with the track on the left against the owner on the right.
           Double-click anywhere on the card opens the full task editor. */}
       <section
         onDoubleClick={() => onOpenTask(task)}
@@ -340,14 +336,11 @@ function WSHub({ task, ws, projectId, wide, onOpenTask, onSelectTask }: {
           </p>
         )}
 
-        {/* Row 4: track + priority (left) · owner (right) */}
+        {/* Row 4: track (left) · owner (right) */}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-3.5">
           <div className="flex flex-wrap items-center gap-1.5">
             {cat && <Chip colorVar={catVar}>{cat.label}</Chip>}
             {phase && <Chip colorVar={accentVar(phase.color)}>{phase.label}</Chip>}
-            <Chip colorVar={`var(${PRIO_VAR[task.priority] ?? "--ink-ghost"})`}>
-              {task.priority}
-            </Chip>
           </div>
 
           {(task.assignees ?? []).length > 0 && (
@@ -664,8 +657,8 @@ function WSList({ ws, myTasks, selId, everyone, onSelect, onToggleSub, onOpenTas
                   >
                     <span
                       className="mt-1.5 size-1.5 shrink-0 rounded-full"
-                      style={{ background: `var(${PRIO_VAR[t.priority] ?? "--ink-ghost"})` }}
-                      title={`${t.priority} priority`}
+                      style={{ background: `var(${statusVarOf(t.status)})` }}
+                      title={t.status}
                     />
                     <span className="min-w-0 flex-1">
                       <span className={cn(

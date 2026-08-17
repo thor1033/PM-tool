@@ -139,10 +139,10 @@ function buildContext(text: string, ws: WorkingSet): string {
 
 const OP_CATALOG = `You are an AI project management assistant. Analyse the user's text against the project context and return ONLY minified JSON: { "groups": [ { "quote": "<span of user text>", "ops": [ {op}, … ] } ] }. Up to 16 groups.
 
-ROUTING GUIDANCE: blocker→dependency; threat→risk (+comment); scope decision→scope_in/out; fact learned→finding; term defined→glossary; deadline/go-no-go→milestone; owner change→assign; importance→priority; new person→member; explicit delete→remove/delete; document/output→deliverable; new work area→track; strategy/positioning text→strategy; new service→feature; pin/hide pages→favorite/section; reminder/buffer→setting; a change to something that already exists→edit_task/edit_risk/edit_member; the same change across many tasks→ONE bulk op; a question→answer only. JSON only.
+ROUTING GUIDANCE: blocker→dependency; threat→risk (+comment); scope decision→scope_in/out; fact learned→finding; term defined→glossary; deadline/go-no-go→milestone; owner change→assign;new person→member; explicit delete→remove/delete; document/output→deliverable; new work area→track; strategy/positioning text→strategy; new service→feature; pin/hide pages→favorite/section; reminder/buffer→setting; a change to something that already exists→edit_task/edit_risk/edit_member; the same change across many tasks→ONE bulk op; a question→answer only. JSON only.
 
 OP TYPES (use exact field names):
-Task ops: create{type,title,track?,status?,priority?,assignee?,start?,end?} | status{type,task:"T3",to:"backlog|inprogress|done"} | priority{type,task,to:"low|med|high"} | dates{type,task,start?,end?} | assign{type,task,who,clear?:false} | edit_task{type,task,title?,desc?,track?} | move_track{type,task,track} | make_subtask{type,task,parent:"T5"} | promote{type,task} | reorder{type,task,to:"top|bottom"} | tag{type,task,label} | untag{type,task,label} | comment{type,task,text,author?:"AI import"} | subtask{type,parent:"T5",title} | dependency{type,task,on:"T5"|external:"name",scope?} | remove_dep{type,task,on:"T5"|external:"name"} | shift_all{type,days:N} | bulk{type,filter:{track?,status?,assignee?,priority?,unassigned?},set:{status?,priority?,assign?,track?},shiftDays?:0}
+Task ops: create{type,title,track?,status?,assignee?,start?,end?} | status{type,task:"T3",to:"backlog|inprogress|done"}  | dates{type,task,start?,end?} | assign{type,task,who,clear?:false} | edit_task{type,task,title?,desc?,track?} | move_track{type,task,track} | make_subtask{type,task,parent:"T5"} | promote{type,task} | reorder{type,task,to:"top|bottom"} | tag{type,task,label} | untag{type,task,label} | comment{type,task,text,author?:"AI import"} | subtask{type,parent:"T5",title} | dependency{type,task,on:"T5"|external:"name",scope?} | remove_dep{type,task,on:"T5"|external:"name"} | shift_all{type,days:N} | bulk{type,filter:{track?,status?,assignee?,unassigned?},set:{status?,assign?,track?},shiftDays?:0}
 Risk ops: risk{type,title,likelihood,impact,mitigation,owner?,task?} | edit_risk{type,risk:"R2",title?,likelihood?,impact?,mitigation?,owner?,status?}
 List entities: finding{type,title,summary,category?} | deliverable{type,name,link?,task?} | milestone{type,title,kind:"milestone|gate",category?,date?,note?} | member{type,name,role?} | edit_member{type,name,rename?,role?} | track{type,label}
 Remove: remove{type,kind:"risk|scope|finding|glossary|milestone|deliverable|budget|track|tag|member|feature|package|persona|value",name:"…"} | delete{type,task:"T3"}
@@ -205,7 +205,7 @@ function normalizeOp(op: PlanOp, ws: WorkingSet): PlanOp | null {
 
   // Task-referencing ops
   const taskRefTypes = [
-    "status","priority","dates","assign","edit_task","move_track","make_subtask",
+    "status","dates","assign","edit_task","move_track","make_subtask",
     "promote","reorder","tag","untag","comment","dependency","remove_dep","delete",
   ];
   if (taskRefTypes.includes(o.type)) {
@@ -244,7 +244,6 @@ function normalizeOp(op: PlanOp, ws: WorkingSet): PlanOp | null {
     if (filter.track) matched = matched.filter((t) => t.category === filter.track);
     if (filter.status) matched = matched.filter((t) => t.status === filter.status);
     if (filter.assignee) matched = matched.filter((t) => (t.assignees ?? []).includes(String(filter.assignee)));
-    if (filter.priority) matched = matched.filter((t) => t.priority === filter.priority);
     if (filter.unassigned) matched = matched.filter((t) => (t.assignees ?? []).length === 0);
     o.matchedIds = matched.map((t) => t.id);
     o.count = matched.length;
