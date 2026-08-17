@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Trash2, X, CheckCircle2, AlertTriangle, Flag, StickyNote,
@@ -134,6 +134,31 @@ export function TrackModal({
     () => (ws?.categories ?? []).filter((c) => c.id !== track?.id),
     [ws, track],
   );
+
+  // Autosave: an existing track commits shortly after typing stops, with the
+  // global SaveIndicator confirming it. A new track still needs the explicit
+  // button — there is nothing to update until it exists.
+  const autosaveKey = JSON.stringify(form);
+  const lastSaved = useRef<{ id: string; key: string } | null>(null);
+  useEffect(() => {
+    if (!track) return;
+    // A different track means the form was re-seeded, not edited.
+    if (lastSaved.current?.id !== track.id) {
+      lastSaved.current = { id: track.id, key: autosaveKey };
+      return;
+    }
+    if (lastSaved.current.key === autosaveKey) return;
+    if (!form.label.trim()) return; // a nameless track is not a saveable state
+    const t = setTimeout(() => {
+      lastSaved.current = { id: track.id, key: autosaveKey };
+      update.mutate(
+        { id: track.id, data: { label: form.label.trim(), color: form.color, icon: form.icon, owner: form.owner } },
+        { onError: (e) => toast.error((e as Error).message) },
+      );
+    }, 700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autosaveKey, track?.id]);
 
   if (!ws) return null;
 
@@ -506,9 +531,15 @@ export function TrackModal({
         <DialogFooter className="bg-muted/50 flex items-center justify-between rounded-b-xl border-t px-6 py-4 sm:justify-between">
           {/* Save leads on the left; delete stays far from it so the
               destructive action is never the one under the cursor. */}
-          <Button onClick={save} disabled={create.isPending || update.isPending}>
-            Save
-          </Button>
+          {track ? (
+            <span className="text-muted-foreground text-[12.5px]">
+              Changes save automatically
+            </span>
+          ) : (
+            <Button onClick={save} disabled={create.isPending}>
+              Add track
+            </Button>
+          )}
           {track ? (
             <Button
               variant="ghost"

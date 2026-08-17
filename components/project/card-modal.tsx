@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Plus, X, Trash2, MessageSquare, TriangleAlert, Link2, Target, Package, GitBranch, ListChecks, Check, Users,
@@ -452,18 +452,17 @@ export function CardModal({
     setCommentText("");
   }
 
-  function save() {
-    // A task inside a track has to say which milestone it drives at —
-    // otherwise it sits in the track serving every milestone at once, which
-    // is exactly the ambiguity milestones exist to remove. A task with no
-    // track at all is genuinely unassigned and needs no milestone.
+  /** A task inside a track has to say which milestone it drives at —
+   *  otherwise it sits in the track serving every milestone at once, which is
+   *  exactly the ambiguity milestones exist to remove. A task with no track at
+   *  all is genuinely unassigned and needs no milestone. */
+  function missingMilestone() {
     const inTrack = form.category !== "none" && !!form.category;
-    const available = milestonesForTask(inTrack ? form.category : null, ws.milestones);
-    if (inTrack && !form.milestoneId && available.length > 0) {
-      toast.error("Pick the milestone this task works toward, or move it out of the track.");
-      return;
-    }
+    if (!inTrack || form.milestoneId) return false;
+    return milestonesForTask(form.category, ws.milestones).length > 0;
+  }
 
+  function buildPayload() {
     const payload = {
       title: form.title.trim() || "Untitled task",
       description: form.description,
@@ -496,11 +495,50 @@ export function CardModal({
         return next;
       })(),
     };
+    return payload;
+  }
+
+  function save() {
+    if (missingMilestone()) {
+      toast.error("Pick the milestone this task works toward, or move it out of the track.");
+      return;
+    }
+    const payload = buildPayload();
     const onError = (e: unknown) => toast.error((e as Error).message);
     if (activeTask) update.mutate({ id: activeTask.id, data: payload }, { onError });
     else create.mutate(payload, { onError });
     onOpenChange(false);
   }
+
+  // Autosave: an existing task commits its edits shortly after typing stops,
+  // and the global SaveIndicator confirms it. A brand-new task is not saved
+  // this way — there is nothing to update until it has been created, so that
+  // still needs the explicit "Add task".
+  const autosaveKey = JSON.stringify(form);
+  const lastSaved = useRef<{ id: string; key: string } | null>(null);
+  useEffect(() => {
+    if (!activeTask) return;
+    // A different task means the form was re-seeded, not edited — take the
+    // new baseline and wait for a real change.
+    if (lastSaved.current?.id !== activeTask.id) {
+      lastSaved.current = { id: activeTask.id, key: autosaveKey };
+      return;
+    }
+    if (lastSaved.current.key === autosaveKey) return;
+    // Never persist a state the explicit save would reject.
+    if (missingMilestone()) return;
+    const t = setTimeout(() => {
+      lastSaved.current = { id: activeTask.id, key: autosaveKey };
+      update.mutate(
+        { id: activeTask.id, data: buildPayload() },
+        { onError: (e) => toast.error((e as Error).message) },
+      );
+    }, 700);
+    return () => clearTimeout(t);
+    // buildPayload reads the same form this key is derived from.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autosaveKey, activeTask?.id]);
+
 
   async function remove() {
     if (!activeTask) return;
@@ -973,9 +1011,15 @@ export function CardModal({
               <Trash2 className="size-3.5" /> Delete
             </Button>
           ) : <span />}
-          <Button onClick={save} disabled={create.isPending || update.isPending}>
-            {activeTask ? "Save changes" : "Add task"}
-          </Button>
+          {activeTask ? (
+            <span className="text-muted-foreground text-[12.5px]">
+              Changes save automatically
+            </span>
+          ) : (
+            <Button onClick={save} disabled={create.isPending}>
+              Add task
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
