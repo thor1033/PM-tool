@@ -11,6 +11,7 @@ import {
 import { resolveDep, wouldConflict, initials, followupChainOf, fmtD, daysBetween, type ResolvedDep } from "@/lib/tasks";
 import { TASK_KINDS, DEFAULT_KIND, meetingTimeRange } from "@/lib/task-kinds";
 import { milestonesForTask } from "@/lib/milestone-grouping";
+import { peopleOf } from "@/lib/people";
 import type { TaskMeeting } from "@/lib/db/schema";
 import type { Task, WorkingSet } from "@/lib/types";
 import type { TaskComment, TaskDep } from "@/lib/db/schema";
@@ -360,6 +361,17 @@ export function CardModal({
   }));
   const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
 
+  // Assignees stay a comma-joined string on the form so save() is unchanged;
+  // these two just make it behave like a set of picks.
+  const assigneeList = form.assignees.split(",").map((x) => x.trim()).filter(Boolean);
+  const toggleAssignee = (name: string) => {
+    const has = assigneeList.some((n) => n.toLowerCase() === name.toLowerCase());
+    const next = has
+      ? assigneeList.filter((n) => n.toLowerCase() !== name.toLowerCase())
+      : [...assigneeList, name];
+    set("assignees", next.join(", "));
+  };
+
   // Re-sync the form whenever the modal swaps to a different task in-place.
   useEffect(() => {
     setForm({
@@ -405,7 +417,7 @@ export function CardModal({
   }
 
   const [commentText, setCommentText] = useState("");
-  const [commentAuthor, setCommentAuthor] = useState(() => ws.members[0]?.name ?? "");
+  const [commentAuthor, setCommentAuthor] = useState(() => peopleOf(ws)[0]?.name ?? "");
 
   function createFollowup() {
     if (!activeTask) return;
@@ -751,8 +763,54 @@ export function CardModal({
             </div>
 
             <div className="space-y-1.5">
-              <Label>Assignees (comma-separated)</Label>
-              <Input value={form.assignees} onChange={(e) => set("assignees", e.target.value)} placeholder="Dev Patel, Maya Rossi" />
+              <Label>Assignees</Label>
+              {/* Picked from the Stakeholders page rather than typed, so a
+                  name always matches what the filters look for. Free text
+                  produced people like "Thor" who existed on no list. */}
+              <div className="flex flex-wrap gap-1.5">
+                {peopleOf(ws).map((person) => {
+                  const picked = assigneeList.some(
+                    (n) => n.toLowerCase() === person.name.toLowerCase(),
+                  );
+                  return (
+                    <button
+                      key={person.id}
+                      type="button"
+                      onClick={() => toggleAssignee(person.name)}
+                      title={person.title || undefined}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition",
+                        picked ? "bg-foreground text-background border-foreground" : "hover:bg-muted",
+                      )}
+                    >
+                      {picked && <Check className="size-3" />}
+                      {person.name}
+                    </button>
+                  );
+                })}
+                {peopleOf(ws).length === 0 && (
+                  <p className="text-muted-foreground text-[12.5px]">
+                    No people yet — add them on the Stakeholders page.
+                  </p>
+                )}
+              </div>
+              {/* A name already on the task that is not on the list: kept so
+                  saving never silently drops it, and removable. */}
+              {assigneeList
+                .filter((n) => !peopleOf(ws).some((p) => p.name.toLowerCase() === n.toLowerCase()))
+                .map((n) => (
+                  <button
+                    key={`stale-${n}`}
+                    type="button"
+                    onClick={() => toggleAssignee(n)}
+                    title="Not on the Stakeholders page — click to remove"
+                    className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1.5 text-[13px] font-medium transition hover:bg-muted"
+                  >
+                    <span className="size-2 rounded-full bg-[var(--t-amber)]" />
+                    {n}
+                    <X className="size-3" />
+                  </button>
+                ))}
             </div>
 
             {/* custom fields — "occurrence" has its own dedicated field above */}
@@ -909,11 +967,11 @@ export function CardModal({
                   </div>
                 ))}
                 <div className="mt-3 space-y-2">
-                  {ws.members.length > 1 && (
+                  {peopleOf(ws).length > 1 && (
                     <Select value={commentAuthor} onValueChange={setCommentAuthor}>
                       <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Author" /></SelectTrigger>
                       <SelectContent>
-                        {ws.members.map((m) => <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>)}
+                        {peopleOf(ws).map((m) => <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   )}

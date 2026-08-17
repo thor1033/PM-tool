@@ -15,6 +15,7 @@ import {
 import { useProject, useUpdateProject } from "@/lib/api/hooks";
 import { accentVar } from "@/lib/colors";
 import { computeHealth, attentionList } from "@/lib/project-health";
+import { peopleNames } from "@/lib/people";
 import { cn } from "@/lib/utils";
 import type { Task, WorkingSet } from "@/lib/types";
 import { DigestFeed } from "@/components/modules/dashboard-digest";
@@ -458,11 +459,10 @@ export function DashboardModule({ projectId }: { projectId: string }) {
   // Every hook runs before the loading guard below. These used to sit after
   // an early `return null`, which changes hook order between renders as soon
   // as the query resolves.
-  const members = data?.members;
+  const stakeholders = data?.stakeholders;
   const people = useMemo(
-    () => [...new Set((members ?? []).map((m) => m.name).filter((n) => n && n !== "You"))]
-      .sort((a, b) => a.localeCompare(b)),
-    [members],
+    () => (stakeholders ? peopleNames({ stakeholders }) : []),
+    [stakeholders],
   );
 
   const tasks = useMemo(() => data?.tasks ?? [], [data]);

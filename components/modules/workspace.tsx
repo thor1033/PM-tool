@@ -9,11 +9,12 @@ import {
   Presentation, Image as ImageIcon, File as FileIcon, Check,
 } from "lucide-react";
 import { useProject, useUpdateEntity } from "@/lib/api/hooks";
-import type { Task, WorkingSet, Member } from "@/lib/types";
+import type { Task, WorkingSet } from "@/lib/types";
 import type { TaskComment } from "@/lib/db/schema";
 import { accent, accentVar } from "@/lib/colors";
 import { initials, fmtD, daysBetween, followupChainOf } from "@/lib/tasks";
 import { cn } from "@/lib/utils";
+import { peopleOf } from "@/lib/people";
 import { ModuleHeader } from "@/components/project/ui";
 import { GlossaryText } from "@/components/project/glossary-text";
 import { CardModal } from "@/components/project/card-modal";
@@ -129,8 +130,10 @@ function buildCtx(task: Task, ws: WorkingSet) {
 
 // ── small shared bits ────────────────────────────────────────────────────────
 
-function Avatar({ name, member, size = 24 }: { name: string; member?: Member; size?: number }) {
-  const a = member ? accent(member.color) : null;
+// Only the colour is used, so this takes anything that has one — people now
+// come from the stakeholder list, which carries no colour of its own.
+function Avatar({ name, member, size = 24 }: { name: string; member?: { color?: string }; size?: number }) {
+  const a = member?.color ? accent(member.color) : null;
   return (
     <span
       className={cn(
@@ -212,7 +215,7 @@ function WSHub({ task, ws, projectId, wide, onOpenTask, onSelectTask }: {
   ).trim();
 
   const [commentText, setCommentText] = useState("");
-  const [commentAuthor, setCommentAuthor] = useState(() => ws.members[0]?.name ?? "");
+  const [commentAuthor, setCommentAuthor] = useState(() => peopleOf(ws)[0]?.name ?? "");
 
   function setStatus(v: string) {
     update.mutate({ id: task.id, data: { status: v } }, {
@@ -350,7 +353,7 @@ function WSHub({ task, ws, projectId, wide, onOpenTask, onSelectTask }: {
           {(task.assignees ?? []).length > 0 && (
             <div className="flex flex-wrap items-center justify-end gap-1.5">
               {task.assignees.map((name) => {
-                const m = ws.members.find((x) => x.name === name);
+                const m = peopleOf(ws).find((x) => x.name === name);
                 return (
                   <span key={name} className="inline-flex items-center gap-1.5 rounded-full bg-[var(--paper-2)] py-0.5 pl-0.5 pr-2.5 text-[12.5px]">
                     <Avatar name={name} member={m} size={20} />
@@ -521,7 +524,7 @@ function WSHub({ task, ws, projectId, wide, onOpenTask, onSelectTask }: {
           {(task.comments ?? []).length > 0 ? (
             <ul className="space-y-3">
               {(task.comments ?? []).map((c) => {
-                const m = ws.members.find((x) => x.name === c.author);
+                const m = peopleOf(ws).find((x) => x.name === c.author);
                 return (
                   <li key={c.id} className="flex gap-2.5">
                     <Avatar name={c.author} member={m} size={26} />
@@ -548,8 +551,8 @@ function WSHub({ task, ws, projectId, wide, onOpenTask, onSelectTask }: {
               className="h-8 shrink-0 rounded-[var(--radius-sm)] border bg-[var(--panel)] px-2 text-[12.5px]"
               aria-label="Comment as"
             >
-              {ws.members.map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}
-              {ws.members.length === 0 && <option value="">Anonymous</option>}
+              {peopleOf(ws).map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}
+              {peopleOf(ws).length === 0 && <option value="">Anonymous</option>}
             </select>
             <input
               value={commentText}
@@ -938,7 +941,7 @@ export function WorkspaceModule({ projectId }: { projectId: string }) {
       savedWho = window.localStorage.getItem(`${WHO_KEY}.${projectId}`);
     } catch { /* best-effort */ }
 
-    const names = new Set(ws.members.map((m) => m.name));
+    const names = new Set(peopleOf(ws).map((m) => m.name));
     const hasTasks = (name: string) =>
       ws.tasks.some((t) => !t.parentId && (t.assignees ?? []).includes(name));
 
@@ -979,7 +982,7 @@ export function WorkspaceModule({ projectId }: { projectId: string }) {
   if (!ws) return null;
 
   const selTask = myTasks.find((t) => t.id === selId) ?? myTasks[0] ?? null;
-  const member = ws.members.find((m) => m.name === activeWho);
+  const member = peopleOf(ws).find((m) => m.name === activeWho);
 
   return (
     <div>
@@ -1002,7 +1005,7 @@ export function WorkspaceModule({ projectId }: { projectId: string }) {
             aria-label="Show tasks for"
           >
             <option value={EVERYONE}>Everyone — all tasks</option>
-            {ws.members.map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}
+            {peopleOf(ws).map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}
           </select>
           <p className="text-muted-foreground hidden min-w-0 truncate text-[13.5px] md:block">
             {everyone

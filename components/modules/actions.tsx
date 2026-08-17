@@ -6,8 +6,9 @@ import { toast } from "sonner";
 import { Rows3, GitBranch, Calendar, KanbanSquare, SlidersHorizontal, ArrowUpDown, Search, X, Plus } from "lucide-react";
 import { useProject } from "@/lib/api/hooks";
 import { taskMatchesFilter, taskIdMap, NO_TRACK_ID } from "@/lib/tasks";
+import { peopleOf, unknownAssignees } from "@/lib/people";
 import { TrackModal } from "@/components/project/track-modal";
-import type { Task, Milestone, Category } from "@/lib/types";
+import type { Task, Milestone, Category, WorkingSet } from "@/lib/types";
 import { accentVar } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { ModuleHeader } from "@/components/project/ui";
@@ -47,7 +48,7 @@ type View = ActionsView;
 function FilterPopover({
   ws, fCat, setFCat, fWho, setFWho, fStatus, setFStatus, showStatus = true,
 }: {
-  ws: { categories: { id: string; label: string; color: string }[]; members: { id: string; name: string; color: string }[] };
+  ws: Pick<WorkingSet, "categories" | "stakeholders" | "tasks">;
   fCat: string[]; setFCat: (v: string[]) => void;
   fWho: string[]; setFWho: (v: string[]) => void;
   fStatus: string[]; setFStatus: (v: string[]) => void;
@@ -94,16 +95,33 @@ function FilterPopover({
             )}
           </div>
           <div className="mb-4 flex flex-wrap gap-2">
-            {ws.members.map((m) => (
+            {peopleOf(ws).map((person) => (
               <button
-                key={m.id}
-                onClick={() => toggleWho(m.name)}
+                key={person.id}
+                onClick={() => toggleWho(person.name)}
+                title={person.title || undefined}
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition",
-                  fWho.includes(m.name) ? "bg-foreground text-background border-foreground" : "hover:bg-muted",
+                  fWho.includes(person.name) ? "bg-foreground text-background border-foreground" : "hover:bg-muted",
                 )}
               >
-                <span className="size-2 rounded-full" style={{ background: accentVar(m.color) }} />{m.name}
+                <span className="bg-foreground/70 size-2 rounded-full" />{person.name}
+              </button>
+            ))}
+            {/* Assignees are plain strings, so a task can name someone who was
+                typed by hand or has since been removed. Without a chip for
+                them that work is invisible to every per-person filter. */}
+            {unknownAssignees(ws).map((name) => (
+              <button
+                key={`unknown-${name}`}
+                onClick={() => toggleWho(name)}
+                title="Not on the Stakeholders page"
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1.5 text-[13px] font-medium transition",
+                  fWho.includes(name) ? "bg-foreground text-background border-foreground" : "hover:bg-muted",
+                )}
+              >
+                <span className="size-2 rounded-full bg-[var(--t-amber)]" />{name}
               </button>
             ))}
             <button
@@ -115,7 +133,11 @@ function FilterPopover({
             >
               <span className="bg-ink-ghost size-2 rounded-full" />Unassigned
             </button>
-            {ws.members.length === 0 && <span className="text-muted-foreground text-sm">No members yet</span>}
+            {peopleOf(ws).length === 0 && (
+              <span className="text-muted-foreground text-sm">
+                No people yet — add them on the Stakeholders page.
+              </span>
+            )}
           </div>
           {showStatus && <p className="eyebrow mb-2">Status</p>}
           {showStatus && <div className="mb-4 flex flex-wrap gap-2">
