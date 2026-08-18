@@ -390,6 +390,44 @@ export function useAudit(projectId: string) {
   });
 }
 
+// ---------- today's digest, summarised ----------
+
+export interface DigestTrackInput {
+  track: string;
+  lines: string[];
+}
+
+export interface DigestSummary {
+  summary: { track: string; points: string[] }[];
+  unavailable: boolean;
+}
+
+/**
+ * Asks the model to turn today's raw change entries into a few bullets per
+ * track.
+ *
+ * Keyed by a signature of the entries themselves rather than by project, so
+ * the 60-second audit poll doesn't buy a model call every minute: the same
+ * day's events resolve to the same key and are served from cache. A new
+ * change alters the signature and earns a fresh summary.
+ */
+export function useDigestSummary(projectId: string, tracks: DigestTrackInput[]) {
+  const signature = tracks.map((t) => `${t.track}:${t.lines.join("|")}`).join("~");
+  return useQuery({
+    queryKey: ["digest-summary", projectId, signature] as const,
+    queryFn: () =>
+      apiFetch<DigestSummary>(`/api/projects/${projectId}/digest`, {
+        method: "POST",
+        body: JSON.stringify({ tracks }),
+      }),
+    enabled: !!projectId && tracks.length > 0,
+    // A day's summary doesn't decay; only new activity should refresh it.
+    staleTime: Infinity,
+    gcTime: 30 * 60_000,
+    retry: false,
+  });
+}
+
 export function useLogActivity(projectId: string) {
   const qc = useQueryClient();
   const recent = useRef<Map<string, number>>(new Map());
