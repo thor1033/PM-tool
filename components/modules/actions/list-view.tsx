@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useCreateEntity, useUpdateEntity, useDeleteEntity } from "@/lib/api/hooks";
 import type { Task, WorkingSet, Milestone, Category } from "@/lib/types";
-import { depsOf, statusVar, fmtD, daysBetween, taskIdMap, COLUMNS, TRACK_ICONS } from "@/lib/tasks";
+import { depsOf, statusVar, fmtD, daysBetween, taskIdMap, COLUMNS, TRACK_ICONS, subtaskDefaults, todayISO } from "@/lib/tasks";
 import { kindOf } from "@/lib/task-kinds";
 import { groupByMilestone, type MilestoneGroup } from "@/lib/milestone-grouping";
 import { accent, accentVar } from "@/lib/colors";
@@ -163,6 +163,7 @@ export function ListView({
   const update = useUpdateEntity(projectId, "tasks");
   const del = useDeleteEntity(projectId, "tasks");
   const updateCat = useUpdateEntity(projectId, "categories");
+  const updateMilestone = useUpdateEntity(projectId, "milestones");
   const delCat = useDeleteEntity(projectId, "categories");
 
   /** Deleting a track would orphan its tasks, so they're moved to "no track"
@@ -193,12 +194,7 @@ export function ListView({
     setAddingSubFor(null);
     if (!title) { setSubTitle(""); return; }
     create.mutate(
-      {
-        title, status: "backlog",
-        category: parent.category, origin: parent.origin,
-        parentId: parent.id, assignees: parent.assignees, tags: parent.tags,
-        deps: [], comments: [], custom: {},
-      },
+      { title, ...subtaskDefaults(parent, todayISO()) },
       { onError: (e) => toast.error((e as Error).message) },
     );
     setSubTitle("");
@@ -667,7 +663,7 @@ export function ListView({
                                     className="flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)]"
                                     style={{ background: `color-mix(in oklch, ${col} 16%, var(--panel))`, color: col }}
                                   >
-                                    {mg.complete ? <Check className="size-3.5" /> : <MilestoneIcon className="size-3.5" />}
+                                    {mg.reachedOn ? <Check className="size-3.5" /> : <MilestoneIcon className="size-3.5" />}
                                   </span>
                                   <span className="truncate text-[14px] font-bold group-hover/ms:underline">
                                     {m.title || "Untitled milestone"}
@@ -680,6 +676,16 @@ export function ListView({
                                   >
                                     {m.date ? fmtD(m.date) : "no date"}
                                   </span>
+                                  {mg.reachedOn && (
+                                    <span
+                                      className="shrink-0 font-mono text-[11.5px] font-semibold"
+                                      style={{ color: "color-mix(in oklch, var(--hue-done) 72%, var(--ink))" }}
+                                    >
+                                      reached {fmtD(mg.reachedOn)}
+                                      {mg.slipDays !== null && mg.slipDays !== 0 &&
+                                        ` · ${Math.abs(mg.slipDays)}d ${mg.slipDays > 0 ? "late" : "early"}`}
+                                    </span>
+                                  )}
                                 </button>
                               ) : (
                                 <span className="text-muted-foreground flex items-center gap-2.5 text-[13.5px] font-semibold">
@@ -695,6 +701,37 @@ export function ListView({
                                   : `${mg.doneCount}/${mg.tasks.length}`}
                               </span>
                               <span className="h-px flex-1 bg-[var(--line)]" />
+                              {/* Reaching a milestone is declared, not inferred:
+                                  the work being finished is a prompt, not proof
+                                  the outcome was achieved. */}
+                              {m && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className={cn(
+                                    "h-7 shrink-0 text-[12px]",
+                                    mg.awaitingConfirmation
+                                      ? "font-semibold text-[var(--hue-done)]"
+                                      : "text-muted-foreground hover:text-foreground",
+                                  )}
+                                  onClick={() =>
+                                    updateMilestone.mutate(
+                                      { id: m.id, data: { reachedOn: mg.reachedOn ? "" : todayISO() } },
+                                      { onError: (e) => toast.error((e as Error).message) },
+                                    )
+                                  }
+                                  title={
+                                    mg.reachedOn
+                                      ? "Mark this milestone as not yet reached"
+                                      : mg.awaitingConfirmation
+                                        ? "Every task is done — confirm the milestone was reached"
+                                        : "Mark this milestone reached"
+                                  }
+                                >
+                                  <Check className="size-3.5" />
+                                  {mg.reachedOn ? "Reached" : mg.awaitingConfirmation ? "Mark reached" : "Reached?"}
+                                </Button>
+                              )}
                               {/* Work is added to a milestone, not to the
                                   track at large — the milestone is what the
                                   task is for. */}

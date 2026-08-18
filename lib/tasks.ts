@@ -332,3 +332,47 @@ export function sequenceTasks(tasks: Task[]): Task[] {
   }
   return [...out, ...undated];
 }
+
+/** Today as a plain ISO date, in local time. `toISOString()` would shift by
+ *  timezone and can date an evening's work to tomorrow. */
+export function todayISO(now: Date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+}
+
+/** Fields a new subtask inherits from its parent.
+ *
+ *  A subtask is part of the same piece of work, so it starts in the same
+ *  track, under the same milestone, owned by the same person. Only the things
+ *  that are genuinely its own — title, status, its own dates — start fresh.
+ *  The three places that create subtasks used to each decide this separately,
+ *  and disagreed: two carried the owner across, the task editor dropped it.
+ *
+ *  `today` is passed in rather than read here so the caller controls the clock
+ *  and this stays testable.
+ */
+export function subtaskDefaults(
+  parent: Pick<Task, "id" | "category" | "origin" | "milestoneId" | "assignees" | "tags" | "kind">,
+  today: string,
+): Record<string, unknown> {
+  return {
+    status: "backlog",
+    parentId: parent.id,
+    // Same track and milestone: a subtask that drifted out of its parent's
+    // milestone would be counted against a goal its parent is not serving.
+    category: parent.category,
+    origin: parent.origin,
+    milestoneId: parent.milestoneId ?? null,
+    // Whoever owns the parent owns its parts until someone says otherwise.
+    assignees: parent.assignees ?? [],
+    tags: parent.tags ?? [],
+    // Work broken out of a task is work starting now; the end stays open
+    // because how long it takes is the thing being decided.
+    start: today,
+    end: "",
+    kind: parent.kind ?? "build",
+    deps: [],
+    comments: [],
+    custom: {},
+  };
+}

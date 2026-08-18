@@ -120,6 +120,7 @@ const milestoneSchema = z
     date: z.string(),
     category: z.string().nullable(),
     note: z.string(),
+    reachedOn: z.string(),
   })
   .partial();
 

@@ -248,6 +248,13 @@ export const milestones = pgTable(
     date: text("date").default("").notNull(),
     category: text("category"),
     note: text("note").default("").notNull(),
+    /** The day this milestone was actually reached, as a plain ISO date, or
+     *  "" while it is still outstanding. `date` is the plan; this is what
+     *  happened, so the two can be compared. Set deliberately rather than
+     *  inferred from its tasks — finishing the work is not always the same as
+     *  hitting the outcome, and a milestone can be reached with work still
+     *  open, or have all its work done without the outcome being agreed. */
+    reachedOn: text("reached_on").default("").notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.projectId, t.id] }),

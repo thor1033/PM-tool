@@ -8,7 +8,7 @@ import {
 import {
   useCreateEntity, useUpdateEntity, useDeleteEntity,
 } from "@/lib/api/hooks";
-import { resolveDep, wouldConflict, initials, followupChainOf, fmtD, daysBetween, type ResolvedDep } from "@/lib/tasks";
+import { resolveDep, wouldConflict, initials, followupChainOf, fmtD, daysBetween, subtaskDefaults, todayISO, type ResolvedDep } from "@/lib/tasks";
 import { TASK_KINDS, DEFAULT_KIND, meetingTimeRange } from "@/lib/task-kinds";
 import { milestonesForTask } from "@/lib/milestone-grouping";
 import { peopleOf } from "@/lib/people";
@@ -397,12 +397,7 @@ export function CardModal({
     const title = subTitle.trim();
     if (!activeTask || !title) return;
     create.mutate(
-      {
-        title, status: "backlog",
-        category: activeTask.category, origin: activeTask.origin,
-        parentId: activeTask.id, assignees: [], tags: [],
-        deps: [], comments: [], custom: {},
-      },
+      { title, ...subtaskDefaults(activeTask, todayISO()) },
       { onError: (e) => toast.error((e as Error).message) },
     );
     setSubTitle("");

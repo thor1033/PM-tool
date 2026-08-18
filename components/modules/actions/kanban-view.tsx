@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Plus, MessageSquare, Layers } from "lucide-react";
 import { useCreateEntity, useUpdateEntity } from "@/lib/api/hooks";
 import type { Task, WorkingSet } from "@/lib/types";
-import { assigneesOf, depsOf, initials, COLUMNS, TRACK_ICONS, taskIdMap } from "@/lib/tasks";
+import { assigneesOf, depsOf, initials, COLUMNS, TRACK_ICONS, taskIdMap, subtaskDefaults, todayISO } from "@/lib/tasks";
 import { cn } from "@/lib/utils";
 
 function KCard({
@@ -25,12 +25,7 @@ function KCard({
     const title = subTitle.trim();
     if (!title) { setAddingSub(false); setSubTitle(""); return; }
     create.mutate(
-      {
-        title, status: "backlog",
-        category: task.category, origin: task.origin,
-        parentId: task.id, assignees: task.assignees, tags: task.tags,
-        deps: [], comments: [], custom: {},
-      },
+      { title, ...subtaskDefaults(task, todayISO()) },
       { onError: (e) => toast.error((e as Error).message) },
     );
     setSubTitle("");
