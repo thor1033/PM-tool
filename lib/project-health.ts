@@ -1,4 +1,4 @@
-import type { Task, Risk } from "@/lib/types";
+import type { Task, Risk, Milestone } from "@/lib/types";
 
 /* The numbers the overview leads with.
  *
@@ -120,6 +120,9 @@ export type Severity = "critical" | "warning" | "info";
 
 export interface AttentionItem {
   task: Task;
+  /** Set when the row is a milestone rather than a task. Milestones are the
+   *  dates a plan is actually judged on, so they belong in the same list. */
+  milestone?: Milestone;
   severity: Severity;
   /** Written reason — status is never carried by colour alone. */
   label: string;
@@ -128,14 +131,30 @@ export interface AttentionItem {
   rank: number;
 }
 
+/** Blocked rows shown before the rest are held back.
+ *
+ * Blocked work is, by definition, work you cannot do — a long run of it
+ * pushes everything actionable off the list. A few are worth surfacing as a
+ * prompt to go unblock them; twenty are just noise. */
+export const BLOCKED_SHOWN = 2;
+
 /** One ranked list answering "what needs me today", instead of leaving the
  *  reader to assemble it from a gantt, a risk panel and a dependency grid.
- *  A task appears once, under its most severe reason. */
+ *  A task appears once, under its most severe reason.
+ *
+ *  Ordering follows what the reader can act on. Overdue work comes first —
+ *  it is late and it is theirs. Then what is coming up, tasks and milestones
+ *  interleaved by date, because "what do I have next" is the question this
+ *  panel exists to answer. Blocked work sorts below that and is capped: it
+ *  is work nobody can start, and a wall of it buries everything actionable.
+ *  The count of what was held back is still reported, so a blocked project
+ *  never looks like a clear one. */
 export function attentionList(
   tasks: Task[],
   all: Task[],
   risks: Risk[] = [],
   now: Date = new Date(),
+  milestones: Milestone[] = [],
 ): AttentionItem[] {
   const day = today(now);
   const soon = addDays(day, 7);
@@ -162,13 +181,24 @@ export function attentionList(
         detail: `${daysLate} day${daysLate === 1 ? "" : "s"} past its planned end`,
         rank: 1000 - daysLate, // longest overdue first
       });
+    } else if (task.end && task.end <= soon) {
+      // Upcoming work is ranked by how soon it lands, ahead of blocked and
+      // at-risk rows: it is the part of the list the reader can act on.
+      const days = Math.round((+new Date(task.end) - +new Date(day)) / DAY_MS);
+      out.push({
+        task,
+        severity: "info",
+        label: days === 0 ? "Due today" : `Due in ${days}d`,
+        detail: "Coming up this week",
+        rank: 2000 + days,
+      });
     } else if (blockers.length) {
       out.push({
         task,
         severity: "warning",
         label: "Blocked",
         detail: `Waiting on ${blockers.map((b) => b.title).join(", ")}`,
-        rank: 2000 - blockers.length,
+        rank: 4000 - blockers.length,
       });
     } else if (riskyTaskIds.has(task.id)) {
       out.push({
@@ -176,16 +206,7 @@ export function attentionList(
         severity: "warning",
         label: "At risk",
         detail: "Carries a high likelihood or impact risk",
-        rank: 2500,
-      });
-    } else if (task.end && task.end <= soon) {
-      const days = Math.round((+new Date(task.end) - +new Date(day)) / DAY_MS);
-      out.push({
-        task,
-        severity: "info",
-        label: days === 0 ? "Due today" : `Due in ${days}d`,
-        detail: "Coming up this week",
-        rank: 3000 + days,
+        rank: 4500,
       });
     } else if (task.status === "inprogress" && (task.assignees ?? []).length === 0) {
       out.push({
@@ -193,10 +214,78 @@ export function attentionList(
         severity: "info",
         label: "Unassigned",
         detail: "In progress with nobody on it",
-        rank: 4000,
+        rank: 5000,
       });
     }
   }
 
-  return out.sort((a, b) => a.rank - b.rank || a.task.title.localeCompare(b.task.title));
+  // Milestones sit in the same ranking band as upcoming tasks so the two
+  // interleave by date: a milestone landing on Tuesday should read above a
+  // task due Thursday, not below every task regardless of when it falls.
+  for (const m of milestones) {
+    if (m.reachedOn || !m.date) continue;
+    const days = Math.round((+new Date(m.date) - +new Date(day)) / DAY_MS);
+    if (days < 0) {
+      out.push({
+        task: milestoneAsTask(m),
+        milestone: m,
+        severity: "critical",
+        label: "Milestone overdue",
+        detail: `${-days} day${days === -1 ? "" : "s"} past its planned date`,
+        rank: 900 + days, // longest overdue first, above overdue tasks
+      });
+    } else if (days <= 14) {
+      // A fortnight rather than a week: milestones are the dates people plan
+      // around, and one is worth seeing before the week it lands in.
+      out.push({
+        task: milestoneAsTask(m),
+        milestone: m,
+        severity: "info",
+        label: days === 0 ? "Milestone today" : `Milestone in ${days}d`,
+        detail: "Upcoming milestone",
+        rank: 2000 + days - 0.5, // ties break ahead of a task on the same day
+      });
+    }
+  }
+
+  const sorted = out.sort(
+    (a, b) => a.rank - b.rank || a.task.title.localeCompare(b.task.title),
+  );
+
+  // Hold back the tail of the blocked run rather than dropping it from the
+  // ranking, so the cap never hides an overdue or upcoming row.
+  let blockedSeen = 0;
+  return sorted.filter((i) => {
+    if (i.label !== "Blocked") return true;
+    blockedSeen += 1;
+    return blockedSeen <= BLOCKED_SHOWN;
+  });
+}
+
+/** Blocked tasks beyond the few the list shows. Reported alongside it so the
+ *  cap is visible rather than silently swallowing work. */
+export function blockedOverflow(
+  tasks: Task[],
+  all: Task[],
+  now: Date = new Date(),
+): number {
+  const day = today(now);
+  const blocked = tasks.filter(
+    (t) => isOpen(t) && !(t.end && t.end < day) && blockersOf(t, all).length > 0,
+  );
+  return Math.max(0, blocked.length - BLOCKED_SHOWN);
+}
+
+/** Milestones ride through the attention list in a task-shaped wrapper: the
+ *  row renderer, the track colouring and the click-to-open path all key off
+ *  a task, and a parallel type for two extra rows would cost more than it
+ *  clarifies. `milestone` on the item is what tells the two apart. */
+function milestoneAsTask(m: Milestone): Task {
+  return {
+    id: m.id,
+    title: m.title,
+    category: m.category ?? null,
+    end: m.date,
+    status: "backlog",
+  } as Task;
 }

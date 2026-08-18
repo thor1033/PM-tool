@@ -9,6 +9,8 @@ import {
   CircleDashed,
   Timer,
   UserMinus,
+  Flag,
+  Milestone as MilestoneIcon,
 } from "lucide-react";
 import { accentVar } from "@/lib/colors";
 import type { Health, AttentionItem, Severity } from "@/lib/project-health";
@@ -226,7 +228,15 @@ function AttentionRow({
   trackColor: string | null;
   onOpen: (t: Task) => void;
 }) {
-  const Icon = item.label === "Unassigned" ? UserMinus : SEV_ICON[item.severity];
+  // Same icons the rest of the app uses for these words: the milestone mark
+  // for milestones, the flag for gates.
+  const Icon = item.milestone
+    ? item.milestone.type === "gate"
+      ? Flag
+      : MilestoneIcon
+    : item.label === "Unassigned"
+      ? UserMinus
+      : SEV_ICON[item.severity];
   // The chip is tinted by the track, so a glance says which part of the
   // project needs attention. Severity is still carried by the icon and the
   // written word, which is what has to survive without colour anyway —
@@ -252,7 +262,14 @@ function AttentionRow({
         {item.label}
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-[13.5px] font-medium">{item.task.title}</span>
+        <span
+          className={cn(
+            "block truncate text-[13.5px]",
+            item.milestone ? "font-semibold" : "font-medium",
+          )}
+        >
+          {item.task.title}
+        </span>
         <span className="text-muted-foreground block truncate text-[11.5px]">
           {item.detail}
         </span>
@@ -273,11 +290,16 @@ export function AttentionList({
   items,
   categories,
   onOpen,
+  blockedHidden = 0,
+  projectId,
   limit = 7,
 }: {
   items: AttentionItem[];
   categories: Category[];
   onOpen: (t: Task) => void;
+  /** Blocked tasks the ranking held back, reported rather than hidden. */
+  blockedHidden?: number;
+  projectId?: string;
   limit?: number;
 }) {
   if (items.length === 0) {
@@ -285,7 +307,8 @@ export function AttentionList({
       <div className="flex items-center gap-2.5 py-2">
         <CheckCircle2 className="size-4 shrink-0 text-[var(--hue-done)]" />
         <p className="text-[13px]">
-          Nothing needs attention — nothing overdue, blocked, or due in the next week.
+          Nothing needs attention — nothing overdue, and no task or milestone due
+          in the next two weeks.
         </p>
       </div>
     );
@@ -311,9 +334,25 @@ export function AttentionList({
           />
         ))}
       </ul>
-      {items.length > shown.length && (
-        <p className="text-muted-foreground mt-2 px-2 text-[12px]">
-          and {items.length - shown.length} more
+      {(items.length > shown.length || blockedHidden > 0) && (
+        <p className="text-muted-foreground mt-2 flex flex-wrap gap-x-2 px-2 text-[12px]">
+          {items.length > shown.length && <span>and {items.length - shown.length} more</span>}
+          {blockedHidden > 0 && (
+            // Blocked work is capped above, so say what was held back — a
+            // project with a dozen blockers must not read as a clear one.
+            <span>
+              {items.length > shown.length && "· "}
+              {blockedHidden} more blocked{" "}
+              {projectId && (
+                <Link
+                  href={`/projects/${projectId}/actions`}
+                  className="hover:text-foreground font-semibold underline decoration-[var(--line-strong)] underline-offset-2"
+                >
+                  view all
+                </Link>
+              )}
+            </span>
+          )}
         </p>
       )}
     </>

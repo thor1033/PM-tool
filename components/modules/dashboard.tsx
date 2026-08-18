@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { useProject, useUpdateProject } from "@/lib/api/hooks";
 import { accentVar } from "@/lib/colors";
-import { computeHealth, attentionList } from "@/lib/project-health";
+import { computeHealth, attentionList, blockedOverflow } from "@/lib/project-health";
 import { peopleNames } from "@/lib/people";
 import { cn } from "@/lib/utils";
 import type { Task, WorkingSet } from "@/lib/types";
@@ -467,6 +467,7 @@ export function DashboardModule({ projectId }: { projectId: string }) {
 
   const tasks = useMemo(() => data?.tasks ?? [], [data]);
   const risks = useMemo(() => data?.risks ?? [], [data]);
+  const allMilestones = useMemo(() => data?.milestones ?? [], [data]);
   const personal = !!who && people.includes(who);
 
   const viewTasks = useMemo(
@@ -480,11 +481,20 @@ export function DashboardModule({ projectId }: { projectId: string }) {
     [personal, risks, viewTasks],
   );
 
+  // In the personal view a milestone is relevant when the person has work in
+  // its track — a milestone nobody here contributes to isn't "what needs me".
+  const viewMilestones = useMemo(() => {
+    if (!personal) return allMilestones;
+    const mine = new Set(viewTasks.map((t) => t.category).filter(Boolean));
+    return allMilestones.filter((m) => m.category && mine.has(m.category));
+  }, [personal, allMilestones, viewTasks]);
+
   const health = useMemo(() => computeHealth(viewTasks, tasks), [viewTasks, tasks]);
   const attention = useMemo(
-    () => attentionList(viewTasks, tasks, viewRisks),
-    [viewTasks, tasks, viewRisks],
+    () => attentionList(viewTasks, tasks, viewRisks, new Date(), viewMilestones),
+    [viewTasks, tasks, viewRisks, viewMilestones],
   );
+  const blockedHidden = useMemo(() => blockedOverflow(viewTasks, tasks), [viewTasks, tasks]);
 
   const depTasks = useMemo(
     () => viewTasks.filter((t) => (t.deps ?? []).length && t.status !== "done"),
@@ -551,7 +561,13 @@ export function DashboardModule({ projectId }: { projectId: string }) {
         action={<PanelLink href={`/projects/${projectId}/actions`} label="All tasks" />}
         className="mb-4"
       >
-        <AttentionList items={attention} categories={categories} onOpen={openTask} />
+        <AttentionList
+          items={attention}
+          categories={categories}
+          onOpen={openTask}
+          blockedHidden={blockedHidden}
+          projectId={projectId}
+        />
       </Panel>
 
       <div className="mb-4 grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
