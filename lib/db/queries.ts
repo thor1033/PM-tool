@@ -70,7 +70,13 @@ export async function getWorkingSet(
         (select coalesce(json_agg(x order by x.ts desc), '[]'::json) from activity x where x.project_id = ${projectId}) as activity
     `);
 
-    const row = (res.rows?.[0] ?? null) as Record<string, unknown> | null;
+    // drizzle's `execute` returns the driver's result verbatim, and the shape
+    // differs between drivers: the node-postgres style exposes `.rows`, others
+    // return the array itself. Accept both rather than depending on one.
+    const rows = (Array.isArray(res) ? res : res?.rows) as
+      | Record<string, unknown>[]
+      | undefined;
+    const row = rows?.[0] ?? null;
     if (!row?.project) return null;
 
     // Postgres returns snake_case columns; the app speaks camelCase, so the

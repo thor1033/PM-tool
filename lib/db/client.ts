@@ -21,11 +21,24 @@ declare global {
   var __pmhubPool: Pool | undefined;
 }
 
+// Reused across invocations in every environment, not just dev. On a
+// serverless host each cold start otherwise opened its own WebSocket pool and
+// never closed it, so connections accumulated against Neon's limit until new
+// ones were refused and pages stopped loading.
+//
+// The pool is small and closes idle sockets quickly: a serverless instance
+// handles one request at a time, so a large pool buys nothing and just holds
+// connections open.
 const pool =
   globalThis.__pmhubPool ??
-  new Pool({ connectionString: connectionString ?? "postgres://invalid" });
+  new Pool({
+    connectionString: connectionString ?? "postgres://invalid",
+    max: 3,
+    idleTimeoutMillis: 10_000,
+    connectionTimeoutMillis: 10_000,
+  });
 
-if (process.env.NODE_ENV !== "production") globalThis.__pmhubPool = pool;
+globalThis.__pmhubPool = pool;
 
 export const db = drizzle(pool, { schema });
 export { pool, schema };
