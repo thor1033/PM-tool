@@ -62,13 +62,14 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       if (track) data.category = track;
     }
 
-    // Moving a task takes its subtasks with it — they belong to it, so they
-    // cannot be left under a milestone it has left.
+    // Whatever happens to a task happens to its parts: moving it takes them
+    // along, and so does changing its status.
     const children = cascadeToSubtasks(
       entityId,
       {
         milestoneId: "milestoneId" in data ? (data.milestoneId as string | null) : undefined,
         category: "category" in data ? (data.category as string | null) : undefined,
+        status: "status" in data ? (data.status as string) : undefined,
       },
       ws,
     );

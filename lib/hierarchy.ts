@@ -148,17 +148,31 @@ export function inheritFromParent(
   data.category = parent.category ?? null;
 }
 
+/** Local YYYY-MM-DD, matching how the client stamps completion dates. */
+function today(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 /**
- * The subtasks that must move because their parent did, as id → patch.
+ * The subtasks that must follow their parent, as id → patch.
  *
- * A subtask belongs to its task, so moving the task takes its subtasks with
- * it. Leaving them behind would strand them under a milestone their parent
- * has left — the exact orphaning the hierarchy exists to prevent, arrived at
- * one step later.
+ * A subtask belongs to its task, so what happens to the task happens to its
+ * parts. Moving the task takes them with it — leaving them behind would
+ * strand them under a milestone their parent has left, the exact orphaning
+ * the hierarchy exists to prevent, arrived at one step later. Changing the
+ * task's status carries too: parts of a piece of work that has started are
+ * themselves under way, and a task cannot honestly be done while the work
+ * beneath it is not.
+ *
+ * `completedOn` is kept in step with status here rather than left to the
+ * caller, so a subtask closed by a cascade records the same completion date
+ * as one closed by hand.
  */
 export function cascadeToSubtasks(
   parentId: string,
-  next: { milestoneId?: string | null; category?: string | null },
+  next: { milestoneId?: string | null; category?: string | null; status?: string },
   ws: Pick<WorkingSet, "tasks">,
 ): { id: string; data: Record<string, unknown> }[] {
   const out: { id: string; data: Record<string, unknown> }[] = [];
@@ -170,6 +184,10 @@ export function cascadeToSubtasks(
     }
     if (next.category !== undefined && child.category !== next.category) {
       patch.category = next.category;
+    }
+    if (next.status !== undefined && child.status !== next.status) {
+      patch.status = next.status;
+      patch.completedOn = next.status === "done" ? today() : "";
     }
     if (Object.keys(patch).length) out.push({ id: child.id, data: patch });
   }
