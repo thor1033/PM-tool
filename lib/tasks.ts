@@ -389,6 +389,10 @@ export function subtaskDefaults(
  *  different sort of work from the thing that prompted it — the meeting
  *  produces the build, the review produces the fix — so inheriting "meeting"
  *  would attach meeting details to work that is not one.
+ *
+ *  Linked files are handled separately by `filesToInherit`: the link lives on
+ *  the file's `taskIds`, not on the task, so it can only be written once the
+ *  follow-up has an id.
  */
 export function followupDefaults(
   origin: Pick<Task, "id" | "category" | "origin" | "milestoneId" | "assignees" | "tags" | "end">,
@@ -415,4 +419,31 @@ export function followupDefaults(
     comments: [],
     custom: {},
   };
+}
+
+/**
+ * Files that should follow a task onto its follow-up, as the patch each one
+ * needs.
+ *
+ * The brief, the spec and the deck that were needed to do the work are
+ * usually the same ones needed to do what comes next, so they carry across
+ * rather than being re-attached by hand.
+ *
+ * A file's link lives on its own `taskIds` — the reverse index the Files page
+ * reads — so this returns per-file patches rather than a field on the task,
+ * and can only run once the follow-up has an id. Files already linked to the
+ * follow-up are skipped, so re-running is harmless.
+ */
+export function filesToInherit(
+  originId: string,
+  followupId: string,
+  products: { id: string; taskIds?: string[] | null }[],
+): { id: string; taskIds: string[] }[] {
+  const out: { id: string; taskIds: string[] }[] = [];
+  for (const p of products) {
+    const ids = p.taskIds ?? [];
+    if (!ids.includes(originId) || ids.includes(followupId)) continue;
+    out.push({ id: p.id, taskIds: [...ids, followupId] });
+  }
+  return out;
 }

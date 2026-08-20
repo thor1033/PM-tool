@@ -10,7 +10,7 @@ import {
   useCreateEntity, useUpdateEntity, useDeleteEntity,
 } from "@/lib/api/hooks";
 import { FileTypeIcon, inferType } from "@/lib/file-types";
-import { resolveDep, wouldConflict, initials, followupChainOf, fmtD, daysBetween, subtaskDefaults, followupDefaults, todayISO, type ResolvedDep } from "@/lib/tasks";
+import { resolveDep, wouldConflict, initials, followupChainOf, fmtD, daysBetween, subtaskDefaults, followupDefaults, filesToInherit, todayISO, type ResolvedDep } from "@/lib/tasks";
 import { TASK_KINDS, DEFAULT_KIND, meetingTimeRange } from "@/lib/task-kinds";
 import { milestonesForTask } from "@/lib/milestone-grouping";
 import { peopleOf } from "@/lib/people";
@@ -512,6 +512,8 @@ export function CardModal({
   const create = useCreateEntity(projectId, "tasks");
   const update = useUpdateEntity(projectId, "tasks");
   const del = useDeleteEntity(projectId, "tasks");
+  // Carrying files onto a follow-up writes to the file, not the task.
+  const updateProductLink = useUpdateEntity(projectId, "products");
   const confirm = useConfirm();
 
   // Which task this modal instance is actually showing — starts as the
@@ -610,7 +612,18 @@ export function CardModal({
         ...followupDefaults(activeTask, `d_${Math.random().toString(36).slice(2, 9)}`),
       },
       {
-        onSuccess: (row) => setActiveTaskId((row as { id: string }).id),
+        onSuccess: (row) => {
+          const id = (row as { id: string }).id;
+          // Files link through the file's own taskIds, so they can only be
+          // carried once the follow-up exists and has an id.
+          for (const patch of filesToInherit(activeTask.id, id, ws.products)) {
+            updateProductLink.mutate(
+              { id: patch.id, data: { taskIds: patch.taskIds } },
+              { onError: (err: unknown) => toast.error((err as Error).message) },
+            );
+          }
+          setActiveTaskId(id);
+        },
         onError: (e) => toast.error((e as Error).message),
       },
     );
