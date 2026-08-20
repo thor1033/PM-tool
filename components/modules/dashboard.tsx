@@ -11,6 +11,10 @@ import {
   Users,
   ChevronDown,
   Link2,
+  LayoutList,
+  MessageCircle,
+  Loader2,
+  Check,
 } from "lucide-react";
 import { useProject, useUpdateProject } from "@/lib/api/hooks";
 import { accentVar } from "@/lib/colors";
@@ -20,6 +24,9 @@ import { cn } from "@/lib/utils";
 import type { Task, WorkingSet } from "@/lib/types";
 import { DigestFeed } from "@/components/modules/dashboard-digest";
 import { HealthStrip, AttentionList } from "@/components/modules/dashboard-health";
+import { OP_ICON, opLabel } from "@/lib/plan-engine";
+import { usePlanRunner } from "@/lib/use-plan-runner";
+import type { PlanOp } from "@/lib/ai/plan-types";
 
 /* The overview answers four questions, in this order: are we OK (health
  * strip), what needs me (attention list), what's moving (road ahead and the
@@ -117,14 +124,66 @@ function ViewSwitch({
 /** The command centre. This is where work is meant to start: describe what
  *  happened in plain language and the plan updates, rather than hunting for
  *  the right screen and field. It leads the page for that reason. */
-function CommandBar({ projectId }: { projectId: string }) {
-  const router = useRouter();
-  const [text, setText] = useState("");
+/** One proposed change, ticked by default. */
+function SuggestionRow({
+  op,
+  checked,
+  onToggle,
+}: {
+  op: PlanOp;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  const Icon = OP_ICON[op.type as string] ?? LayoutList;
 
-  function submit() {
-    const v = text.trim();
-    if (v) sessionStorage.setItem(`plan_draft_${projectId}`, v);
-    router.push(`/projects/${projectId}/plan`);
+  // An "answer" is the model replying to a question, not a change to apply,
+  // so it carries no checkbox and no weight in the apply count.
+  if (op.type === "answer") {
+    return (
+      <li className="flex items-start gap-2.5 rounded-[var(--radius-sm)] border border-[color-mix(in_oklch,var(--t-blue)_24%,var(--line))] bg-[color-mix(in_oklch,var(--t-blue)_6%,var(--panel))] px-3 py-2.5">
+        <MessageCircle className="mt-px size-3.5 shrink-0 text-[var(--t-blue)]" />
+        <span className="min-w-0 text-[13px] leading-snug">{String(op.text ?? "")}</span>
+      </li>
+    );
+  }
+
+  return (
+    <li>
+      <label
+        className={cn(
+          "flex cursor-pointer items-start gap-2.5 rounded-[var(--radius-sm)] px-2 py-1.5 transition hover:bg-[var(--paper-2)]",
+          !checked && "opacity-45",
+        )}
+      >
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={onToggle}
+          className="accent-primary mt-[3px] size-3.5 shrink-0 cursor-pointer"
+        />
+        <Icon className="text-muted-foreground mt-px size-3.5 shrink-0" />
+        <span className="min-w-0 text-[13px] leading-snug">{opLabel(op)}</span>
+      </label>
+    </li>
+  );
+}
+
+function CommandBar({ projectId }: { projectId: string }) {
+  const [text, setText] = useState("");
+  const runner = usePlanRunner(projectId);
+  const { groups, sel, loading, applying, ops, selectedCount } = runner;
+
+  // The prompt runs here rather than handing off to another screen: typing it
+  // is the action, so what it proposes belongs under the box it was typed
+  // into. The plan page still exists for longer sessions and deeper review.
+  async function submit() {
+    if (!text.trim() || loading) return;
+    await runner.run(text);
+  }
+
+  async function applyAll() {
+    const applied = await runner.apply();
+    if (applied > 0) setText("");
   }
 
   return (
@@ -151,21 +210,97 @@ function CommandBar({ projectId }: { projectId: string }) {
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
             }}
+            disabled={applying}
             placeholder="e.g. Mark the API integration done, push everything else to next week, and log a risk about the vendor being slow to respond."
-            className="box-border w-full resize-y bg-transparent px-3.5 py-3 text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground/55"
+            className="box-border w-full resize-y bg-transparent px-3.5 py-3 text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground/55 disabled:opacity-60"
           />
           <div className="flex items-center justify-between gap-3 border-t px-3 py-2">
             <span className="text-muted-foreground text-[11px]">
-              ⌘/Ctrl + Enter to run · nothing changes until you approve it
+              Ctrl/Cmd + Enter to run · nothing changes until you approve it
             </span>
             <button
               onClick={submit}
-              className="bg-primary text-primary-foreground hover:bg-[var(--accent-deep)] inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] px-3.5 py-1.5 text-[13px] font-semibold transition"
+              disabled={loading || !text.trim()}
+              className="bg-primary text-primary-foreground hover:bg-[var(--accent-deep)] inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] px-3.5 py-1.5 text-[13px] font-semibold transition disabled:opacity-50"
             >
-              <Sparkles className="size-3.5" /> Update plan
+              {loading ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="size-3.5" />
+              )}
+              {loading ? "Reading…" : "Update plan"}
             </button>
           </div>
         </div>
+
+        {loading && (
+          <p className="text-muted-foreground mt-3 text-[12.5px]">
+            Reading your update and working out what changes…
+          </p>
+        )}
+
+        {groups.length > 0 && (
+          <div className="mt-3.5 rounded-[var(--radius-md)] border bg-[var(--panel)] p-3.5">
+            <div className="mb-2 flex items-baseline justify-between gap-3">
+              <span className="text-[12px] font-bold uppercase tracking-wide">
+                Suggested changes
+              </span>
+              {ops.length > 0 && (
+                <span className="text-muted-foreground text-[11.5px]">
+                  {selectedCount} of {ops.length} selected
+                </span>
+              )}
+            </div>
+
+            {/* Grouped by the phrase each set of changes came from, so it is
+                clear which part of the prompt produced what. */}
+            <div className="flex flex-col gap-3">
+              {groups.map((g, i) => (
+                <div key={i} className="min-w-0">
+                  {g.quote && (
+                    <blockquote className="text-muted-foreground mb-1 border-l-2 border-[color-mix(in_oklch,var(--accent-c)_45%,var(--line))] pl-2.5 text-[11.5px] italic">
+                      {g.quote}
+                    </blockquote>
+                  )}
+                  <ul className="-mx-2 flex flex-col">
+                    {g.ops.map((op) => (
+                      <SuggestionRow
+                        key={String(op._id)}
+                        op={op}
+                        checked={sel[String(op._id)] ?? true}
+                        onToggle={() => runner.toggle(String(op._id))}
+                      />
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+
+            {ops.length > 0 && (
+              <div className="mt-3 flex items-center justify-end gap-2 border-t pt-3">
+                <button
+                  onClick={runner.reset}
+                  disabled={applying}
+                  className="text-muted-foreground hover:text-foreground rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12.5px] font-semibold transition disabled:opacity-50"
+                >
+                  Discard
+                </button>
+                <button
+                  onClick={applyAll}
+                  disabled={applying || selectedCount === 0}
+                  className="bg-primary text-primary-foreground hover:bg-[var(--accent-deep)] inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] px-3.5 py-1.5 text-[13px] font-semibold transition disabled:opacity-50"
+                >
+                  {applying ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Check className="size-3.5" />
+                  )}
+                  {applying ? "Applying…" : `Apply ${selectedCount}`}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );
