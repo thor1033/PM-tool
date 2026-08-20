@@ -30,7 +30,7 @@ export const OP_ICON: Record<string, React.ElementType> = {
   create: Plus, risk: ShieldAlert, edit_risk: ShieldAlert,
   dependency: Link2, remove_dep: Link2, scope_in: Check, scope_out: X,
   finding: Lightbulb, glossary: Tag, tag: Tag, untag: Tag,
-  milestone: Flag, dates: CalendarClock, shift_all: CalendarClock,
+  milestone: Flag, edit_milestone: Flag, dates: CalendarClock, shift_all: CalendarClock,
   assign: Users, member: Users, edit_member: Users,
   delete: Trash2, remove: Trash2, deliverable: Package,
   track: List, move_track: List, strategy: LayoutGrid, feature: Boxes,
@@ -68,6 +68,15 @@ export function opLabel(op: PlanOp): string {
   if (t === "finding") return `Insight: ${op.title}`;
   if (t === "deliverable") return `Deliverable: ${op.name}`;
   if (t === "milestone") return `${op.kind === "gate" ? "Gate" : "Milestone"}: ${op.title}`;
+  if (t === "edit_milestone") {
+    const bits: string[] = [];
+    if (op.title) bits.push(`rename to "${op.title}"`);
+    if (op.date) bits.push(`move to ${op.date}`);
+    if (op.reached === true) bits.push("mark reached");
+    if (op.reached === false) bits.push("mark not reached");
+    if (op.category !== undefined) bits.push("change track");
+    return `Milestone "${op.taskTitle}": ${bits.join(", ") || "update"}`;
+  }
   if (t === "member") return `Add member ${op.name}${op.role ? ` (${op.role})` : ""}`;
   if (t === "edit_member") return `Edit member ${op.name}${op.rename ? ` → ${op.rename}` : ""}`;
   if (t === "track") return `Create track "${op.label}"`;
@@ -288,6 +297,23 @@ export async function applyOp(op: PlanOp, h: Hooks): Promise<string | null> {
       await mut(h.createMilestone.mutateAsync({ title: String(op.title), type: op.kind ?? "milestone", date: op.date ?? "", category: op.category ?? null, note: op.note ?? "" }));
     }
     return `${op.kind === "gate" ? "Gate" : "Milestone"}: "${op.title}"`;
+  }
+  if (op.type === "edit_milestone") {
+    // refId is resolved server-side from the M# handle, so a rename cannot
+    // land on the wrong milestone the way a title match could.
+    const id = String(op.refId ?? "");
+    if (!id) return null;
+    const patch: Record<string, unknown> = {};
+    if (op.title) patch.title = op.title;
+    if (op.date !== undefined) patch.date = op.date;
+    if (op.kind) patch.type = op.kind;
+    if (op.note !== undefined) patch.note = op.note;
+    if (op.category !== undefined) patch.category = op.category;
+    if (op.reached === true) patch.reachedOn = new Date().toISOString().slice(0, 10);
+    if (op.reached === false) patch.reachedOn = "";
+    if (!Object.keys(patch).length) return null;
+    await mut(h.updateMilestone.mutateAsync({ id, data: patch }));
+    return `Milestone "${op.taskTitle}" updated`;
   }
   if (op.type === "member") {
     await mut(h.createMember.mutateAsync({ name: String(op.name), role: op.role ?? "", email: "", color: COLORS_MEMBER(ws.members.length), capacityHours: 30, availability: {} }));

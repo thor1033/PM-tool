@@ -91,12 +91,18 @@ function buildContext(text: string, ws: WorkingSet): string {
 
   // Milestones
   if (q || h(/\bmilestone|gate|sign-?off|go\/no-?go|launch|deadline/)) {
+    // Numbered like tasks: without a handle the model cannot refer to an
+    // existing milestone, so "rename that milestone" had no way to say which
+    // one and came out as a create instead.
     lines.push(
       "EXISTING MILESTONES/GATES: " +
         ((ws.milestones ?? [])
           .map(
-            (m) =>
-              m.title + (m.type === "gate" ? " (gate)" : "") + (m.date ? " " + m.date : ""),
+            (m, i) =>
+              `M${i + 1}: ${m.title}` +
+              (m.type === "gate" ? " (gate)" : "") +
+              (m.date ? " " + m.date : " (no date)") +
+              (m.reachedOn ? " REACHED" : ""),
           )
           .join(" | ") || "(none)"),
     );
@@ -139,18 +145,18 @@ function buildContext(text: string, ws: WorkingSet): string {
 
 const OP_CATALOG = `You are an AI project management assistant. Analyse the user's text against the project context and return ONLY minified JSON: { "groups": [ { "quote": "<span of user text>", "ops": [ {op}, … ] } ] }. Up to 16 groups.
 
-ROUTING GUIDANCE: blocker→dependency; threat→risk (+comment); scope decision→scope_in/out; fact learned→finding; term defined→glossary; deadline/go-no-go→milestone; owner change→assign;new person→member; explicit delete→remove/delete; document/output→deliverable; new work area→track; strategy/positioning text→strategy; new service→feature; pin/hide pages→favorite/section; reminder/buffer→setting; a change to something that already exists→edit_task/edit_risk/edit_member; the same change across many tasks→ONE bulk op; a question→answer only. JSON only.
+ROUTING GUIDANCE: blocker→dependency; threat→risk (+comment); scope decision→scope_in/out; fact learned→finding; term defined→glossary; deadline/go-no-go→milestone; owner change→assign;new person→member; explicit delete→remove/delete; document/output→deliverable; new work area→track; strategy/positioning text→strategy; new service→feature; pin/hide pages→favorite/section; reminder/buffer→setting; a change to something that already exists→edit_task/edit_risk/edit_member/edit_milestone; renaming or rescheduling a milestone that is already in EXISTING MILESTONES/GATES→edit_milestone (NEVER a new milestone op); the same change across many tasks→ONE bulk op; a question→answer only. JSON only.
 
 OP TYPES (use exact field names):
 Task ops: create{type,title,track?,status?,assignee?,start?,end?} | status{type,task:"T3",to:"backlog|inprogress|done"}  | dates{type,task,start?,end?} | assign{type,task,who,clear?:false} | edit_task{type,task,title?,desc?,track?} | move_track{type,task,track} | make_subtask{type,task,parent:"T5"} | promote{type,task} | reorder{type,task,to:"top|bottom"} | tag{type,task,label} | untag{type,task,label} | comment{type,task,text,author?:"AI import"} | subtask{type,parent:"T5",title} | dependency{type,task,on:"T5"|external:"name",scope?} | remove_dep{type,task,on:"T5"|external:"name"} | shift_all{type,days:N} | bulk{type,filter:{track?,status?,assignee?,unassigned?},set:{status?,assign?,track?},shiftDays?:0}
 Risk ops: risk{type,title,likelihood,impact,mitigation,owner?,task?} | edit_risk{type,risk:"R2",title?,likelihood?,impact?,mitigation?,owner?,status?}
-List entities: finding{type,title,summary,category?} | deliverable{type,name,link?,task?} | milestone{type,title,kind:"milestone|gate",category?,date?,note?} | member{type,name,role?} | edit_member{type,name,rename?,role?} | track{type,label}
+List entities: finding{type,title,summary,category?} | deliverable{type,name,link?,task?} | milestone{type,title,kind:"milestone|gate",category?,date?,note?} | edit_milestone{type,milestone:"M2",title?,date?,kind?,category?,note?,reached?:true|false} | member{type,name,role?} | edit_member{type,name,rename?,role?} | track{type,label}
 Remove: remove{type,kind:"risk|scope|finding|glossary|milestone|deliverable|budget|track|tag|member|feature|package|persona|value",name:"…"} | delete{type,task:"T3"}
 JSONB ops: scope_in{type,line} | scope_out{type,line} | glossary{type,term,definition} | budget{type,label,amount} | favorite{type,page,on:true} | section{type,page,on:true} | setting{type,key:"autoStart|leadStart|leadDue|buffer",value} | org_report{type,who,to}
 Strategy ops: strategy{type,section:"mission|vision|valueprop|bmc_<block>",text} | value{type,label,desc?} | vp_segment{type,segment,jobs[],pains[],gains[]} | persona{type,name,role?,segment?,goals[],pains[],note?} | market{type,field:"tam|sam|som|positioning",text} | competitor{type,name,note?} | gtm{type,field:"motion",text}|{type,field:"channels|launch",items[]} | feature{type,name,group?,how?,what?} | package{type,name,tagline?,features:[names]}
 Answer (question mode): answer{type,text:"…"}
 
-Resolve task references as T1=first task, T2=second, etc. from the TASKS list. Use "T#" format.`;
+Resolve task references as T1=first task, T2=second, etc. from the TASKS list. Use "T#" format. Resolve milestone references the same way against EXISTING MILESTONES/GATES, using "M#" format.`;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Normalize: resolve T#/R# refs, add display fields, drop invalid ops
@@ -187,6 +193,21 @@ function resolveRisk(ref: string | undefined, risks: WorkingSet["risks"]) {
   );
 }
 
+function resolveMilestone(ref: string | undefined, milestones: WorkingSet["milestones"]) {
+  if (!ref) return undefined;
+  const m = ref.match(/^M(d+)$/i);
+  if (m) {
+    const idx = parseInt(m[1], 10) - 1;
+    return milestones[idx] ?? undefined;
+  }
+  const lc = ref.toLowerCase();
+  return (
+    milestones.find((x) => x.title.toLowerCase() === lc) ??
+    milestones.find((x) => x.title.toLowerCase().startsWith(lc)) ??
+    milestones.find((x) => x.title.toLowerCase().includes(lc))
+  );
+}
+
 function normalizeMemberName(name: string, members: WorkingSet["members"]) {
   if (!name) return name;
   const lc = name.toLowerCase();
@@ -201,6 +222,7 @@ function normalizeOp(op: PlanOp, ws: WorkingSet): PlanOp | null {
   const tasks = ws.tasks ?? [];
   const risks = ws.risks ?? [];
   const members = ws.members ?? [];
+  const milestones = ws.milestones ?? [];
   const o = { ...op };
 
   // Task-referencing ops
@@ -255,6 +277,17 @@ function normalizeOp(op: PlanOp, ws: WorkingSet): PlanOp | null {
     if (!r) return null;
     o.refId = r.id;
     o.taskTitle = r.title;
+  }
+
+  // edit_milestone: an existing milestone changing its name or date. Without
+  // this the model could only propose a new milestone, which silently left a
+  // duplicate behind and the original untouched.
+  if (o.type === "edit_milestone") {
+    const ms = resolveMilestone(o.milestone as string | undefined, milestones);
+    if (!ms) return null;
+    o.refId = ms.id;
+    o.taskTitle = ms.title;
+    o.fromDate = ms.date ?? "";
   }
 
   // assign: normalize member name
