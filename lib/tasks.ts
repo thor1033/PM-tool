@@ -376,3 +376,43 @@ export function subtaskDefaults(
     custom: {},
   };
 }
+
+/** Fields a new follow-up inherits from the task that prompted it.
+ *
+ *  A follow-up is the next move on the same piece of work, so it belongs
+ *  where that work belongs: same track, same milestone, same owner, same
+ *  tags. What it does not inherit is anything that describes the original's
+ *  own progress or history — its status, its dates, its comments, and the
+ *  dependencies that were satisfied in order to finish it.
+ *
+ *  Kind is deliberately not carried across. A follow-up is usually a
+ *  different sort of work from the thing that prompted it — the meeting
+ *  produces the build, the review produces the fix — so inheriting "meeting"
+ *  would attach meeting details to work that is not one.
+ */
+export function followupDefaults(
+  origin: Pick<Task, "id" | "category" | "origin" | "milestoneId" | "assignees" | "tags" | "end">,
+  depId: string,
+): Record<string, unknown> {
+  return {
+    status: "inprogress",
+    parentId: null,
+    // A follow-up serves the same outcome as the work that prompted it.
+    category: origin.category,
+    origin: origin.origin,
+    milestoneId: origin.milestoneId ?? null,
+    assignees: origin.assignees ?? [],
+    tags: origin.tags ?? [],
+    // Starts where the originating task ends; the end is left open until the
+    // follow-up's own scope is known.
+    start: origin.end ?? "",
+    end: "",
+    kind: "build",
+    // "followup" is provenance, not a blocking dependency. The original's own
+    // dependencies are not carried over: they belong to the work that has
+    // already been done.
+    deps: [{ id: depId, type: "followup", refId: origin.id }],
+    comments: [],
+    custom: {},
+  };
+}

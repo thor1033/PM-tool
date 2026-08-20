@@ -10,7 +10,7 @@ import {
   useCreateEntity, useUpdateEntity, useDeleteEntity,
 } from "@/lib/api/hooks";
 import { FileTypeIcon, inferType } from "@/lib/file-types";
-import { resolveDep, wouldConflict, initials, followupChainOf, fmtD, daysBetween, subtaskDefaults, todayISO, type ResolvedDep } from "@/lib/tasks";
+import { resolveDep, wouldConflict, initials, followupChainOf, fmtD, daysBetween, subtaskDefaults, followupDefaults, todayISO, type ResolvedDep } from "@/lib/tasks";
 import { TASK_KINDS, DEFAULT_KIND, meetingTimeRange } from "@/lib/task-kinds";
 import { milestonesForTask } from "@/lib/milestone-grouping";
 import { peopleOf } from "@/lib/people";
@@ -607,16 +607,7 @@ export function CardModal({
       {
         title: "",
         description: `Follow-up task from ${activeTask.title || "Untitled task"}`,
-        status: "inprogress",
-        category: activeTask.category, origin: null,
-        parentId: null, assignees: [...(activeTask.assignees ?? [])], tags: [],
-        // Starts where the originating task ends — end is left for the user
-        // to set once the follow-up's own scope is known.
-        start: activeTask.end ?? "", end: "",
-        // No risks/dependencies/comments carried over — those belong to the
-        // task that generated them, not the new one.
-        deps: [{ id: `d_${Math.random().toString(36).slice(2, 9)}`, type: "followup", refId: activeTask.id }],
-        comments: [], custom: {},
+        ...followupDefaults(activeTask, `d_${Math.random().toString(36).slice(2, 9)}`),
       },
       {
         onSuccess: (row) => setActiveTaskId((row as { id: string }).id),
