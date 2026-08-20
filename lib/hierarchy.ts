@@ -156,6 +156,41 @@ function today(): string {
 }
 
 /**
+ * Clears the dates a backlog task has no business carrying.
+ *
+ * Backlog work has not started, so it has no start date, and it certainly
+ * has no completion date. Its deadline is the milestone's — that is what the
+ * milestone is for. Stamping a start on it the moment it is created makes
+ * every unstarted task look under way: it draws a bar on the timeline, feeds
+ * the forecast, and can report as overdue for missing a date nobody set.
+ *
+ * A planned end is left alone. Committing to a date before work begins is a
+ * normal thing to do, and the two are different claims: "this is when it is
+ * due" is a plan, "this started on the 20th" is a statement about work that
+ * has not happened.
+ *
+ * Applied when a write leaves the task in backlog, so moving something back
+ * to backlog also drops the dates it accrued while it was running.
+ */
+export function clearBacklogDates(
+  data: Row,
+  isCreate: boolean,
+  current?: { status?: string | null },
+): void {
+  const status = "status" in data ? str(data.status) : str(current?.status);
+  // On create, a task with no status named lands in backlog by default.
+  const effective = status || (isCreate ? "backlog" : "");
+  if (effective !== "backlog") return;
+
+  // A patch that only names the status still has to drop the start the task
+  // accrued while it was running — otherwise moving work back to backlog
+  // leaves it claiming a start date for work that is no longer under way.
+  const movingToBacklog = "status" in data && str(current?.status) !== "backlog";
+  if (isCreate || movingToBacklog || "start" in data) data.start = "";
+  data.completedOn = "";
+}
+
+/**
  * The subtasks that must follow their parent, as id → patch.
  *
  * A subtask belongs to its task, so what happens to the task happens to its
@@ -188,6 +223,9 @@ export function cascadeToSubtasks(
     if (next.status !== undefined && child.status !== next.status) {
       patch.status = next.status;
       patch.completedOn = next.status === "done" ? today() : "";
+      // Back to backlog means back to unstarted: the start date it accrued
+      // while running is no longer a true statement about it.
+      if (next.status === "backlog") patch.start = "";
     }
     if (Object.keys(patch).length) out.push({ id: child.id, data: patch });
   }

@@ -8,6 +8,7 @@ import {
   trackForTask,
   inheritFromParent,
   cascadeToSubtasks,
+  clearBacklogDates,
 } from "@/lib/hierarchy";
 
 type Ctx = { params: Promise<{ id: string; entity: string; entityId: string }> };
@@ -61,6 +62,10 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       const track = trackForTask(data, ws);
       if (track) data.category = track;
     }
+
+    // Unstarted work carries no start or completion date; the milestone is
+    // what supplies its deadline.
+    clearBacklogDates(data, false, self);
 
     // Whatever happens to a task happens to its parts: moving it takes them
     // along, and so does changing its status.

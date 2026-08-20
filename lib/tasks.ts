@@ -343,20 +343,27 @@ export function todayISO(now: Date = new Date()): string {
 /** Fields a new subtask inherits from its parent.
  *
  *  A subtask is part of the same piece of work, so it starts in the same
- *  track, under the same milestone, owned by the same person. Only the things
- *  that are genuinely its own — title, status, its own dates — start fresh.
- *  The three places that create subtasks used to each decide this separately,
- *  and disagreed: two carried the owner across, the task editor dropped it.
+ *  track, under the same milestone, owned by the same person, at the same
+ *  stage. Only the things that are genuinely its own — title and its own
+ *  dates — start fresh. The three places that create subtasks used to each
+ *  decide this separately, and disagreed: two carried the owner across, the
+ *  task editor dropped it.
  *
  *  `today` is passed in rather than read here so the caller controls the clock
  *  and this stays testable.
  */
 export function subtaskDefaults(
-  parent: Pick<Task, "id" | "category" | "origin" | "milestoneId" | "assignees" | "tags" | "kind">,
+  parent: Pick<
+    Task,
+    "id" | "category" | "origin" | "milestoneId" | "assignees" | "tags" | "kind" | "status"
+  >,
   today: string,
 ): Record<string, unknown> {
+  // Part of a piece of work already under way is itself under way; part of
+  // something not started has not started either.
+  const status = parent.status === "done" ? "backlog" : parent.status ?? "backlog";
   return {
-    status: "backlog",
+    status,
     parentId: parent.id,
     // Same track and milestone: a subtask that drifted out of its parent's
     // milestone would be counted against a goal its parent is not serving.
@@ -366,9 +373,11 @@ export function subtaskDefaults(
     // Whoever owns the parent owns its parts until someone says otherwise.
     assignees: parent.assignees ?? [],
     tags: parent.tags ?? [],
-    // Work broken out of a task is work starting now; the end stays open
-    // because how long it takes is the thing being decided.
-    start: today,
+    // Only work that has actually started carries a start date. Backlog work
+    // takes its deadline from the milestone, and dating it on creation makes
+    // every unstarted task look under way. The end stays open because how
+    // long it takes is the thing being decided.
+    start: status === "backlog" ? "" : today,
     end: "",
     kind: parent.kind ?? "build",
     deps: [],

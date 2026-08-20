@@ -2,7 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireApiAuth } from "@/lib/api/guard";
 import { createEntity, getWorkingSet } from "@/lib/db/queries";
 import { entityConfig, isEntityName } from "@/lib/entities";
-import { checkMilestone, checkTask, trackForTask, inheritFromParent } from "@/lib/hierarchy";
+import {
+  checkMilestone,
+  checkTask,
+  trackForTask,
+  inheritFromParent,
+  clearBacklogDates,
+} from "@/lib/hierarchy";
 
 type Ctx = { params: Promise<{ id: string; entity: string }> };
 
@@ -35,6 +41,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     if (!ws) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const issue = checkTask(data, true, ws);
     if (issue) return NextResponse.json(issue, { status: 400 });
+    // Unstarted work carries no start or completion date; the milestone is
+    // what supplies its deadline.
+    clearBacklogDates(data, true);
     if (data.parentId) {
       // A subtask takes its parent's milestone and track outright.
       inheritFromParent(data, ws);
