@@ -41,18 +41,19 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     if (!ws) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const issue = checkTask(data, true, ws);
     if (issue) return NextResponse.json(issue, { status: 400 });
-    // Unstarted work carries no start or completion date; the milestone is
-    // what supplies its deadline.
-    clearBacklogDates(data, true);
     if (data.parentId) {
-      // A subtask takes its parent's milestone and track outright.
-      inheritFromParent(data, ws);
+      // A subtask takes its parent's milestone, track and stage outright.
+      inheritFromParent(data, ws, { withStatus: true });
     } else {
       // The milestone owns the track, so it is derived rather than trusted —
       // a caller cannot file a task under a milestone in another track.
       const track = trackForTask(data, ws);
       if (track) data.category = track;
     }
+
+    // Runs after the status is settled: unstarted work carries no start or
+    // completion date, and the milestone is what supplies its deadline.
+    clearBacklogDates(data, true);
   }
   if (typeof body.id === "string") data.id = body.id;
   const row = await createEntity(ctx.orgId, id, entity, data);

@@ -6,7 +6,6 @@ import {
   checkMilestone,
   checkTask,
   trackForTask,
-  inheritFromParent,
   cascadeToSubtasks,
   clearBacklogDates,
 } from "@/lib/hierarchy";
@@ -50,11 +49,17 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     const issue = checkTask(parentId ? { ...data, parentId } : data, false, ws);
     if (issue) return NextResponse.json(issue, { status: 400 });
     if (parentId) {
-      inheritFromParent({ ...data, parentId }, ws);
       const parent = ws.tasks.find((t) => t.id === parentId);
       if (parent) {
         data.milestoneId = parent.milestoneId ?? null;
         data.category = parent.category ?? null;
+        // A task becoming a subtask joins its parent's stage. An edit to a
+        // task that is already a subtask leaves the status alone, so a
+        // subtask can still be moved on its own.
+        const becomingSubtask = "parentId" in data && self?.parentId !== parentId;
+        if (becomingSubtask && !("status" in data)) {
+          data.status = parent.status === "done" ? "backlog" : parent.status ?? "backlog";
+        }
       }
     } else if ("milestoneId" in data || "parentId" in data) {
       // Re-derive the track whenever the milestone moves, so the two cannot

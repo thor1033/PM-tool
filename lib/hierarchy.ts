@@ -130,15 +130,26 @@ export function trackForTask(
 }
 
 /**
- * Stamps a subtask with its parent's placement.
+ * Stamps a subtask with its parent's placement and stage.
  *
  * Applied on write rather than resolved on read: the rest of the app filters
  * and groups on a task's own milestone and track, so a subtask that stored
  * neither would vanish from every one of those views.
+ *
+ * Status is included on creation because a part of work already under way is
+ * itself under way. Without it, only a later *change* to the parent brought
+ * subtasks into line, so anything created under a running task — by the AI
+ * planner, by promoting an existing task, or through the raw API — sat in
+ * backlog beneath an in-progress parent until something else moved.
+ *
+ * A parent that is `done` is the exception: new work under a finished task
+ * is work that has been remembered late, not work already completed, so it
+ * starts in backlog rather than being marked done on arrival.
  */
 export function inheritFromParent(
   data: Row,
   ws: Pick<WorkingSet, "tasks" | "milestones">,
+  opts: { withStatus?: boolean } = {},
 ): void {
   const parentId = str(data.parentId);
   if (!parentId) return;
@@ -146,6 +157,9 @@ export function inheritFromParent(
   if (!parent) return;
   data.milestoneId = parent.milestoneId ?? null;
   data.category = parent.category ?? null;
+  if (opts.withStatus) {
+    data.status = parent.status === "done" ? "backlog" : parent.status ?? "backlog";
+  }
 }
 
 /** Local YYYY-MM-DD, matching how the client stamps completion dates. */
