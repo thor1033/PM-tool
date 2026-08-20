@@ -54,15 +54,17 @@ export function checkTask(
 ): HierarchyIssue | null {
   const parentId = str(data.parentId);
 
-  // A subtask's milestone is its parent's, so the parent must exist and be
-  // placed itself. Checking the parent rather than the payload stops a
-  // subtask being used as a side door around the rule.
+  // A subtask does not have a milestone of its own — it has its parent's.
+  // The parent must therefore exist and be placed itself, and any milestone
+  // named in the payload must agree with it. Checking the parent rather than
+  // trusting the payload stops a subtask being used as a side door around
+  // the rule, or drifting away from the task it belongs to.
   if (parentId) {
     const parent = ws.tasks.find((t) => t.id === parentId);
     if (!parent) {
       return { error: "That parent task does not exist." };
     }
-    if (!str(parent.milestoneId) && !str(data.milestoneId)) {
+    if (!str(parent.milestoneId)) {
       return {
         error: "A subtask needs a milestone — its parent task has none yet.",
       };
@@ -72,6 +74,21 @@ export function checkTask(
     if (str(parent.parentId)) {
       return { error: "Subtasks cannot be nested further." };
     }
+    const wantMs = str(data.milestoneId);
+    if (wantMs && wantMs !== str(parent.milestoneId)) {
+      return {
+        error: "A subtask belongs to the same milestone as its task. Move the task instead.",
+      };
+    }
+    const wantTrack = "category" in data ? str(data.category) : "";
+    if (wantTrack && wantTrack !== str(parent.category)) {
+      return {
+        error: "A subtask belongs to the same track as its task. Move the task instead.",
+      };
+    }
+    // Everything below concerns a task that carries its own milestone; a
+    // subtask's is settled by the parent, and inheritFromParent applies it.
+    return null;
   }
 
   if (!isCreate && !("milestoneId" in data)) return null;
@@ -110,4 +127,51 @@ export function trackForTask(
   }
   const ms = ws.milestones.find((m) => m.id === str(data.milestoneId));
   return ms ? str(ms.category) || null : null;
+}
+
+/**
+ * Stamps a subtask with its parent's placement.
+ *
+ * Applied on write rather than resolved on read: the rest of the app filters
+ * and groups on a task's own milestone and track, so a subtask that stored
+ * neither would vanish from every one of those views.
+ */
+export function inheritFromParent(
+  data: Row,
+  ws: Pick<WorkingSet, "tasks" | "milestones">,
+): void {
+  const parentId = str(data.parentId);
+  if (!parentId) return;
+  const parent = ws.tasks.find((t) => t.id === parentId);
+  if (!parent) return;
+  data.milestoneId = parent.milestoneId ?? null;
+  data.category = parent.category ?? null;
+}
+
+/**
+ * The subtasks that must move because their parent did, as id → patch.
+ *
+ * A subtask belongs to its task, so moving the task takes its subtasks with
+ * it. Leaving them behind would strand them under a milestone their parent
+ * has left — the exact orphaning the hierarchy exists to prevent, arrived at
+ * one step later.
+ */
+export function cascadeToSubtasks(
+  parentId: string,
+  next: { milestoneId?: string | null; category?: string | null },
+  ws: Pick<WorkingSet, "tasks">,
+): { id: string; data: Record<string, unknown> }[] {
+  const out: { id: string; data: Record<string, unknown> }[] = [];
+  for (const child of ws.tasks) {
+    if (child.parentId !== parentId) continue;
+    const patch: Record<string, unknown> = {};
+    if (next.milestoneId !== undefined && child.milestoneId !== next.milestoneId) {
+      patch.milestoneId = next.milestoneId;
+    }
+    if (next.category !== undefined && child.category !== next.category) {
+      patch.category = next.category;
+    }
+    if (Object.keys(patch).length) out.push({ id: child.id, data: patch });
+  }
+  return out;
 }

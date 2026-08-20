@@ -192,6 +192,40 @@ export async function updateEntity(
   });
 }
 
+/**
+ * Updates a task and, in the same transaction, the subtasks that must follow
+ * it.
+ *
+ * One transaction rather than a call per row: a subtask sitting under a
+ * milestone its parent has left is exactly the orphan state the hierarchy
+ * forbids, and a partial write would create it and leave it there.
+ */
+export async function updateTaskWithSubtasks(
+  orgId: string,
+  projectId: string,
+  id: string,
+  data: Record<string, unknown>,
+  children: { id: string; data: Record<string, unknown> }[],
+) {
+  const cfg = entityConfig.tasks;
+  return withTenant(orgId, async (tx) => {
+    const [row] = await tx
+      .update(cfg.table)
+      .set(data as never)
+      .where(and(eq(cfg.table.projectId, projectId), eq(cfg.table.id, id)))
+      .returning();
+    if (!row) return null;
+    for (const child of children) {
+      await tx
+        .update(cfg.table)
+        .set(child.data as never)
+        .where(and(eq(cfg.table.projectId, projectId), eq(cfg.table.id, child.id)));
+    }
+    await touchProject(tx, projectId);
+    return row;
+  });
+}
+
 export async function deleteEntity(
   orgId: string,
   projectId: string,

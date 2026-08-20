@@ -392,6 +392,11 @@ export function CardModal({
 
   const [subTitle, setSubTitle] = useState("");
   const subtasks = activeTask ? ws.tasks.filter((t) => t.parentId === activeTask.id) : [];
+  // A subtask sits where its task sits: its track and milestone are the
+  // parent's, so they are shown rather than offered for editing.
+  const parentTask = activeTask?.parentId
+    ? ws.tasks.find((t) => t.id === activeTask.parentId) ?? null
+    : null;
 
   function addSubtask() {
     const title = subTitle.trim();
@@ -460,14 +465,16 @@ export function CardModal({
       title: form.title.trim() || "Untitled task",
       description: form.description,
       status: form.status,
-      category: form.category === "none" ? null : form.category,
+      ...(parentTask
+        ? {}
+        : { category: form.category === "none" ? null : form.category }),
       // Phase/Tags aren't editable from this form anymore — pass through
       // whatever the task already had so save doesn't wipe them.
       phase: activeTask?.phase ?? null,
       assignees: form.assignees.split(",").map((s) => s.trim()).filter(Boolean),
       start: form.start, end: form.end, tags: activeTask?.tags ?? [], deps: form.deps,
       kind: form.kind,
-      milestoneId: form.milestoneId,
+      ...(parentTask ? {} : { milestoneId: form.milestoneId }),
       // Meeting detail is only kept for meetings — switching kind away from
       // meeting clears it rather than leaving orphaned times behind.
       meeting: form.kind === "meeting"
@@ -681,6 +688,26 @@ export function CardModal({
               <StatusSeg value={form.status} onChange={(v) => set("status", v)} />
             </div>
 
+            {parentTask ? (
+              // Placement is the parent task's. Shown so the reader knows
+              // where this sits, but changed by moving the task itself.
+              <div className="space-y-1.5">
+                <Label>Track &amp; milestone</Label>
+                <div className="rounded-[var(--radius-sm)] border bg-[var(--paper-2)] px-3 py-2 text-[13px]">
+                  <span className="text-muted-foreground">
+                    {ws.categories.find((c) => c.id === parentTask.category)?.label ?? "No track"}
+                    {" · "}
+                    {ws.milestones.find((m) => m.id === parentTask.milestoneId)?.title ??
+                      "No milestone"}
+                  </span>
+                  <p className="text-muted-foreground mt-1 text-[11.5px]">
+                    Inherited from “{parentTask.title || "the task above"}”. Move that task to
+                    change it.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <>
             <div className="grid grid-cols-1 gap-3">
               <div className="space-y-1.5">
                 <Label>Track</Label>
@@ -729,6 +756,9 @@ export function CardModal({
                   </p>
                 )}
             </div>
+
+              </>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

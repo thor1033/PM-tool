@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireApiAuth } from "@/lib/api/guard";
 import { createEntity, getWorkingSet } from "@/lib/db/queries";
 import { entityConfig, isEntityName } from "@/lib/entities";
-import { checkMilestone, checkTask, trackForTask } from "@/lib/hierarchy";
+import { checkMilestone, checkTask, trackForTask, inheritFromParent } from "@/lib/hierarchy";
 
 type Ctx = { params: Promise<{ id: string; entity: string }> };
 
@@ -35,13 +35,14 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     if (!ws) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const issue = checkTask(data, true, ws);
     if (issue) return NextResponse.json(issue, { status: 400 });
-    // The milestone owns the track, so it is derived rather than trusted —
-    // a caller cannot file a task under a milestone in another track.
-    const track = trackForTask(data, ws);
-    if (track) data.category = track;
-    if (data.parentId && !data.milestoneId) {
-      const parent = ws.tasks.find((t) => t.id === data.parentId);
-      if (parent?.milestoneId) data.milestoneId = parent.milestoneId;
+    if (data.parentId) {
+      // A subtask takes its parent's milestone and track outright.
+      inheritFromParent(data, ws);
+    } else {
+      // The milestone owns the track, so it is derived rather than trusted —
+      // a caller cannot file a task under a milestone in another track.
+      const track = trackForTask(data, ws);
+      if (track) data.category = track;
     }
   }
   if (typeof body.id === "string") data.id = body.id;
