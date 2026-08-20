@@ -67,7 +67,8 @@ export function opLabel(op: PlanOp): string {
   if (t === "edit_risk") return `Edit risk: ${op.taskTitle}`;
   if (t === "finding") return `Insight: ${op.title}`;
   if (t === "deliverable") return `Deliverable: ${op.name}`;
-  if (t === "milestone") return `${op.kind === "gate" ? "Gate" : "Milestone"}: ${op.title}`;
+  if (t === "milestone")
+    return `${op.kind === "gate" ? "Gate" : "Milestone"}: ${op.title}${op.categoryLabel ? ` (${op.categoryLabel} track)` : ""}`;
   if (t === "edit_milestone") {
     const bits: string[] = [];
     if (op.title) bits.push(`rename to "${op.title}"`);
@@ -294,7 +295,7 @@ export async function applyOp(op: PlanOp, h: Hooks): Promise<string | null> {
       if (op.category !== undefined) patch.category = op.category;
       await mut(h.updateMilestone.mutateAsync({ id: ex.id, data: patch }));
     } else {
-      await mut(h.createMilestone.mutateAsync({ title: String(op.title), type: op.kind ?? "milestone", date: op.date ?? "", category: op.category ?? null, note: op.note ?? "" }));
+      await mut(h.createMilestone.mutateAsync({ title: String(op.title), type: op.kind ?? "milestone", date: op.date ?? "", category: op.category, note: op.note ?? "" }));
     }
     return `${op.kind === "gate" ? "Gate" : "Milestone"}: "${op.title}"`;
   }

@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireApiAuth } from "@/lib/api/guard";
-import { createEntity } from "@/lib/db/queries";
+import { createEntity, getWorkingSet } from "@/lib/db/queries";
 import { entityConfig, isEntityName } from "@/lib/entities";
+import { checkMilestone, checkTask, trackForTask } from "@/lib/hierarchy";
 
 type Ctx = { params: Promise<{ id: string; entity: string }> };
 
@@ -22,6 +23,27 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   }
   // Preserve a client-provided id if present (used by AI setup / import flows).
   const data = { ...parsed.data } as Record<string, unknown>;
+
+  // track → milestone → task → subtask. Enforced here because this endpoint
+  // is the one gate every creation path shares, the raw API included.
+  if (entity === "milestones") {
+    const issue = checkMilestone(data, true);
+    if (issue) return NextResponse.json(issue, { status: 400 });
+  }
+  if (entity === "tasks") {
+    const ws = await getWorkingSet(ctx.orgId, id);
+    if (!ws) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const issue = checkTask(data, true, ws);
+    if (issue) return NextResponse.json(issue, { status: 400 });
+    // The milestone owns the track, so it is derived rather than trusted —
+    // a caller cannot file a task under a milestone in another track.
+    const track = trackForTask(data, ws);
+    if (track) data.category = track;
+    if (data.parentId && !data.milestoneId) {
+      const parent = ws.tasks.find((t) => t.id === data.parentId);
+      if (parent?.milestoneId) data.milestoneId = parent.milestoneId;
+    }
+  }
   if (typeof body.id === "string") data.id = body.id;
   const row = await createEntity(ctx.orgId, id, entity, data);
   return NextResponse.json(row, { status: 201 });

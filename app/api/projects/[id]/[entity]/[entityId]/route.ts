@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireApiAuth } from "@/lib/api/guard";
-import { updateEntity, deleteEntity } from "@/lib/db/queries";
+import { updateEntity, deleteEntity, getWorkingSet } from "@/lib/db/queries";
 import { entityConfig, isEntityName } from "@/lib/entities";
+import { checkMilestone, checkTask, trackForTask } from "@/lib/hierarchy";
 
 type Ctx = { params: Promise<{ id: string; entity: string; entityId: string }> };
 
@@ -20,7 +21,28 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       { status: 400 },
     );
   }
-  const row = await updateEntity(ctx.orgId, id, entity, entityId, parsed.data);
+  // The same containment rules as creation. A partial patch that never
+  // mentions the parent link leaves it alone and passes untouched, so this
+  // blocks clearing a link without forcing every edit to restate it.
+  const data = { ...parsed.data } as Record<string, unknown>;
+  if (entity === "milestones") {
+    const issue = checkMilestone(data, false);
+    if (issue) return NextResponse.json(issue, { status: 400 });
+  }
+  if (entity === "tasks") {
+    const ws = await getWorkingSet(ctx.orgId, id);
+    if (!ws) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const issue = checkTask(data, false, ws);
+    if (issue) return NextResponse.json(issue, { status: 400 });
+    // Re-derive the track whenever the milestone moves, so the two cannot
+    // drift apart.
+    if ("milestoneId" in data || "parentId" in data) {
+      const track = trackForTask(data, ws);
+      if (track) data.category = track;
+    }
+  }
+
+  const row = await updateEntity(ctx.orgId, id, entity, entityId, data);
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(row);
 }

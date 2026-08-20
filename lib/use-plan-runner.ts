@@ -139,14 +139,32 @@ export function usePlanRunner(projectId: string): PlanRunner {
 
     setApplying(true);
     let applied = 0;
+    const failures: string[] = [];
     try {
+      // One rejected operation must not discard the rest of the batch: the
+      // server refuses individual writes (a milestone with no track, a task
+      // with no milestone), and losing every later change to one failure is
+      // both surprising and silent.
       for (const op of approved) {
-        const label = await applyOp(op, hooks);
-        if (label) applied++;
+        try {
+          const label = await applyOp(op, hooks);
+          if (label) applied++;
+        } catch (e) {
+          failures.push((e as Error).message);
+        }
       }
       await qc.invalidateQueries({ queryKey: ["project", projectId] });
       await qc.invalidateQueries({ queryKey: ["projects"] });
-      toast.success(`Applied ${applied} change${applied === 1 ? "" : "s"}`);
+      if (failures.length) {
+        // Named rather than counted: "1 change could not be applied" gives
+        // the reader nothing to act on.
+        toast.warning(
+          `Applied ${applied} of ${approved.length} — ${failures[0]}`,
+          { description: failures.length > 1 ? `and ${failures.length - 1} more` : undefined },
+        );
+      } else {
+        toast.success(`Applied ${applied} change${applied === 1 ? "" : "s"}`);
+      }
       logActivity(
         `Plan update from chat: ${applied} change${applied === 1 ? "" : "s"} applied`,
         { kind: "import" },

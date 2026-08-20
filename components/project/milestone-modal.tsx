@@ -37,15 +37,19 @@ export function MilestoneModal({
   const isGate = form.type === "gate";
 
   function save() {
-    if (isGate && form.category === "none") {
-      toast.error("A gate validates a track's work — pick the track it gates.");
+    if (form.category === "none") {
+      toast.error(
+        isGate
+          ? "A gate validates a track's work — pick the track it gates."
+          : "A milestone must belong to a track — pick one.",
+      );
       return;
     }
     const payload = {
       title: form.title.trim() || (isGate ? "Untitled gate" : "Untitled milestone"),
       type: form.type,
       date: form.date,
-      category: form.category === "none" ? null : form.category,
+      category: form.category,
       note: form.note,
     };
     const onError = (e: unknown) => toast.error((e as Error).message);
@@ -107,21 +111,20 @@ export function MilestoneModal({
               <Input type="date" value={form.date} onChange={(e) => set("date", e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Track {isGate && <span className="text-[var(--t-red)]">*</span>}</Label>
+              <Label>Track <span className="text-[var(--t-red)]">*</span></Label>
               <Select value={form.category} onValueChange={(v) => set("category", v)}>
-                <SelectTrigger><SelectValue placeholder="No track" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Pick a track" /></SelectTrigger>
                 <SelectContent>
-                  {!isGate && <SelectItem value="none">No track</SelectItem>}
                   {ws.categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
           </div>
-          {isGate && (
-            <p className="text-muted-foreground -mt-2 text-xs">
-              A gate validates a track&rsquo;s work — pick the track it gates.
-            </p>
-          )}
+          <p className="text-muted-foreground -mt-2 text-xs">
+            {isGate
+              ? "A gate validates a track’s work — pick the track it gates."
+              : "Every milestone belongs to a track, so it anchors that track’s work."}
+          </p>
 
           <div className="space-y-1.5">
             <Label>Note</Label>
