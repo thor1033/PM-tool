@@ -2,10 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-  Plus, Trash2, ExternalLink, Link2, Upload, X, FileText, FileSpreadsheet,
-  Presentation, Image as ImageIcon, File as FileIcon,
-} from "lucide-react";
+import { Plus, Trash2, ExternalLink, Link2, Upload, X } from "lucide-react";
 import {
   useProject,
   useCreateEntity,
@@ -13,6 +10,7 @@ import {
   useDeleteEntity,
 } from "@/lib/api/hooks";
 import type { Product, Task } from "@/lib/types";
+import { FILE_TYPES, TYPE_META, typeMeta, inferType } from "@/lib/file-types";
 import { accent } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { ModuleHeader, EmptyState } from "@/components/project/ui";
@@ -35,34 +33,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-// ── file type system ─────────────────────────────────────────────────────────
-
-const FILE_TYPES = ["doc", "pdf", "excel", "image", "slides"] as const;
-type FileType = (typeof FILE_TYPES)[number];
-
-const TYPE_META: Record<FileType, { label: string; color: string; icon: typeof FileText }> = {
-  image: { label: "Image", color: "pink", icon: ImageIcon },
-  pdf: { label: "PDF", color: "red", icon: FileText },
-  excel: { label: "Excel", color: "green", icon: FileSpreadsheet },
-  slides: { label: "Slides", color: "amber", icon: Presentation },
-  doc: { label: "Doc", color: "blue", icon: FileIcon },
-};
-
-function typeMeta(type: string) {
-  return TYPE_META[type as FileType] ?? TYPE_META.doc;
-}
-
-/** Best-effort type inference from a URL's extension — used when a link is
- *  dropped/pasted so the picker can default to something sensible. */
-function inferType(url: string): FileType {
-  const ext = url.split(/[?#]/)[0].split(".").pop()?.toLowerCase() ?? "";
-  if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) return "image";
-  if (ext === "pdf") return "pdf";
-  if (["xls", "xlsx", "csv"].includes(ext)) return "excel";
-  if (["ppt", "pptx", "key"].includes(ext)) return "slides";
-  return "doc";
-}
 
 // ── product dialog (add / edit) ─────────────────────────────────────────────
 
@@ -115,7 +85,7 @@ function ProductDialog({
 
   async function remove() {
     if (!item) return;
-    if (!(await confirm({ title: `Delete “${item.name}”?`, body: "This removes it from the catalogue." }))) return;
+    if (!(await confirm({ title: `Delete “${item.name}”?`, body: "This removes it from Files." }))) return;
     del.mutate(item.id, { onError: (e) => toast.error((e as Error).message) });
     onOpenChange(false);
   }
@@ -413,7 +383,7 @@ export function CatalogueModule({ projectId }: { projectId: string }) {
     <div>
       <ModuleHeader
         eyebrow="Delivery"
-        title="Product catalogue"
+        title="Files"
         description="Every deliverable produced by the project — link to where the files actually live."
         actions={
           <Button onClick={() => setDialog({ open: true, item: null })}>

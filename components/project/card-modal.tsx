@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Plus, X, Trash2, MessageSquare, TriangleAlert, Link2, Target, Package, GitBranch, ListChecks, Check, Users,
+  ExternalLink, Files as FilesIcon,
 } from "lucide-react";
 import {
   useCreateEntity, useUpdateEntity, useDeleteEntity,
 } from "@/lib/api/hooks";
+import { FileTypeIcon, inferType } from "@/lib/file-types";
 import { resolveDep, wouldConflict, initials, followupChainOf, fmtD, daysBetween, subtaskDefaults, todayISO, type ResolvedDep } from "@/lib/tasks";
 import { TASK_KINDS, DEFAULT_KIND, meetingTimeRange } from "@/lib/task-kinds";
 import { milestonesForTask } from "@/lib/milestone-grouping";
@@ -105,7 +107,7 @@ function DepEditor({
   const freeProducts = ws.products.filter((p) => !deps.some((d) => d.type === "deliverable" && d.refId === p.id));
   const freeExternals = ws.externals.filter((e) => !deps.some((d) => d.type === "ext" && d.refId === e.id));
 
-  // Keep product.taskIds in sync — the catalogue reads that reverse index
+  // Keep product.taskIds in sync — Files reads that reverse index
   // directly rather than scanning every task's deps.
   function syncProductLink(productId: string, linked: boolean) {
     if (!task) return;
@@ -310,6 +312,194 @@ function RiskLinker({
 }
 
 // ── main card modal ──────────────────────────────────────────────────────────
+
+/* Files attached to a task.
+ *
+ * Distinct from a deliverable dependency, which says "this task cannot start
+ * until that file exists". This is the plainer relationship: the brief, the
+ * spec, the deck someone needs open while doing the work.
+ *
+ * The link is stored on the file's `taskIds` rather than on the task, because
+ * that is the reverse index the Files page already reads — keeping it in one
+ * place means the two views cannot disagree about what is attached. */
+function TaskFiles({
+  task,
+  ws,
+  projectId,
+}: {
+  task: Task;
+  ws: WorkingSet;
+  projectId: string;
+}) {
+  const updateProduct = useUpdateEntity(projectId, "products");
+  const createProduct = useCreateEntity(projectId, "products");
+  const [picking, setPicking] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newUrl, setNewUrl] = useState("");
+
+  const linked = ws.products.filter((p) => (p.taskIds ?? []).includes(task.id));
+  const available = ws.products.filter((p) => !(p.taskIds ?? []).includes(task.id));
+
+  function link(productId: string, on: boolean) {
+    const p = ws.products.find((x) => x.id === productId);
+    if (!p) return;
+    const ids = p.taskIds ?? [];
+    const next = on ? [...new Set([...ids, task.id])] : ids.filter((id) => id !== task.id);
+    updateProduct.mutate(
+      { id: productId, data: { taskIds: next } },
+      { onError: (e) => toast.error((e as Error).message) },
+    );
+    setPicking(false);
+  }
+
+  // Adding a file from here saves a trip to the Files page for the common
+  // case of pasting a drive link while writing the task up.
+  function addNew() {
+    const name = newName.trim();
+    const url = newUrl.trim();
+    if (!name && !url) return;
+    createProduct.mutate(
+      {
+        name: name || url,
+        url,
+        type: inferType(url),
+        taskIds: [task.id],
+        date: "",
+        note: "",
+        placeholder: !url,
+      },
+      {
+        onError: (e) => toast.error((e as Error).message),
+        onSuccess: () => {
+          setNewName("");
+          setNewUrl("");
+          setPicking(false);
+        },
+      },
+    );
+  }
+
+  return (
+    <div className="border-t pt-4">
+      <h4 className="mb-3 flex items-center gap-1.5 text-sm font-medium">
+        <FilesIcon className="text-muted-foreground size-4" />
+        Files
+        {linked.length > 0 && (
+          <span className="bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 text-xs">
+            {linked.length}
+          </span>
+        )}
+      </h4>
+
+      {linked.length > 0 && (
+        <ul className="mb-2 flex flex-col gap-1">
+          {linked.map((p) => (
+            <li
+              key={p.id}
+              className="group flex items-center gap-2 rounded-[var(--radius-sm)] border px-2.5 py-1.5"
+            >
+              <FileTypeIcon type={p.type} />
+              <span className="min-w-0 flex-1 truncate text-[13px]">
+                {p.name || "Untitled file"}
+              </span>
+              {p.url && (
+                <a
+                  href={p.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-muted-foreground hover:text-foreground shrink-0 transition"
+                  title="Open file"
+                >
+                  <ExternalLink className="size-3.5" />
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => link(p.id, false)}
+                className="text-muted-foreground hover:text-[var(--t-red)] shrink-0 transition"
+                title="Unlink from this task"
+              >
+                <X className="size-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!picking ? (
+        <button
+          type="button"
+          onClick={() => setPicking(true)}
+          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-[13px] font-medium transition"
+        >
+          <Plus className="size-3.5" /> Link a file
+        </button>
+      ) : (
+        <div className="rounded-[var(--radius-sm)] border p-2.5">
+          {available.length > 0 && (
+            <>
+              <p className="text-muted-foreground mb-1.5 text-[11.5px] font-semibold uppercase tracking-wide">
+                From Files
+              </p>
+              <ul className="mb-2.5 flex max-h-40 flex-col gap-0.5 overflow-y-auto">
+                {available.map((p) => (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      onClick={() => link(p.id, true)}
+                      className="flex w-full items-center gap-2 rounded-[var(--radius-sm)] px-2 py-1.5 text-left transition hover:bg-[var(--paper-2)]"
+                    >
+                      <FileTypeIcon type={p.type} />
+                      <span className="min-w-0 flex-1 truncate text-[13px]">
+                        {p.name || "Untitled file"}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          <p className="text-muted-foreground mb-1.5 text-[11.5px] font-semibold uppercase tracking-wide">
+            Or add a new one
+          </p>
+          <div className="flex flex-col gap-1.5">
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="File name"
+              className="h-8 text-[13px]"
+            />
+            <Input
+              value={newUrl}
+              onChange={(e) => setNewUrl(e.target.value)}
+              placeholder="Paste a drive link"
+              className="h-8 text-[13px]"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addNew();
+                }
+              }}
+            />
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={addNew} disabled={!newName.trim() && !newUrl.trim()}>
+                Add file
+              </Button>
+              <button
+                type="button"
+                onClick={() => setPicking(false)}
+                className="text-muted-foreground hover:text-foreground text-[12.5px] font-medium transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function CardModal({
   ws, projectId, task, defaultCategoryId, defaultMilestoneId, defaultStatus, open, onOpenChange,
@@ -891,6 +1081,10 @@ export function CardModal({
               deps={form.deps.filter((d) => d.type !== "followup")}
               onChange={(next) => set("deps", [...next, ...form.deps.filter((d) => d.type === "followup")])}
             />
+
+            {activeTask && (
+              <TaskFiles task={activeTask} ws={ws} projectId={projectId} />
+            )}
 
             {activeTask && (
               <div className="border-t pt-4">

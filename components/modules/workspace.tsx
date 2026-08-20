@@ -416,7 +416,7 @@ function WSHub({ task, ws, projectId, wide, onOpenTask, onSelectTask }: {
         )}
 
         {/* Files & links — everything a person needs to actually do the task.
-            Today that's the catalogue deliverables linked to it. */}
+            Today that's the files linked to it. */}
         {ctx.deliverables.length > 0 && (
           <HubCard title="Files & links" count={ctx.deliverables.length} icon={Package}>
             <ul className="divide-y">
