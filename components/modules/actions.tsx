@@ -350,7 +350,13 @@ export function ActionsModule({ projectId }: { projectId: string }) {
   }
 
   const showSortBy = view === "list";
-  const showGlobalFilter = view !== "timeline" && view !== "calendar";
+  // The timeline and calendar used to be excluded here because they ignored
+  // this filter entirely. Now that they honour it, the Status control is the
+  // only way to hide finished work on a gantt — and on a project with a long
+  // tail of completed tasks, that is the difference between a readable chart
+  // and a wall of grey bars. The timeline keeps its own popover for the
+  // things only it has: date range and per-track bands.
+  const showGlobalFilter = true;
   const showSearch = view !== "timeline" && view !== "calendar";
 
 
@@ -443,13 +449,13 @@ export function ActionsModule({ projectId }: { projectId: string }) {
       )}
       {view === "timeline" && (
         <TimelineView
-          ws={ws} projectId={projectId} filtered={ws.tasks}
+          ws={ws} projectId={projectId} filtered={filtered}
           filters={timelineFilters} sort={timelineSort} layers={timelineLayers}
           onEdit={openTask} onEditMilestone={(m) => openMilestone(m)}
         />
       )}
       {view === "calendar" && (
-        <CalendarView ws={ws} projectId={projectId} filtered={ws.tasks} onEdit={openTask} onEditMilestone={(m) => openMilestone(m)} />
+        <CalendarView ws={ws} projectId={projectId} filtered={filtered} onEdit={openTask} onEditMilestone={(m) => openMilestone(m)} />
       )}
       {view === "kanban" && (
         <KanbanView
