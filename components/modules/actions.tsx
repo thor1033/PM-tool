@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Rows3, GitBranch, Calendar, KanbanSquare, SlidersHorizontal, ArrowUpDown, Search, X, Plus } from "lucide-react";
+import { Rows3, GitBranch, Calendar, KanbanSquare, SlidersHorizontal, ArrowUpDown, Search, X, Plus, EyeOff } from "lucide-react";
 import { useProject } from "@/lib/api/hooks";
 import { taskMatchesFilter, taskIdMap, NO_TRACK_ID } from "@/lib/tasks";
 import { peopleOf, unknownAssignees } from "@/lib/people";
@@ -311,6 +311,10 @@ export function ActionsModule({ projectId }: { projectId: string }) {
     [filteredNoStatus, fStatus],
   );
 
+  // Counted against what the other filters already allow, so it reports the
+  // work this one control is holding back rather than everything unshown.
+  const hiddenByStatus = filteredNoStatus.length - filtered.length;
+
   // Deep link from elsewhere in the app: /actions?task=<id> opens that task's
   // editor here, in the list it actually lives in, rather than a detached
   // preview.
@@ -416,7 +420,28 @@ export function ActionsModule({ projectId }: { projectId: string }) {
             />
           )}
           {showSortBy && <SortByDropdown sort={sort} onChange={changeSort} />}
-          {view === "timeline" && (
+          {/* What the filter is holding back, said in words.
+          The badge on the Filter button ("Filter · 1") shows that something
+          is hidden but not what, and on a project whose finished work is most
+          of the plan that reads as "my tasks are gone". This names the number
+          and puts the way back one click away. */}
+      {hiddenByStatus > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
+          <EyeOff className="text-muted-foreground size-3.5 shrink-0" />
+          <span className="text-muted-foreground">
+            {hiddenByStatus} completed {hiddenByStatus === 1 ? "task is" : "tasks are"} hidden
+          </span>
+          <button
+            type="button"
+            onClick={() => setFStatus(STATUS_FILTERS.map((s) => s.id))}
+            className="hover:text-foreground font-semibold underline decoration-[var(--line-strong)] underline-offset-2"
+          >
+            Show them
+          </button>
+        </div>
+      )}
+
+      {view === "timeline" && (
             <>
               <TimelineFilterPopover ws={ws} filters={timelineFilters} setFilters={setTimelineFilters} />
               <TimelineSortPopover
