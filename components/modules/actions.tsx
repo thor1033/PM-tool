@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Rows3, GitBranch, Calendar, KanbanSquare, SlidersHorizontal, ArrowUpDown, Search, X, Plus, EyeOff } from "lucide-react";
+import { Rows3, GitBranch, Calendar, KanbanSquare, SlidersHorizontal, ArrowUpDown, Search, X, Plus, EyeOff, ChevronDown, Check } from "lucide-react";
 import { useProject } from "@/lib/api/hooks";
-import { taskMatchesFilter, taskIdMap, NO_TRACK_ID } from "@/lib/tasks";
+import { taskMatchesFilter, taskIdMap, NO_TRACK_ID, NONE_SELECTED } from "@/lib/tasks";
 import { peopleOf, unknownAssignees } from "@/lib/people";
 import { TrackModal } from "@/components/project/track-modal";
 import type { Task, Milestone, Category, WorkingSet } from "@/lib/types";
@@ -43,6 +43,143 @@ const VIEWS: { id: ActionsView; label: string; icon: typeof Rows3 }[] = [
 
 type View = ActionsView;
 
+/** Multi-select track dropdown.
+ *
+ *  A row of chips grew unreadable as tracks were added and gave no sense of
+ *  how many were on; a dropdown states the selection in its own label and
+ *  keeps the popover a fixed size however many tracks exist.
+ *
+ *  Selection is stored as the explicit list of visible tracks. An empty list
+ *  still means "show everything" everywhere else in the app, so "Select all"
+ *  clears rather than enumerating — the two are the same view, and clearing
+ *  keeps the badge honest about nothing being filtered.
+ */
+function TrackSelect({
+  ws,
+  fCat,
+  setFCat,
+}: {
+  ws: Pick<WorkingSet, "categories">;
+  fCat: string[];
+  setFCat: (v: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function h(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  const options = [
+    ...ws.categories.map((c) => ({ id: c.id, label: c.label, color: accentVar(c.color) })),
+    // Tasks are allowed to have no track, so the filter has to be able to
+    // select them.
+    { id: NO_TRACK_ID, label: "No track", color: "var(--ink-ghost)" },
+  ];
+  const allIds = options.map((o) => o.id);
+  const showingAll = fCat.length === 0;
+  const hidingAll = fCat.length === 1 && fCat[0] === NONE_SELECTED;
+
+  const toggle = (id: string) => {
+    // Coming out of "hide all", the first tick is the only thing selected.
+    const base = hidingAll ? [] : showingAll ? allIds : fCat;
+    const next = base.includes(id) ? base.filter((x) => x !== id) : [...base, id];
+    // Everything ticked is the same view as nothing filtered; storing it as
+    // empty keeps the filter badge from claiming a filter that hides nothing.
+    if (next.length === allIds.length) setFCat([]);
+    else if (next.length === 0) setFCat([NONE_SELECTED]);
+    else setFCat(next);
+  };
+
+  const isOn = (id: string) => (hidingAll ? false : showingAll || fCat.includes(id));
+  const onCount = hidingAll ? 0 : showingAll ? allIds.length : fCat.length;
+
+  const label = showingAll
+    ? "All tracks"
+    : hidingAll
+      ? "No tracks"
+      : onCount === 1
+        ? options.find((o) => o.id === fCat[0])?.label ?? "1 track"
+        : `${onCount} tracks`;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          "inline-flex w-full items-center justify-between gap-2 rounded-[var(--radius-sm)] border px-3 py-2 text-[13px] font-medium transition",
+          !showingAll && "border-primary text-primary",
+          showingAll && "hover:bg-muted",
+        )}
+      >
+        <span className="flex min-w-0 items-center gap-1.5">
+          {onCount === 1 && !showingAll && !hidingAll && (
+            <span
+              className="size-2 shrink-0 rounded-full"
+              style={{ background: options.find((o) => o.id === fCat[0])?.color }}
+            />
+          )}
+          <span className="truncate">{label}</span>
+        </span>
+        <ChevronDown className={cn("size-3.5 shrink-0 transition", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <div className="bg-popover absolute left-0 right-0 z-[80] mt-1 rounded-[var(--radius-md)] border p-1.5 shadow-lg">
+          {/* Select all / Hide all close the list: each is a complete
+              decision. Individual ticks leave it open so several tracks can
+              be set in one pass. */}
+          <div className="mb-1 flex items-center gap-1 border-b px-1 pb-1.5">
+            <button
+              type="button"
+              onClick={() => { setFCat([]); setOpen(false); }}
+              className="hover:bg-muted flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-[12px] font-semibold transition"
+            >
+              Select all
+            </button>
+            <button
+              type="button"
+              onClick={() => { setFCat([NONE_SELECTED]); setOpen(false); }}
+              className="hover:bg-muted flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-[12px] font-semibold transition"
+            >
+              Hide all
+            </button>
+          </div>
+          <ul className="max-h-56 overflow-y-auto">
+            {options.map((o) => (
+              <li key={o.id}>
+                <button
+                  type="button"
+                  onClick={() => toggle(o.id)}
+                  className="hover:bg-muted flex w-full items-center gap-2 rounded-[var(--radius-sm)] px-2 py-1.5 text-left text-[13px] transition"
+                >
+                  <span
+                    className={cn(
+                      "flex size-4 shrink-0 items-center justify-center rounded-[4px] border",
+                      isOn(o.id) && "bg-foreground border-foreground",
+                    )}
+                  >
+                    {isOn(o.id) && <Check className="text-background size-3" />}
+                  </span>
+                  <span className="size-2 shrink-0 rounded-full" style={{ background: o.color }} />
+                  <span className="min-w-0 truncate">{o.label}</span>
+                </button>
+              </li>
+            ))}
+            {ws.categories.length === 0 && (
+              <li className="text-muted-foreground px-2 py-1.5 text-[13px]">No tracks yet</li>
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── header Filter popover ───────────────────────────────────────────────────
 
 function FilterPopover({
@@ -68,7 +205,6 @@ function FilterPopover({
   // work, and that should be visible rather than silent.
   const statusHides = fStatus.length > 0 && fStatus.length < STATUS_FILTERS.length;
   const count = fCat.length + fWho.length + (showStatus && statusHides ? 1 : 0);
-  const toggleCat = (id: string) => setFCat(fCat.includes(id) ? fCat.filter((x) => x !== id) : [...fCat, id]);
   const toggleWho = (id: string) => setFWho(fWho.includes(id) ? fWho.filter((x) => x !== id) : [...fWho, id]);
   const toggleStatus = (id: string) =>
     setFStatus(fStatus.includes(id) ? fStatus.filter((x) => x !== id) : [...fStatus, id]);
@@ -155,32 +291,7 @@ function FilterPopover({
             ))}
           </div>}
           <p className="eyebrow mb-2">Track</p>
-          <div className="flex flex-wrap gap-2">
-            {ws.categories.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => toggleCat(c.id)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition",
-                  fCat.includes(c.id) ? "bg-foreground text-background border-foreground" : "hover:bg-muted",
-                )}
-              >
-                <span className="size-2 rounded-full" style={{ background: accentVar(c.color) }} />{c.label}
-              </button>
-            ))}
-            {/* Tasks are allowed to have no track, so the filter has to be
-                able to select them — the timeline already offered this. */}
-            <button
-              onClick={() => toggleCat(NO_TRACK_ID)}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition",
-                fCat.includes(NO_TRACK_ID) ? "bg-foreground text-background border-foreground" : "hover:bg-muted",
-              )}
-            >
-              <span className="bg-ink-ghost size-2 rounded-full" />No track
-            </button>
-            {ws.categories.length === 0 && <span className="text-muted-foreground text-sm">No tracks yet</span>}
-          </div>
+          <TrackSelect ws={ws} fCat={fCat} setFCat={setFCat} />
         </div>
       )}
     </div>

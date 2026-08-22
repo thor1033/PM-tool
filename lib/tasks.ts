@@ -88,6 +88,10 @@ export function taskIdMap(tasks: Task[]): Map<string, number> {
 /** Filter id for "tasks with no track" — a real, selectable bucket, since a
  *  task is allowed to have no category. */
 export const NO_TRACK_ID = "_none";
+/** Selected when the track filter is set to show nothing at all. No task can
+ *  carry it, so it matches none — "hide all" has to be a real selection
+ *  rather than an empty one, because empty already means "show everything". */
+export const NONE_SELECTED = "_hidden";
 
 export function taskMatchesFilter(t: Task, fCat: string[], fWho: string[]): boolean {
   if (fCat.length) {

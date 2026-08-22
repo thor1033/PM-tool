@@ -281,11 +281,15 @@ export function ListView({
     });
 
     const out: Group[] = [];
+    // A track filter is an explicit statement about which tracks to show, so
+    // a deselected one goes entirely — header, milestones and all. That is
+    // different from a track left empty by the status filter, which stays
+    // listed: structure the user created should not silently disappear just
+    // because Done is hidden. The row explains itself below.
+    const trackSelected = (id: string) => fCat.length === 0 || fCat.includes(id);
     ws.categories.forEach((c) => {
+      if (!trackSelected(c.id)) return;
       const tasks = byCat.get(c.id) ?? [];
-      // Tracks are structure the user created, so they stay listed even when a
-      // filter leaves them empty — a fully-done track shouldn't silently
-      // disappear just because Done is hidden. The row explains itself below.
       out.push({ key: c.id, label: c.label, color: c.color, tasks, owner: c.owner ?? null, icon: c.icon ?? null });
     });
     SYNTH_GROUPS.forEach((g) => {
@@ -300,7 +304,7 @@ export function ListView({
       out.push({ key: "_none", label: "Undefined track", color: null, tasks: undefinedCategory });
     }
     return out;
-  }, [filtered, ws.categories]);
+  }, [filtered, ws.categories, fCat]);
 
 
   // Grouped once per render instead of re-filtering the full task list for
