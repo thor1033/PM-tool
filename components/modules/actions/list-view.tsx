@@ -24,7 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
-import { COLLAPSE_STORAGE_KEY_PREFIX, OPEN_SUBS_STORAGE_KEY_PREFIX } from "@/components/modules/actions/shared";
+import { COLLAPSE_STORAGE_KEY_PREFIX, OPEN_SUBS_STORAGE_KEY_PREFIX, MS_FOLD_STORAGE_KEY_PREFIX } from "@/components/modules/actions/shared";
 import type { SortMode } from "@/components/modules/actions/shared";
 import { useConfirm } from "@/components/project/confirm";
 
@@ -184,6 +184,17 @@ export function ListView({
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => loadJSON(`${COLLAPSE_STORAGE_KEY_PREFIX}${projectId}`, {}));
   const [expandedSubs, setExpandedSubs] = useState<Record<string, boolean>>(() => loadJSON(`${OPEN_SUBS_STORAGE_KEY_PREFIX}${projectId}`, {}));
+  // Milestones fold individually. Only a deliberate choice is stored, so a
+  // reached milestone stays folded by default without an entry per row.
+  const [msFold, setMsFold] = useState<Record<string, boolean>>(() => loadJSON(`${MS_FOLD_STORAGE_KEY_PREFIX}${projectId}`, {}));
+  const msOpen = (mg: MilestoneGroup) => msFold[mg.key] ?? !mg.reachedOn;
+  function toggleMilestone(key: string, isOpen: boolean) {
+    setMsFold((s) => {
+      const next = { ...s, [key]: !isOpen };
+      saveJSON(`${MS_FOLD_STORAGE_KEY_PREFIX}${projectId}`, next);
+      return next;
+    });
+  }
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
   const [dragOverRow, setDragOverRow] = useState<string | null>(null);
   const [addingSubFor, setAddingSubFor] = useState<string | null>(null);
@@ -404,7 +415,9 @@ export function ListView({
 
         for (const mg of groupByMilestone(g.tasks, groupMilestones)) {
           rows.push({ kind: "msHeader", group: mg });
-          mg.tasks.forEach((t) => rows.push({ kind: "task", task: t }));
+          // A reached milestone is a record of finished work, so it folds
+          // shut and states its count instead of listing every task.
+          if (msOpen(mg)) mg.tasks.forEach((t) => rows.push({ kind: "task", task: t }));
           // Gates land between milestones, never inside one: a gate dropped
           // mid-group visually orphans the tasks below it from their header.
           const closesAt = mg.milestone?.date
@@ -653,10 +666,23 @@ export function ListView({
                       const m = mg.milestone;
                       const col = a ? accentVar(g.color) : "var(--accent-deep)";
                       const overdue = m?.date && m.date < today && !mg.complete;
+                      const done = !!mg.reachedOn;
+                      const open = msOpen(mg);
                       return (
                         <tr key={`ms-${mg.key}`}>
                           <td colSpan={7} className="pb-1 pt-4 first:pt-1">
-                            <div className="flex items-center gap-2.5">
+                            {/* A reached milestone is a record, not a to-do:
+                                it recedes to grey, keeps a green mark, and
+                                folds shut over its finished tasks. */}
+                            <div className={cn("flex items-center gap-2.5", done && "opacity-65")}>
+                              <button
+                                onClick={() => toggleMilestone(mg.key, open)}
+                                className="text-muted-foreground hover:text-foreground shrink-0 transition"
+                                title={open ? "Fold this milestone" : "Show its tasks"}
+                                aria-expanded={open}
+                              >
+                                <ChevronRight className={cn("size-3.5 transition", open && "rotate-90")} />
+                              </button>
                               {m ? (
                                 <button
                                   onClick={() => onEditMilestone(m)}
@@ -665,11 +691,18 @@ export function ListView({
                                 >
                                   <span
                                     className="flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)]"
-                                    style={{ background: `color-mix(in oklch, ${col} 16%, var(--panel))`, color: col }}
+                                    style={
+                                      done
+                                        ? { background: "color-mix(in oklch, var(--hue-done) 16%, var(--panel))", color: "var(--hue-done)" }
+                                        : { background: `color-mix(in oklch, ${col} 16%, var(--panel))`, color: col }
+                                    }
                                   >
-                                    {mg.reachedOn ? <Check className="size-3.5" /> : <MilestoneIcon className="size-3.5" />}
+                                    {done ? <Check className="size-3.5" /> : <MilestoneIcon className="size-3.5" />}
                                   </span>
-                                  <span className="truncate text-[14px] font-bold group-hover/ms:underline">
+                                  <span className={cn(
+                                    "truncate text-[14px] font-bold group-hover/ms:underline",
+                                    done && "text-muted-foreground",
+                                  )}>
                                     {m.title || "Untitled milestone"}
                                   </span>
                                   <span
@@ -680,6 +713,13 @@ export function ListView({
                                   >
                                     {m.date ? fmtD(m.date) : "no date"}
                                   </span>
+                                  {/* Folded away tasks are counted, never
+                                      silently dropped. */}
+                                  {!open && mg.tasks.length > 0 && (
+                                    <span className="text-muted-foreground shrink-0 text-[11.5px]">
+                                      {mg.doneCount}/{mg.tasks.length} tasks
+                                    </span>
+                                  )}
                                   {mg.reachedOn && (
                                     <span
                                       className="shrink-0 font-mono text-[11.5px] font-semibold"

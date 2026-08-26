@@ -13,6 +13,9 @@ export type SortMode = "category" | "upcoming" | "status" | "owner";
 export const VIEW_STORAGE_KEY = "atlas.actions.mode";
 export const SORT_STORAGE_KEY = "atlas.actions.sort";
 export const COLLAPSE_STORAGE_KEY_PREFIX = "atlas.actions.expanded.";
+/** Per-milestone fold state. Only deliberate choices are stored — a reached
+ *  milestone folds by default without needing an entry of its own. */
+export const MS_FOLD_STORAGE_KEY_PREFIX = "atlas.actions.msfold.";
 export const OPEN_SUBS_STORAGE_KEY_PREFIX = "atlas.actions.opensubs.";
 
 /** A track group used by the List view, plus the two pinned synthetic groups
