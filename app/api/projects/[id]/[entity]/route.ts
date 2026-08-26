@@ -7,8 +7,8 @@ import {
   checkTask,
   trackForTask,
   inheritFromParent,
-  clearBacklogDates,
 } from "@/lib/hierarchy";
+import { applyDateRules } from "@/lib/task-dates";
 
 type Ctx = { params: Promise<{ id: string; entity: string }> };
 
@@ -51,9 +51,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       if (track) data.category = track;
     }
 
-    // Runs after the status is settled: unstarted work carries no start or
-    // completion date, and the milestone is what supplies its deadline.
-    clearBacklogDates(data, true);
+    // Runs after the status is settled, since every date rule keys off it.
+    applyDateRules(data, true, undefined, ws);
   }
   if (typeof body.id === "string") data.id = body.id;
   const row = await createEntity(ctx.orgId, id, entity, data);

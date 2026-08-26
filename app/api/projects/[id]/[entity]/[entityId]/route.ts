@@ -7,8 +7,8 @@ import {
   checkTask,
   trackForTask,
   cascadeToSubtasks,
-  clearBacklogDates,
 } from "@/lib/hierarchy";
+import { applyDateRules } from "@/lib/task-dates";
 
 type Ctx = { params: Promise<{ id: string; entity: string; entityId: string }> };
 
@@ -68,9 +68,8 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       if (track) data.category = track;
     }
 
-    // Unstarted work carries no start or completion date; the milestone is
-    // what supplies its deadline.
-    clearBacklogDates(data, false, self);
+    // Runs after the status is settled, since every date rule keys off it.
+    applyDateRules(data, false, self, ws);
 
     // Whatever happens to a task happens to its parts: moving it takes them
     // along, and so does changing its status.
@@ -83,6 +82,15 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       },
       ws,
     );
+    // Each child goes through the same date rules as the parent did, so a
+    // subtask closed by a cascade records the same dates as one closed by
+    // hand — and a stale comment about cascadeToSubtasks stamping them no
+    // longer describes two implementations.
+    for (const child of children) {
+      const self = ws.tasks.find((t) => t.id === child.id);
+      applyDateRules(child.data, false, self, ws);
+    }
+
     const row = await updateTaskWithSubtasks(ctx.orgId, id, entityId, data, children);
     if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(row);

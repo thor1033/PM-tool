@@ -154,7 +154,7 @@ export function useCreateEntity(projectId: string, entity: EntityName) {
     mutationFn: (raw: Record<string, unknown>) =>
       apiFetch(`/api/projects/${projectId}/${entity}`, {
         method: "POST",
-        body: JSON.stringify(withCompletionDate(entity, raw)),
+        body: JSON.stringify(raw),
       }),
     onMutate: async (raw: Record<string, unknown>) => {
       const data = withCompletionDate(entity, raw);
@@ -188,12 +188,12 @@ export function useCreateEntity(projectId: string, entity: EntityName) {
   });
 }
 
-/** Stamps a task's real completion date whenever its status changes.
+/** Mirrors the server's completion-date rule for the optimistic row only.
  *
- *  Applied centrally rather than at each call site: status is changed from the
- *  list, board, kanban drag, workspace, task editor, subtask toggles and the
- *  AI plan, and one missed path would silently lose the date. An explicit
- *  `completedOn` in the payload always wins, so a manual correction sticks. */
+ *  The rule itself lives in lib/task-dates and is applied on the server, so
+ *  every write path obeys it. This exists so the card does not show a stale
+ *  date for the moment between the click and the refetch — it is a
+ *  prediction of what the server will do, never the thing that does it. */
 function withCompletionDate(
   entity: EntityName,
   data: Record<string, unknown>,
@@ -218,7 +218,7 @@ export function useUpdateEntity(projectId: string, entity: EntityName) {
     }) =>
       apiFetch(`/api/projects/${projectId}/${entity}/${id}`, {
         method: "PATCH",
-        body: JSON.stringify(withCompletionDate(entity, data)),
+        body: JSON.stringify(data),
       }),
     onMutate: async ({ id, data: raw }) => {
       const data = withCompletionDate(entity, raw);
