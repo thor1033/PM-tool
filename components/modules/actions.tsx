@@ -578,6 +578,7 @@ export function ActionsModule({ projectId }: { projectId: string }) {
       {view === "list" && (
         <ListView
           ws={ws} projectId={projectId} filtered={filtered} sort={sort}
+          filteredNoStatus={filteredNoStatus}
           fCat={fCat} setFCat={setFCat}
           onEdit={openTask} onEditMilestone={openMilestone}
           onEditTrack={(t) => setTrackModal({ open: true, track: t })}

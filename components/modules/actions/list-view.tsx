@@ -151,9 +151,13 @@ function saveJSON(key: string, value: unknown) {
 }
 
 export function ListView({
-  ws, projectId, filtered, sort, fCat, setFCat, onEdit, onEditMilestone, onEditTrack,
+  ws, projectId, filtered, filteredNoStatus, sort, fCat, setFCat, onEdit, onEditMilestone, onEditTrack,
 }: {
   ws: WorkingSet; projectId: string; filtered: Task[]; sort: SortMode;
+  /** Everything the track/owner/search filters allow, before the status one.
+   *  An unfolded reached milestone draws from this, so its finished tasks are
+   *  visible even while Done is hidden. */
+  filteredNoStatus: Task[];
   fCat: string[]; setFCat: (v: string[]) => void;
   onEdit: (t: Task | null, defaultCategoryId?: string | null, defaultMilestoneId?: string | null) => void;
   onEditMilestone: (m: Milestone | null, defaultCategoryId?: string | null, defaultType?: "milestone" | "gate") => void;
@@ -264,6 +268,14 @@ export function ListView({
       return next;
     });
   }
+
+  const milestoneTasksFor = (mg: MilestoneGroup, categoryKey: string) =>
+    filteredNoStatus.filter(
+      (t) =>
+        !t.parentId &&
+        (t.category ?? "_none") === categoryKey &&
+        (t.milestoneId ?? null) === (mg.milestone?.id ?? null),
+    );
 
   const groups: Group[] = useMemo(() => {
     const topLevel = filtered.filter((t) => !t.parentId);
@@ -417,7 +429,15 @@ export function ListView({
           rows.push({ kind: "msHeader", group: mg });
           // A reached milestone is a record of finished work, so it folds
           // shut and states its count instead of listing every task.
-          if (msOpen(mg)) mg.tasks.forEach((t) => rows.push({ kind: "task", task: t }));
+          //
+          // Unfolding one is a deliberate "show me this", so it overrides the
+          // status filter: a milestone reached by definition has finished
+          // work under it, and opening it only to find nothing there because
+          // Done is hidden makes the control look broken.
+          if (msOpen(mg)) {
+            const shown = mg.reachedOn ? milestoneTasksFor(mg, g.key) : mg.tasks;
+            shown.forEach((t) => rows.push({ kind: "task", task: t }));
+          }
           // Gates land between milestones, never inside one: a gate dropped
           // mid-group visually orphans the tasks below it from their header.
           const closesAt = mg.milestone?.date
@@ -715,9 +735,10 @@ export function ListView({
                                   </span>
                                   {/* Folded away tasks are counted, never
                                       silently dropped. */}
-                                  {!open && mg.tasks.length > 0 && (
+                                  {!open && milestoneTasksFor(mg, g.key).length > 0 && (
                                     <span className="text-muted-foreground shrink-0 text-[11.5px]">
-                                      {mg.doneCount}/{mg.tasks.length} tasks
+                                      {milestoneTasksFor(mg, g.key).filter((t) => t.status === "done").length}
+                                      /{milestoneTasksFor(mg, g.key).length} tasks
                                     </span>
                                   )}
                                   {mg.reachedOn && (
@@ -740,9 +761,17 @@ export function ListView({
                                 </span>
                               )}
                               <span className="text-muted-foreground shrink-0 font-mono text-[11.5px]">
-                                {mg.tasks.length === 0
-                                  ? "no tasks yet"
-                                  : `${mg.doneCount}/${mg.tasks.length}`}
+                                {/* Counted against what the milestone really
+                                    holds, not what the status filter is
+                                    showing — a reached milestone whose work
+                                    is all done otherwise reads "no tasks
+                                    yet" while listing its tasks below. */}
+                                {(() => {
+                                  const all = milestoneTasksFor(mg, g.key);
+                                  if (all.length === 0) return "no tasks yet";
+                                  const done = all.filter((t) => t.status === "done").length;
+                                  return `${done}/${all.length}`;
+                                })()}
                               </span>
                               <span className="h-px flex-1 bg-[var(--line)]" />
                               {/* Reaching a milestone is declared, not inferred:
