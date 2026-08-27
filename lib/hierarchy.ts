@@ -114,6 +114,39 @@ export function checkTask(
   return null;
 }
 
+/**
+ * Refuses a task deadline that falls after the milestone it serves.
+ *
+ * A milestone is the date its work is meant to be finished by, so a task due
+ * after it is a contradiction: the milestone could not be reached on time
+ * even if everything went to plan. Caught on write rather than reported
+ * later, because by then the plan already says something impossible.
+ *
+ * Ongoing work is exempt — it has no end date to compare.
+ */
+export function checkTaskDeadline(
+  data: Row,
+  current: { end?: string | null; milestoneId?: string | null; kind?: string | null } | undefined,
+  ws: Pick<WorkingSet, "milestones">,
+): HierarchyIssue | null {
+  const kind = "kind" in data ? str(data.kind) : str(current?.kind);
+  if (kind === "ongoing") return null;
+
+  const end = "end" in data ? str(data.end) : str(current?.end);
+  if (!end) return null;
+  const msId = "milestoneId" in data ? str(data.milestoneId) : str(current?.milestoneId);
+  if (!msId) return null;
+  const ms = ws.milestones.find((m) => m.id === msId);
+  if (!ms || !str(ms.date) || end <= str(ms.date)) return null;
+
+  const name = ms.title || "Untitled";
+  return {
+    error:
+      `This task is due ${end}, after its milestone "${name}" on ${ms.date}. ` +
+      `Move the milestone, bring the task forward, or make it an ongoing task.`,
+  };
+}
+
 /** The track a task inherits, given the milestone it sits under. Keeps the
  *  two in step without asking the caller to set both. */
 export function trackForTask(

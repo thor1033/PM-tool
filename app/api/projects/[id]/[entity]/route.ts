@@ -5,6 +5,7 @@ import { entityConfig, isEntityName } from "@/lib/entities";
 import {
   checkMilestone,
   checkTask,
+  checkTaskDeadline,
   trackForTask,
   inheritFromParent,
 } from "@/lib/hierarchy";
@@ -53,6 +54,11 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
     // Runs after the status is settled, since every date rule keys off it.
     applyDateRules(data, true, undefined);
+
+    // Checked after the date rules, so it judges the dates that will actually
+    // be stored rather than the ones the caller happened to send.
+    const late = checkTaskDeadline(data, undefined, ws);
+    if (late) return NextResponse.json(late, { status: 400 });
   }
   if (typeof body.id === "string") data.id = body.id;
   const row = await createEntity(ctx.orgId, id, entity, data);

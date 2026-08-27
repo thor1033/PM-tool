@@ -25,6 +25,8 @@
  * Every default here yields to an explicit value in the same payload, so
  * setting a date by hand always wins over the rule that would have set it. */
 
+import { isOngoing } from "@/lib/task-kinds";
+
 type Row = Record<string, unknown>;
 
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
@@ -60,7 +62,7 @@ export function effectiveStatus(
 export function applyDateRules(
   data: Row,
   isCreate: boolean,
-  current: { status?: string | null; start?: string | null; completedOn?: string | null } | undefined,
+  current: { status?: string | null; start?: string | null; completedOn?: string | null; kind?: string | null } | undefined,
   now: Date = new Date(),
 ): void {
   const today = todayLocal(now);
@@ -91,6 +93,15 @@ export function applyDateRules(
   // task would then be measured against a date it never chose, and moving
   // the milestone would leave stale copies behind on every task under it.
   // An end the user typed is theirs and is left alone.
+  //
+  // Ongoing work is the exception in the other direction: monitoring and
+  // upkeep never finish, so an end date on one is a fiction and is cleared.
+  const kind = "kind" in data ? str(data.kind) : str(current?.kind);
+  if (isOngoing(kind)) {
+    data.end = "";
+    data.completedOn = "";
+    return;
+  }
 
   // ── actual end ───────────────────────────────────────────────────────────
   // The day the work was marked done. Stamped here rather than in the client

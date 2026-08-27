@@ -1,4 +1,5 @@
 import type { Task, Milestone } from "@/lib/types";
+import { isOngoing } from "@/lib/task-kinds";
 
 /* Grouping tasks beneath the milestone they drive at.
  *
@@ -77,7 +78,13 @@ export function groupByMilestone(
   for (const m of sortMilestones(milestones)) {
     const list = (buckets.get(m.id) ?? []).sort(byExecution);
     const doneCount = list.filter((t) => t.status === "done").length;
-    const complete = list.length > 0 && doneCount === list.length;
+    // Ongoing work never finishes, so it cannot be what a milestone is
+    // waiting on: a milestone whose only remaining tasks are maintenance is
+    // as complete as it will ever be, and holding it open would mean it
+    // could never be reached at all.
+    const finishable = list.filter((t) => !isOngoing(t.kind));
+    const complete =
+      finishable.length > 0 && finishable.every((t) => t.status === "done");
     const reachedOn = m.reachedOn ?? "";
     out.push({
       milestone: m,

@@ -1,4 +1,4 @@
-import { Hammer, Users, Scale, Search, CheckCheck, FileText } from "lucide-react";
+import { Hammer, Users, Scale, Search, CheckCheck, FileText, Infinity as InfinityIcon } from "lucide-react";
 
 /* How a task gets done, as distinct from what it is about.
  *
@@ -52,12 +52,26 @@ export const TASK_KINDS: Record<string, TaskKind> = {
     tone: "var(--ink-faint)",
     hint: "Process, paperwork, coordination",
   },
+  ongoing: {
+    label: "Ongoing",
+    Icon: InfinityIcon,
+    tone: "var(--t-purple)",
+    hint: "Maintenance that runs on — no end date",
+  },
 };
 
 export const DEFAULT_KIND = "build";
 
 export function kindOf(kind: string | null | undefined): TaskKind {
   return TASK_KINDS[kind ?? ""] ?? TASK_KINDS[DEFAULT_KIND];
+}
+
+/** Ongoing work has no end. Monitoring, upkeep and support do not finish on
+ *  a date, so an end date on one would be a fiction — and a milestone whose
+ *  only remaining work is ongoing can still be reached, because there is
+ *  nothing left that will ever complete. */
+export function isOngoing(kind: string | null | undefined): boolean {
+  return kind === "ongoing";
 }
 
 /** Only a meeting carries time, attendees and a joining link. */

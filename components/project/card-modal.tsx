@@ -588,7 +588,9 @@ export function CardModal({
   // parent's, so they are shown rather than offered for editing.
   // Only in-progress work is nudged. Backlog tasks carry no dates by rule,
   // and a finished task's dates are history — neither is a gap to fill.
-  const needsDates = form.status === "inprogress";
+  // Ongoing work has no end, so there is no gap to nudge about.
+  const ongoing = form.kind === "ongoing";
+  const needsDates = form.status === "inprogress" && !ongoing;
 
   const parentTask = activeTask?.parentId
     ? ws.tasks.find((t) => t.id === activeTask.parentId) ?? null
@@ -982,15 +984,23 @@ export function CardModal({
                 <Label className={cn(needsDates && !form.end && "text-[var(--t-amber)]")}>
                   Planned end
                 </Label>
-                <Input
-                  type="date"
-                  value={form.end}
-                  onChange={(e) => set("end", e.target.value)}
-                  className={cn(
-                    needsDates && !form.end &&
-                      "border-[var(--t-amber)] bg-[color-mix(in_oklch,var(--t-amber)_7%,var(--panel))]",
-                  )}
-                />
+                {ongoing ? (
+                  // Offering a date field for work that never ends invites a
+                  // date that would then be wrong; the server clears it too.
+                  <div className="text-muted-foreground rounded-[var(--radius-sm)] border bg-[var(--paper-2)] px-3 py-2 text-[13px]">
+                    No end — this work is ongoing
+                  </div>
+                ) : (
+                  <Input
+                    type="date"
+                    value={form.end}
+                    onChange={(e) => set("end", e.target.value)}
+                    className={cn(
+                      needsDates && !form.end &&
+                        "border-[var(--t-amber)] bg-[color-mix(in_oklch,var(--t-amber)_7%,var(--panel))]",
+                    )}
+                  />
+                )}
               </div>
             </div>
             {needsDates && (!form.start || !form.end) && (
