@@ -69,7 +69,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     }
 
     // Runs after the status is settled, since every date rule keys off it.
-    applyDateRules(data, false, self, ws);
+    applyDateRules(data, false, self);
 
     // Whatever happens to a task happens to its parts: moving it takes them
     // along, and so does changing its status.
@@ -88,7 +88,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     // longer describes two implementations.
     for (const child of children) {
       const self = ws.tasks.find((t) => t.id === child.id);
-      applyDateRules(child.data, false, self, ws);
+      applyDateRules(child.data, false, self);
     }
 
     const row = await updateTaskWithSubtasks(ctx.orgId, id, entityId, data, children);

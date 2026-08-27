@@ -586,6 +586,10 @@ export function CardModal({
   const subtasks = activeTask ? ws.tasks.filter((t) => t.parentId === activeTask.id) : [];
   // A subtask sits where its task sits: its track and milestone are the
   // parent's, so they are shown rather than offered for editing.
+  // Only in-progress work is nudged. Backlog tasks carry no dates by rule,
+  // and a finished task's dates are history — neither is a gap to fill.
+  const needsDates = form.status === "inprogress";
+
   const parentTask = activeTask?.parentId
     ? ws.tasks.find((t) => t.id === activeTask.parentId) ?? null
     : null;
@@ -954,16 +958,50 @@ export function CardModal({
               </>
             )}
 
+            {/* Dates matter once work is under way: a running task with no
+                dates cannot be drawn on the timeline, cannot be forecast, and
+                cannot be judged late. Backlog work is left alone — its
+                deadline is the milestone's until somebody starts it — so the
+                nudge appears exactly when the field becomes worth filling. */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Start</Label>
-                <Input type="date" value={form.start} onChange={(e) => set("start", e.target.value)} />
+                <Label className={cn(needsDates && !form.start && "text-[var(--t-amber)]")}>
+                  Start
+                </Label>
+                <Input
+                  type="date"
+                  value={form.start}
+                  onChange={(e) => set("start", e.target.value)}
+                  className={cn(
+                    needsDates && !form.start &&
+                      "border-[var(--t-amber)] bg-[color-mix(in_oklch,var(--t-amber)_7%,var(--panel))]",
+                  )}
+                />
               </div>
               <div className="space-y-1.5">
-                <Label>Planned end</Label>
-                <Input type="date" value={form.end} onChange={(e) => set("end", e.target.value)} />
+                <Label className={cn(needsDates && !form.end && "text-[var(--t-amber)]")}>
+                  Planned end
+                </Label>
+                <Input
+                  type="date"
+                  value={form.end}
+                  onChange={(e) => set("end", e.target.value)}
+                  className={cn(
+                    needsDates && !form.end &&
+                      "border-[var(--t-amber)] bg-[color-mix(in_oklch,var(--t-amber)_7%,var(--panel))]",
+                  )}
+                />
               </div>
             </div>
+            {needsDates && (!form.start || !form.end) && (
+              <p className="-mt-2 text-[12px] text-[var(--t-amber)]">
+                {!form.start && !form.end
+                  ? "This task is under way — set when it started and when it is due."
+                  : !form.start
+                    ? "This task is under way — set when it started."
+                    : "This task is under way — set when it is due."}
+              </p>
+            )}
 
             {/* Recorded automatically when the task is marked done, and cleared
                 if it's reopened — read-only so the measured date can't drift

@@ -1,14 +1,13 @@
-import type { WorkingSet } from "@/lib/types";
-
 /* When a task's dates are set for it, and when they are left alone.
  *
  * Status is the single thing that says whether work is happening, so status
  * is what drives every date on a task:
  *
  *   backlog     the work is known and belongs to a milestone, but nobody has
- *               started it. It has no start date and no completion date. Its
- *               planned end falls back to the milestone's date, because that
- *               is the commitment it already sits under.
+ *               started it, so it carries no dates at all. Its deadline is
+ *               the milestone's — copying that date onto the task would
+ *               assert a commitment nobody made, and leave a stale copy
+ *               behind on every task whenever the milestone moved.
  *
  *   inprogress  somebody is working on it. The day they said so is its start
  *               date, recorded once and then left alone — it is a fact about
@@ -56,14 +55,12 @@ export function effectiveStatus(
  * @param data     the payload, mutated in place
  * @param isCreate absent fields mean "unset" on create, "unchanged" on update
  * @param current  the row as it stands, for updates
- * @param ws       milestones, so a backlog task can fall back to its deadline
  * @param now      injected so the rules are testable against a fixed clock
  */
 export function applyDateRules(
   data: Row,
   isCreate: boolean,
-  current: { status?: string | null; start?: string | null; end?: string | null; completedOn?: string | null; milestoneId?: string | null } | undefined,
-  ws: Pick<WorkingSet, "milestones">,
+  current: { status?: string | null; start?: string | null; completedOn?: string | null } | undefined,
   now: Date = new Date(),
 ): void {
   const today = todayLocal(now);
@@ -89,18 +86,11 @@ export function applyDateRules(
   }
 
   // ── planned end ──────────────────────────────────────────────────────────
-  // A backlog task inherits its milestone's date as its deadline: it already
-  // sits under that commitment, and a task with no date at all is invisible
-  // to the timeline and the forecast. Only ever a fallback — any end set on
-  // the task itself, by hand or earlier, is left exactly as it is.
-  if (status === "backlog") {
-    const ownEnd = "end" in data ? str(data.end) : str(current?.end);
-    if (!ownEnd) {
-      const msId = "milestoneId" in data ? str(data.milestoneId) : str(current?.milestoneId);
-      const ms = msId ? ws.milestones.find((m) => m.id === msId) : undefined;
-      if (ms && str(ms.date)) data.end = str(ms.date);
-    }
-  }
+  // Never set for a backlog task. Its deadline is the milestone's, and
+  // copying that date onto the task states a commitment nobody made: the
+  // task would then be measured against a date it never chose, and moving
+  // the milestone would leave stale copies behind on every task under it.
+  // An end the user typed is theirs and is left alone.
 
   // ── actual end ───────────────────────────────────────────────────────────
   // The day the work was marked done. Stamped here rather than in the client
@@ -118,9 +108,9 @@ export function applyDateRules(
 /**
  * Days between a task's planned end and when it actually finished.
  *
- * Positive is late. Null when there is nothing to compare — the delta is
- * only meaningful against a deadline the task carried itself, so a backlog
- * task that merely inherited its milestone's date is not judged against it.
+ * Positive is late. Null when there is nothing to compare: an end date is
+ * only ever set by the user, so every one it measures against is a deadline
+ * somebody actually chose.
  */
 export function slipDays(task: {
   end?: string | null;

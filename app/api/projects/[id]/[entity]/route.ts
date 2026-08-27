@@ -52,7 +52,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     }
 
     // Runs after the status is settled, since every date rule keys off it.
-    applyDateRules(data, true, undefined, ws);
+    applyDateRules(data, true, undefined);
   }
   if (typeof body.id === "string") data.id = body.id;
   const row = await createEntity(ctx.orgId, id, entity, data);
