@@ -450,6 +450,17 @@ export function ActionsModule({ projectId }: { projectId: string }) {
     router.replace(`/projects/${projectId}/actions`, { scroll: false });
   }, [linkedTaskId, ws, router, projectId]);
 
+  // Same deep link for milestones, so the workspace strip can open the one
+  // it is warning about rather than dropping the reader on the whole board.
+  const linkedMilestoneId = searchParams.get("milestone");
+  useEffect(() => {
+    if (!linkedMilestoneId || !ws) return;
+    const target = ws.milestones.find((m) => m.id === linkedMilestoneId);
+    if (target) setMsDialog({ open: true, milestone: target });
+    else toast.error("That milestone no longer exists.");
+    router.replace(`/projects/${projectId}/actions`, { scroll: false });
+  }, [linkedMilestoneId, ws, router, projectId]);
+
   if (!ws) return null;
 
   function openTask(

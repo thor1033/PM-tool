@@ -7,12 +7,14 @@ import {
   Link2, Package, ShieldAlert, Lightbulb, Flag, Layers, Globe, GitBranch,
   ExternalLink, MessageSquare, SlidersHorizontal, FileText, FileSpreadsheet,
   Presentation, Image as ImageIcon, File as FileIcon, Check,
+  CalendarClock, Milestone as MilestoneIcon,
 } from "lucide-react";
 import { useProject, useUpdateEntity } from "@/lib/api/hooks";
-import type { Task, WorkingSet } from "@/lib/types";
+import type { Task, Milestone, WorkingSet } from "@/lib/types";
 import type { TaskComment } from "@/lib/db/schema";
 import { accent, accentVar } from "@/lib/colors";
 import { initials, fmtD, daysBetween, followupChainOf } from "@/lib/tasks";
+import { milestoneStanding, isPressing } from "@/lib/milestone-urgency";
 import { cn } from "@/lib/utils";
 import { peopleOf } from "@/lib/people";
 import { ModuleHeader } from "@/components/project/ui";
@@ -906,7 +908,131 @@ function WSTimeline({ ws, myTasks, selId, onSelect }: {
 
 // ── module ───────────────────────────────────────────────────────────────────
 
+/* Milestones with a deadline worth knowing about, above the day's work.
+ *
+ * The workspace is otherwise entirely task-level: a list of tasks and one
+ * task's detail. That answers "what am I doing" but never "what is this
+ * for", so a milestone could arrive at its date without anyone working in
+ * here seeing it coming.
+ *
+ * Only pressing milestones appear — overdue, due within the week, or
+ * finished and waiting on a confirmation. A strip listing everything would
+ * be permanent furniture nobody reads; one that is usually absent means
+ * something when it shows up. */
+function WSMilestones({
+  ws,
+  who,
+  everyone,
+  onOpenMilestone,
+}: {
+  ws: WorkingSet;
+  who: string;
+  everyone: boolean;
+  onOpenMilestone: (m: Milestone) => void;
+}) {
+  const rows = useMemo(() => {
+    const cat = new Map(ws.categories.map((c) => [c.id, c]));
+    return ws.milestones
+      .map((m) => {
+        // Ongoing work never finishes, so it cannot be what a milestone is
+        // waiting on — the same rule the task list and the server apply.
+        const own = ws.tasks.filter((t) => t.milestoneId === m.id && t.kind !== "ongoing");
+        const standing = milestoneStanding(
+          { date: m.date, reachedOn: m.reachedOn },
+          own.length > 0 && own.every((t) => t.status === "done"),
+        );
+        const mine = ws.tasks.filter(
+          (t) => t.milestoneId === m.id && (t.assignees ?? []).includes(who),
+        );
+        return {
+          m,
+          standing,
+          track: m.category ? cat.get(m.category) ?? null : null,
+          open: own.filter((t) => t.status !== "done").length,
+          total: own.length,
+          mine: mine.length,
+        };
+      })
+      // Filtered to the person's own work when one is selected: a deadline
+      // they contribute nothing to is not theirs to worry about.
+      .filter((r) => isPressing(r.standing) && (everyone || r.mine > 0))
+      .sort((a, b) => (a.standing.daysLeft ?? 0) - (b.standing.daysLeft ?? 0));
+  }, [ws, who, everyone]);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <section className="mb-6">
+      <p className="eyebrow mb-2">Milestones needing attention</p>
+      <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {rows.map(({ m, standing, track, open, total, mine }) => {
+          const tone = standing.tone;
+          return (
+            <li key={m.id}>
+              <button
+                type="button"
+                onClick={() => onOpenMilestone(m)}
+                className="w-full rounded-[var(--radius-md)] border p-3 text-left transition hover:shadow-sm"
+                style={{
+                  borderColor: `color-mix(in oklch, ${tone} 30%, var(--line))`,
+                  background: `color-mix(in oklch, ${tone} 5%, var(--panel))`,
+                }}
+              >
+                <div className="mb-1 flex items-center gap-1.5">
+                  {/* Same milestone mark used everywhere else for the word. */}
+                  <MilestoneIcon className="size-3.5 shrink-0" style={{ color: tone }} />
+                  <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">
+                    {m.title || "Untitled milestone"}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-[2px] text-[11px] font-semibold"
+                    style={{
+                      color: `color-mix(in oklch, ${tone} 74%, var(--ink))`,
+                      background: `color-mix(in oklch, ${tone} 14%, var(--panel))`,
+                    }}
+                  >
+                    {standing.urgency === "awaiting" ? (
+                      <Check className="size-3" />
+                    ) : (
+                      <CalendarClock className="size-3" />
+                    )}
+                    {standing.label}
+                  </span>
+                  {m.date && (
+                    <span className="text-muted-foreground shrink-0 font-mono text-[11.5px]">
+                      {fmtD(m.date)}
+                    </span>
+                  )}
+                  {track && (
+                    <span
+                      className="shrink-0 text-[11.5px] font-medium"
+                      style={{ color: `color-mix(in oklch, ${accentVar(track.color)} 74%, var(--ink))` }}
+                    >
+                      {track.label}
+                    </span>
+                  )}
+                </div>
+                <p className="text-muted-foreground mt-1 text-[11.5px]">
+                  {open === 0
+                    ? `All ${total} tasks done`
+                    : `${total - open}/${total} done · ${open} still open`}
+                  {!everyone && mine > 0 && ` · ${mine} yours`}
+                </p>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 export function WorkspaceModule({ projectId }: { projectId: string }) {
+  // Milestones are edited on the Tasks page, where they live alongside the
+  // work; the strip below links there rather than duplicating that editor.
+  const router = useRouter();
   const { data: ws } = useProject(projectId);
   const updateTask = useUpdateEntity(projectId, "tasks");
   const [who, setWho] = useState<string | null>(null);
@@ -1026,6 +1152,16 @@ export function WorkspaceModule({ projectId }: { projectId: string }) {
           ))}
         </div>
       </div>
+
+      {/* Above the work, and above the empty state too: a milestone landing
+          this week matters whichever view somebody is in, and matters most
+          when they have nothing assigned and would otherwise see nothing. */}
+      <WSMilestones
+        ws={ws}
+        who={activeWho}
+        everyone={everyone}
+        onOpenMilestone={(m) => router.push(`/projects/${projectId}/actions?milestone=${m.id}`)}
+      />
 
       {myTasks.length === 0 ? (
         <div className="shadow-xs rounded-[var(--radius-lg)] border bg-[var(--panel)] p-12 text-center">
