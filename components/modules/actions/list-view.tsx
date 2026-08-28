@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  Plus, Trash2, Pencil, ChevronRight, ChevronDown, MessageSquare, GripVertical, Flag, Milestone as MilestoneIcon,
+  Plus, Trash2, Pencil, ChevronRight, ChevronDown, MessageSquare, GripVertical, Flag, Milestone as MilestoneIcon, CalendarClock,
   TriangleAlert, RotateCw, UserRound, Check, ListTodo,
 } from "lucide-react";
 import { useCreateEntity, useUpdateEntity, useDeleteEntity } from "@/lib/api/hooks";
@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
+import { milestoneStanding, isPressing } from "@/lib/milestone-urgency";
 import { COLLAPSE_STORAGE_KEY_PREFIX, OPEN_SUBS_STORAGE_KEY_PREFIX, MS_FOLD_STORAGE_KEY_PREFIX } from "@/components/modules/actions/shared";
 import type { SortMode } from "@/components/modules/actions/shared";
 import { useConfirm } from "@/components/project/confirm";
@@ -688,6 +689,16 @@ export function ListView({
                       const overdue = m?.date && m.date < today && !mg.complete;
                       const done = !!mg.reachedOn;
                       const open = msOpen(mg);
+                      // Judged against everything the milestone holds, not
+                      // what the status filter is showing: with Done hidden
+                      // its finished tasks are absent, and a milestone whose
+                      // work was complete would otherwise read as overdue.
+                      const msAll = milestoneTasksFor(mg, g.key);
+                      const msFinishable = msAll.filter((t) => t.kind !== "ongoing");
+                      const standing = milestoneStanding(
+                        { date: m?.date, reachedOn: mg.reachedOn },
+                        msFinishable.length > 0 && msFinishable.every((t) => t.status === "done"),
+                      );
                       return (
                         <tr key={`ms-${mg.key}`}>
                           <td colSpan={7} className="pb-1 pt-4 first:pt-1">
@@ -733,6 +744,28 @@ export function ListView({
                                   >
                                     {m.date ? fmtD(m.date) : "no date"}
                                   </span>
+                                  {/* A milestone deadline is a different kind
+                                      of pressure from a task's — the outcome
+                                      the plan is built around is what moves —
+                                      so it is said in words on the milestone
+                                      itself, before the date passes rather
+                                      than after. */}
+                                  {isPressing(standing) && (
+                                    <span
+                                      className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-[2px] text-[11px] font-semibold"
+                                      style={{
+                                        color: `color-mix(in oklch, ${standing.tone} 74%, var(--ink))`,
+                                        background: `color-mix(in oklch, ${standing.tone} 13%, var(--panel))`,
+                                      }}
+                                    >
+                                      {standing.urgency === "awaiting" ? (
+                                        <Check className="size-3" />
+                                      ) : (
+                                        <CalendarClock className="size-3" />
+                                      )}
+                                      {standing.label}
+                                    </span>
+                                  )}
                                   {/* Folded away tasks are counted, never
                                       silently dropped. */}
                                   {!open && milestoneTasksFor(mg, g.key).length > 0 && (

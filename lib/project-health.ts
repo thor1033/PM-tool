@@ -225,7 +225,21 @@ export function attentionList(
   for (const m of milestones) {
     if (m.reachedOn || !m.date) continue;
     const days = Math.round((+new Date(m.date) - +new Date(day)) / DAY_MS);
-    if (days < 0) {
+    // A milestone whose work is all finished is not late — it is waiting on
+    // somebody to say the outcome was achieved. Calling that "overdue" sends
+    // people looking for work that is already done.
+    const own = all.filter((t) => t.milestoneId === m.id && t.kind !== "ongoing");
+    const allDone = own.length > 0 && own.every((t) => t.status === "done");
+    if (allDone) {
+      out.push({
+        task: milestoneAsTask(m),
+        milestone: m,
+        severity: "info",
+        label: "Confirm milestone",
+        detail: "Every task is done — mark it reached if the outcome landed",
+        rank: 1500,
+      });
+    } else if (days < 0) {
       out.push({
         task: milestoneAsTask(m),
         milestone: m,
