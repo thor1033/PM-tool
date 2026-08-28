@@ -80,6 +80,7 @@ See the architecture map at the bottom.
 | `npm run db:migrate` | Apply migrations |
 | `npm run db:seed` | Seed sample projects |
 | `npm run db:studio` | Drizzle Studio |
+| `npm run verify:mcp` | End-to-end check of `/api/mcp` (needs `npm run dev` running) |
 
 ## Deploy
 
@@ -99,6 +100,44 @@ The app builds to a standalone server (`output: "standalone"`):
 ```bash
 docker build -t atlas-hub .
 docker run -p 3000:3000 --env-file .env.local atlas-hub
+```
+
+## MCP endpoint (`/api/mcp`)
+
+Atlas exposes its project data to the **AI Hub** as an MCP server, so an agent
+can read delivery status and (optionally) write back. Full design notes live in
+the hub repo at `docs/pm-tool-integration.md`.
+
+The endpoint is **stateless Streamable HTTP, POST only** — a fresh MCP server per
+request, since Vercel keeps no process between invocations. It authenticates
+with a **bearer token, not the WorkOS cookie**: the caller is a machine with no
+user session.
+
+```
+PM_TOOL_MCP_TOKENS={"<secret>":{"org":"org_...","label":"AI Hub","scopes":["read"]}}
+```
+
+- `org` — WorkOS org id or the internal `organizations.id` UUID.
+- `label` — how the caller is named in the project audit trail.
+- `scopes` — `["read"]` or `["read","write"]`. Writes are opt-in; a read-only
+  token is never offered the write tools.
+
+Fails closed at every step: unset, malformed, unknown token, unknown org, or a
+DB error while resolving ⇒ `401`.
+
+**Tools.** Reads: `pm_list_projects`, `pm_project_status`, `pm_get_project`,
+`pm_list_tasks`, `pm_list_risks`. Writes: `pm_create_task`, `pm_update_task`,
+`pm_add_note` — each records its own audit-trail entry attributed to the token's
+label, so an agent edit is visibly an agent edit.
+
+All tools go through `lib/db/queries.ts`; none issue their own SQL. That layer
+owns tenant scoping and entity validation.
+
+Verify against a running dev server:
+
+```bash
+npm run dev          # terminal 1
+npm run verify:mcp   # terminal 2 — 20 checks, cleans up after itself
 ```
 
 ## Importing legacy Atlas data
@@ -137,10 +176,18 @@ drizzle/    generated migrations (incl. RLS + pgvector)
 
 ### Multi-tenant isolation
 
-Every request resolves a WorkOS session → org, then runs DB work inside
-`withTenant(orgId, …)`, which sets `app.current_org` on a transaction and
-filters every query by `org_id`. This app-layer scoping is the **enforced
-isolation guarantee**.
+Every request resolves a WorkOS session → org (or, for `/api/mcp`, a machine
+token → org), then runs DB work inside `withTenant(orgId, …)`, which sets
+`app.current_org` on the transaction. Because RLS is dormant on Neon (below),
+the **explicit `org_id` predicates in `lib/db/queries.ts` are the enforced
+isolation guarantee** — `withTenant` only makes RLS *possible*, it does not
+itself filter anything.
+
+> Building the MCP endpoint surfaced that several queries had no such predicate
+> and relied on the dormant policies alone — `listProjects` returned every
+> tenant's projects. All of `lib/db/queries.ts` now filters explicitly, and
+> `createEntity` refuses to write into a project belonging to another org.
+> Treat a missing `org_id` predicate as a security bug until RLS is active.
 
 Postgres RLS policies (`org_id = current_setting('app.current_org')`, FORCE) are
 also installed on every tenant table as a second layer. **On Neon they are

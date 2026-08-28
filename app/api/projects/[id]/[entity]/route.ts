@@ -62,5 +62,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   }
   if (typeof body.id === "string") data.id = body.id;
   const row = await createEntity(ctx.orgId, id, entity, data);
+  // null ⇒ the project is not this tenant's (createEntity refuses to write
+  // into another org's project). 404 rather than 403: don't confirm it exists.
+  if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(row, { status: 201 });
 }
