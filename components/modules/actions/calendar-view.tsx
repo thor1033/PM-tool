@@ -43,7 +43,11 @@ export function CalendarView({
       arr.push(entry);
       map.set(k, arr);
     };
-    filtered.filter((t) => t.end).forEach((t) => {
+    // Backlog work is excluded for the same reason as on the Timeline: it has
+    // not started, so placing it on a day claims a commitment nobody made. An
+    // end date surviving from before a task was pushed back is a leftover, not
+    // a plan, and filling the month with those hides the work being done.
+    filtered.filter((t) => t.end && t.status !== "backlog").forEach((t) => {
       const hasDistinctStart = !!t.start && t.start !== t.end;
       push(t.end.slice(0, 10), { task: t, label: hasDistinctStart ? "end" : null });
       if (hasDistinctStart) push(t.start.slice(0, 10), { task: t, label: "start" });
@@ -51,7 +55,8 @@ export function CalendarView({
     return map;
   }, [filtered]);
 
-  const undated = useMemo(() => filtered.filter((t) => !t.parentId && !t.end), [filtered]);
+  // The tray decides for itself what counts as unscheduled — only started work.
+  const undated = filtered;
 
   function scheduleOnDay(taskId: string, dayKey: string) {
     updateTask.mutate(
