@@ -61,7 +61,17 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-[101] grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // A dialog is bounded by the viewport and scrolls its own body.
+          // Without the bound, a tall form (the deliverable editor on a short
+          // screen) grows past the rounded corners and takes the footer with
+          // it — the footer's negative margins put it outside the padding box,
+          // so it lands beyond the panel rather than at its edge.
+          //
+          // `grid-rows-[auto_minmax(0,1fr)_auto]` is what makes the middle
+          // section shrinkable: a grid row is auto-sized to its content by
+          // default and would otherwise refuse to scroll, pushing the footer
+          // out again. Header and footer stay put; only the body moves.
+          "fixed top-1/2 left-1/2 z-[101] grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-hidden rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}

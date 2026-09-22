@@ -73,7 +73,7 @@ export function MilestoneModal({
             {milestone ? "Edit" : "New"} {isGate ? "gate" : "milestone"}
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="-mx-1 space-y-4 overflow-y-auto px-1">
           <div className="space-y-1.5">
             <Label>Type</Label>
             <div className="flex gap-1 rounded-[var(--radius-sm)] border bg-[var(--paper-2)] p-1">

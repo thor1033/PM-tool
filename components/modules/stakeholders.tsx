@@ -110,7 +110,7 @@ function StakeholderDialog({
         <DialogHeader>
           <DialogTitle>{item ? "Edit stakeholder" : "New stakeholder"}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="-mx-1 space-y-4 overflow-y-auto px-1">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Name</Label>

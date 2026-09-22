@@ -69,7 +69,7 @@ export function ImportDialog() {
             app. Projects are added to your workspace — nothing is overwritten.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
+        <div className="-mx-1 space-y-3 overflow-y-auto px-1">
           <div className="space-y-1.5">
             <Label htmlFor="import-file">Export file</Label>
             <input

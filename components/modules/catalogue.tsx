@@ -132,7 +132,10 @@ function ProductDialog({
             {item ? "Edit deliverable" : "New deliverable"}
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        {/* The form scrolls, the header and footer stay: on a short viewport
+            the linked-tasks list can outgrow the screen. `-mx-1 px-1` keeps
+            focus rings from being clipped by the scroll container. */}
+        <div className="-mx-1 space-y-4 overflow-y-auto px-1">
           <div className="space-y-1.5">
             <Label>Name</Label>
             <Input value={f.name} onChange={(e) => set("name", e.target.value)} autoFocus />

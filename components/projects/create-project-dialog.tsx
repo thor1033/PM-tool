@@ -72,7 +72,7 @@ export function CreateProjectDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="-mx-1 space-y-4 overflow-y-auto px-1">
             <div className="space-y-1.5">
               <Label htmlFor="proj-name">Project name</Label>
               <Input
