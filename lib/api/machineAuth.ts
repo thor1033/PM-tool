@@ -75,13 +75,21 @@ export function machineAuthConfigured(): boolean {
 const orgIdCache = new Map<string, string>();
 
 async function resolveOrgId(org: string): Promise<string | null> {
-  if (UUID_RE.test(org)) return org;
   const cached = orgIdCache.get(org);
   if (cached) return cached;
+  // Both forms are checked against the database. A UUID used to be trusted on
+  // shape alone, which meant a mistyped one authenticated successfully and then
+  // matched no rows — every tool returned an empty result with no error, which
+  // reads as "the workspace is empty" rather than "this token is misconfigured".
+  // An unknown org must fail closed as a 401, whichever form it was written in.
   const [row] = await db
     .select({ id: schema.organizations.id })
     .from(schema.organizations)
-    .where(eq(schema.organizations.workosOrgId, org));
+    .where(
+      UUID_RE.test(org)
+        ? eq(schema.organizations.id, org)
+        : eq(schema.organizations.workosOrgId, org),
+    );
   if (!row) return null;
   orgIdCache.set(org, row.id);
   return row.id;

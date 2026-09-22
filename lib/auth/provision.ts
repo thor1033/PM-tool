@@ -1,4 +1,5 @@
 import "server-only";
+import { eq } from "drizzle-orm";
 import { getWorkOS } from "@workos-inc/authkit-nextjs";
 import { db, schema } from "@/lib/db/client";
 
@@ -66,9 +67,40 @@ export async function provisionUserAndOrg(
     })
     .onConflictDoUpdate({
       target: schema.users.workosUserId,
-      set: { email: user.email, name: displayName(user), orgId: org.id },
+      // Deliberately not resetting orgId. A returning user keeps whichever
+      // tenant they are currently assigned to — an account moved into a shared
+      // workspace must not be dragged back to its personal one on next login.
+      // Only the insert above places a brand-new user in a tenant.
+      set: { email: user.email, name: displayName(user) },
     })
     .returning();
 
-  return { orgId: org.id, orgName: org.name, userId: dbUser.id };
+  // The tenant is whatever the USER's row says — not the personal workspace
+  // upserted above.
+  //
+  // `org` here is always `personal:<workos user id>`, because that is the key
+  // we just upserted on. Returning it meant every browser session resolved to
+  // the caller's personal workspace no matter which tenant they belong to: both
+  // founders sat in "Teqneo" in the database and still saw an empty board,
+  // while the MCP path (which resolves the org from its token instead) wrote
+  // into Teqneo correctly. Writes landed in one tenant and reads came from
+  // another, which reads exactly like data loss and is not.
+  //
+  // The upsert above still matters: it is what places a brand-new user in a
+  // tenant of their own. It just does not get to decide where a returning user
+  // already lives.
+  if (dbUser.orgId === org.id) {
+    return { orgId: org.id, orgName: org.name, userId: dbUser.id };
+  }
+
+  const [tenant] = await db
+    .select({ id: schema.organizations.id, name: schema.organizations.name })
+    .from(schema.organizations)
+    .where(eq(schema.organizations.id, dbUser.orgId));
+
+  // Fall back to the personal workspace rather than throwing: a user pointed at
+  // a deleted org should still get a usable (if empty) session.
+  if (!tenant) return { orgId: org.id, orgName: org.name, userId: dbUser.id };
+
+  return { orgId: tenant.id, orgName: tenant.name, userId: dbUser.id };
 }
