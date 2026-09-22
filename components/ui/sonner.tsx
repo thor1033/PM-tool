@@ -28,17 +28,26 @@ const Toaster = ({ ...props }: ToasterProps) => {
           <Loader2Icon className="size-4 animate-spin" />
         ),
       }}
+      // Above the task dialog (z-101). A toast that carries an action — "Mark
+      // reached" after the last task closes — is raised from inside that
+      // dialog, so at any lower layer the dialog swallows the click: the
+      // button is visible but cannot be pressed.
       style={
         {
+          zIndex: 200,
           "--normal-bg": "var(--popover)",
           "--normal-text": "var(--popover-foreground)",
           "--normal-border": "var(--border)",
           "--border-radius": "var(--radius)",
         } as React.CSSProperties
       }
+      // `pointer-events-auto` is needed because the toast list itself is
+      // click-through: without it a toast's action button is visible but
+      // unpressable whenever a dialog sits beneath it, which is exactly the
+      // case for the "Mark reached" prompt raised from inside a task card.
       toastOptions={{
         classNames: {
-          toast: "cn-toast",
+          toast: "cn-toast pointer-events-auto",
         },
       }}
       {...props}
