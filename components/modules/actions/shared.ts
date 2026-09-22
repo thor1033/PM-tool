@@ -8,7 +8,10 @@ export interface ActionsFilters {
 }
 
 export type ActionsView = "list" | "kanban" | "timeline" | "calendar";
-export type SortMode = "category" | "upcoming" | "status" | "owner";
+
+/** Superseded by GroupMode + SortMode in lib/grouping. Kept only so the old
+ *  persisted value can be recognised and migrated on first load. */
+export type LegacySortMode = "category" | "upcoming" | "status" | "owner";
 
 export const VIEW_STORAGE_KEY = "atlas.actions.mode";
 export const SORT_STORAGE_KEY = "atlas.actions.sort";

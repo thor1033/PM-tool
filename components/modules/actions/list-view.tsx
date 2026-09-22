@@ -26,27 +26,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Input } from "@/components/ui/input";
 import { milestoneStanding, isPressing } from "@/lib/milestone-urgency";
 import { COLLAPSE_STORAGE_KEY_PREFIX, OPEN_SUBS_STORAGE_KEY_PREFIX, MS_FOLD_STORAGE_KEY_PREFIX } from "@/components/modules/actions/shared";
-import type { SortMode } from "@/components/modules/actions/shared";
+import { groupTasks, sortTasks, showsMilestoneHeaders, milestoneDateMap, GROUP_OPTIONS, type GroupMode, type SortMode } from "@/lib/grouping";
 import { useConfirm } from "@/components/project/confirm";
-
-const STATUS_RANK: Record<string, number> = Object.fromEntries(COLUMNS.map((c, i) => [c.id, i]));
-
-function ownerOf(t: Task): string {
-  const who = t.assignees ?? [];
-  return who.length ? who[0] : "";
-}
-
-/** Comparators for the flat (non-Track) sort modes — undated/unset values always sort last. */
-const FLAT_SORTERS: Partial<Record<SortMode, (a: Task, b: Task) => number>> = {
-  status: (a, b) => (STATUS_RANK[a.status] ?? 99) - (STATUS_RANK[b.status] ?? 99),
-  owner: (a, b) => {
-    const ao = ownerOf(a), bo = ownerOf(b);
-    if (!ao && !bo) return 0;
-    if (!ao) return 1;
-    if (!bo) return -1;
-    return ao.localeCompare(bo);
-  },
-};
 
 const SYNTH_GROUPS = [
   { key: "_comms", label: "Communications", color: "teal", origin: "comms" },
@@ -132,6 +113,8 @@ interface Group {
   /** Stakeholder id accountable for the track, when one is set. */
   owner?: string | null;
   icon?: string | null;
+  /** Set when grouping by milestone, so the heading can show its date. */
+  milestone?: Milestone | null;
 }
 
 function loadJSON<T>(key: string, fallback: T): T {
@@ -152,9 +135,15 @@ function saveJSON(key: string, value: unknown) {
 }
 
 export function ListView({
-  ws, projectId, filtered, filteredNoStatus, sort, fCat, setFCat, onEdit, onEditMilestone, onEditTrack,
+  ws, projectId, filtered, filteredNoStatus, groupBy, sortBy, fCat, setFCat, onEdit, onEditMilestone, onEditTrack,
 }: {
-  ws: WorkingSet; projectId: string; filtered: Task[]; sort: SortMode;
+  ws: WorkingSet; projectId: string; filtered: Task[];
+  /** What buckets the rows. Only "track" carries the track-editing controls —
+   *  renaming an owner or a status heading would be meaningless, so the other
+   *  groupings render plain headings. */
+  groupBy: GroupMode;
+  /** Order within a bucket. */
+  sortBy: SortMode;
   /** Everything the track/owner/search filters allow, before the status one.
    *  An unfolded reached milestone draws from this, so its finished tasks are
    *  visible even while Done is hidden. */
@@ -232,25 +221,6 @@ export function ListView({
     });
   }
 
-  // Status / Owner — flat sort modes, reusing the same "no track grouping"
-  // list as Sequence, just ordered differently.
-  const flatSorted = useMemo(() => {
-    const cmp = FLAT_SORTERS[sort];
-    if (!cmp) return [];
-    const topLevel = filtered.filter((t) => !t.parentId);
-    return [...topLevel].sort(cmp);
-  }, [filtered, sort]);
-
-  // "Upcoming deadlines" — a forward-looking list across every track, soonest
-  // first. Finished work, anything without an end date, and anything already
-  // past due are all dropped, so what's left is only what's still ahead.
-  const upcoming = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    return filtered
-      .filter((t) => !t.parentId && t.end && t.status !== "done" && t.end >= today)
-      .sort((a, b) => a.end.localeCompare(b.end));
-  }, [filtered]);
-
   // Milestones and gates are deadlines too — a list of what is coming that
   // omits them tells you when the work lands but not what it is for.
   const upcomingMarkers = useMemo(() => {
@@ -270,15 +240,33 @@ export function ListView({
     });
   }
 
-  const milestoneTasksFor = (mg: MilestoneGroup, categoryKey: string) =>
+  /** Whether a task belongs in the bucket with this key, under the current
+   *  grouping. Used to reach past the status filter when a reached milestone
+   *  is unfolded — the bucket itself cannot contain the hidden done tasks, so
+   *  membership is re-derived from the same rule that built it. */
+  const inBucket = (t: Task, bucketKey: string): boolean => {
+    switch (groupBy) {
+      case "track": return (t.category ?? "_none") === bucketKey;
+      case "milestone": return (t.milestoneId ?? "_none") === bucketKey;
+      case "owner": return `owner:${(t.assignees ?? [])[0] ?? ""}` === bucketKey || (!(t.assignees ?? []).length && bucketKey === "_none");
+      case "status": return `status:${t.status}` === bucketKey;
+      default: return true;
+    }
+  };
+
+  /** The tasks under a reached milestone, drawn from before the status filter
+   *  so unfolding one shows its finished work even while Done is hidden.
+   *  Scoped to the bucket, so a reached milestone under Thor shows his share
+   *  of it rather than everyone's. */
+  const milestoneTasksFor = (mg: MilestoneGroup, bucketKey: string) =>
     filteredNoStatus.filter(
       (t) =>
         !t.parentId &&
-        (t.category ?? "_none") === categoryKey &&
-        (t.milestoneId ?? null) === (mg.milestone?.id ?? null),
+        (t.milestoneId ?? null) === (mg.milestone?.id ?? null) &&
+        inBucket(t, bucketKey),
     );
 
-  const groups: Group[] = useMemo(() => {
+  const trackGroups: Group[] = useMemo(() => {
     const topLevel = filtered.filter((t) => !t.parentId);
     const validCategoryIds = new Set(ws.categories.map((c) => c.id));
     const byCat = new Map<string, Task[]>();
@@ -329,6 +317,31 @@ export function ListView({
     }
     return out;
   }, [filtered, ws.categories, fCat]);
+
+  // Track keeps the bespoke path above — it carries the track filter, the
+  // synthetic Communications/Change buckets, and the owner and icon the
+  // heading needs. Every other grouping is plain bucketing, so it comes from
+  // the shared module rather than a second copy of that logic here.
+  const buckets: Group[] = useMemo(() => {
+    if (groupBy === "track") return trackGroups;
+    return groupTasks(groupBy, {
+      tasks: filtered,
+      categories: ws.categories,
+      milestones: ws.milestones,
+    }).map((b) => ({
+      key: b.key,
+      label: b.label,
+      color: b.color,
+      tasks: b.tasks,
+      milestone: b.milestone ?? null,
+    }));
+  }, [groupBy, trackGroups, filtered, ws.categories, ws.milestones]);
+
+  const editableTracks = groupBy === "track";
+
+  // Deadline ordering falls back to the milestone for tasks that carry no
+  // end date of their own — which by the date rules is every backlog task.
+  const msDates = useMemo(() => milestoneDateMap(ws.milestones), [ws.milestones]);
 
 
   // Grouped once per render instead of re-filtering the full task list for
@@ -385,24 +398,50 @@ export function ListView({
   // flat-sort early-returns below) to satisfy the Rules of Hooks.
   const seqByTaskId = useMemo(() => taskIdMap(ws.tasks), [ws.tasks]);
 
-  if (sort === "upcoming") {
-    return <SequenceList ws={ws} tasks={upcoming} markers={upcomingMarkers} onEditMilestone={onEditMilestone} onEdit={onEdit} showDueIn emptyLabel="Nothing due from today onward." />;
-  }
-  if (FLAT_SORTERS[sort]) {
-    return <SequenceList ws={ws} tasks={flatSorted} onEdit={onEdit} />;
+  // "Group by nothing" is the one mode with no headings at all, so it renders
+  // as a single flat list. Everything else goes through the grouped renderer
+  // below, whatever the bucket key happens to be.
+  if (groupBy === "none") {
+    const flat = sortTasks(filtered.filter((t) => !t.parentId), sortBy, msDates);
+    return (
+      <SequenceList
+        ws={ws}
+        tasks={flat}
+        markers={sortBy === "deadline" ? upcomingMarkers : undefined}
+        onEditMilestone={onEditMilestone}
+        onEdit={onEdit}
+        showDueIn={sortBy === "deadline"}
+        emptyLabel="Nothing matches the current filters."
+      />
+    );
   }
 
   return (
     <div className="space-y-6">
       <p className="text-muted-foreground text-[13.5px]">
-        Drag tasks between tracks to re-bucket them · order top-to-bottom = sequence
+        {editableTracks
+          ? "Drag tasks between tracks to re-bucket them · order top-to-bottom = sequence"
+          : `Grouped by ${GROUP_OPTIONS.find((o) => o.id === groupBy)?.label.toLowerCase()} · edit a task to change where it sits`}
       </p>
 
-      {groups.map((g) => {
+      {buckets.map((g) => {
         const isOpen = !(collapsed[g.key] ?? false);
         const a = g.color ? accent(g.color) : null;
-        const groupMilestones = ws.milestones.filter((m) => m.type === "milestone" && m.category === g.key);
-        const groupGates = ws.milestones.filter((m) => m.type === "gate" && m.category === g.key && m.date);
+        // A track bucket lists every milestone belonging to that track, empty
+        // ones included — the structure is the point, and an empty milestone
+        // still needs its header to add work under.
+        //
+        // Any other bucket has no track of its own, so its milestones are
+        // whichever ones its tasks actually point at. Matching on g.key would
+        // compare a milestone's track against "owner:Ditlev" and find nothing,
+        // filing every task under "not tied to a milestone".
+        const bucketMsIds = new Set(g.tasks.map((t) => t.milestoneId).filter(Boolean) as string[]);
+        const groupMilestones = editableTracks
+          ? ws.milestones.filter((m) => m.type === "milestone" && m.category === g.key)
+          : ws.milestones.filter((m) => m.type === "milestone" && bucketMsIds.has(m.id));
+        const groupGates = editableTracks
+          ? ws.milestones.filter((m) => m.type === "gate" && m.category === g.key && m.date)
+          : [];
 
         // Interleave gates between task rows by date. Follow-up tasks sort
         // exactly like any other task here — no forced adjacency to their
@@ -426,6 +465,14 @@ export function ListView({
           }
         };
 
+        // Grouping by milestone already puts them at the top level, so the
+        // bucket's rows are its tasks directly — repeating the header inside
+        // would nest each bucket under a copy of its own heading.
+        if (!showsMilestoneHeaders(groupBy)) {
+          sortTasks(g.tasks, sortBy, msDates).forEach((t) => rows.push({ kind: "task", task: t }));
+          sortedGates.forEach((gate) => rows.push({ kind: "gate", gate }));
+          gateIdx = sortedGates.length;
+        } else {
         for (const mg of groupByMilestone(g.tasks, groupMilestones)) {
           rows.push({ kind: "msHeader", group: mg });
           // A reached milestone is a record of finished work, so it folds
@@ -437,13 +484,17 @@ export function ListView({
           // Done is hidden makes the control look broken.
           if (msOpen(mg)) {
             const shown = mg.reachedOn ? milestoneTasksFor(mg, g.key) : mg.tasks;
-            shown.forEach((t) => rows.push({ kind: "task", task: t }));
+            // The chosen order applies inside each milestone. Execution order
+            // is what groupByMilestone already produced, so it is left alone.
+            const ordered = sortBy === "sequence" ? shown : sortTasks(shown, sortBy, msDates);
+            ordered.forEach((t) => rows.push({ kind: "task", task: t }));
           }
           // Gates land between milestones, never inside one: a gate dropped
           // mid-group visually orphans the tasks below it from their header.
           const closesAt = mg.milestone?.date
             || mg.tasks.reduce((m, t) => (t.end > m ? t.end : m), "");
           if (closesAt) flushGatesUpTo(closesAt);
+        }
         }
         while (gateIdx < sortedGates.length) {
           rows.push({ kind: "gate", gate: sortedGates[gateIdx] });
@@ -463,7 +514,9 @@ export function ListView({
                 <button className="flex flex-1 items-center gap-3 text-left">
                   {isOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                   <span className={cn("eyebrow !normal-case !tracking-normal !text-[11px]", isUndefined ? "text-[var(--t-red)]" : "text-muted-foreground")}>
-                    {isUndefined ? "Data problem" : "Track"}
+                    {isUndefined
+                      ? "Data problem"
+                      : GROUP_OPTIONS.find((o) => o.id === groupBy)?.label ?? "Track"}
                   </span>
                   {isUndefined && <TriangleAlert className="size-4 shrink-0 text-[var(--t-red)]" />}
                   {a && <span className="size-2.5 shrink-0 rounded-full" style={{ background: accentVar(g.color) }} />}
@@ -474,7 +527,7 @@ export function ListView({
                       onClick={(e) => e.stopPropagation()}
                       onBlur={(e) => {
                         const v = e.target.value.trim();
-                        if (v && v !== g.label && !g.key.startsWith("_")) updateCat.mutate({ id: g.key, data: { label: v } });
+                        if (v && v !== g.label && editableTracks && !g.key.startsWith("_")) updateCat.mutate({ id: g.key, data: { label: v } });
                         setEditingTrack(null);
                       }}
                       onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
@@ -483,15 +536,19 @@ export function ListView({
                   ) : (
                     <span
                       className={cn("font-serif-display text-[19px] font-semibold", isUndefined && "text-[var(--t-red)]")}
-                      onDoubleClick={(e) => { e.stopPropagation(); if (!g.key.startsWith("_")) setEditingTrack(g.key); }}
+                      onDoubleClick={(e) => { e.stopPropagation(); if (editableTracks && !g.key.startsWith("_")) setEditingTrack(g.key); }}
                       onClick={(e) => {
                         // Single click opens the editor; double-click still
                         // renames in place. The row's own toggle is suppressed.
+                        // Only meaningful when the bucket IS a track — an owner
+                        // or status heading has no editor behind it, so the
+                        // click falls through to the fold toggle instead.
+                        if (!editableTracks) return;
                         e.stopPropagation();
                         const cat = ws.categories.find((c) => c.id === g.key);
                         if (cat) onEditTrack(cat);
                       }}
-                      title="Open the track editor · double-click to rename"
+                      title={editableTracks ? "Open the track editor · double-click to rename" : undefined}
                     >
                       {g.label}
                     </span>
@@ -516,7 +573,7 @@ export function ListView({
                 </button>
               </CollapsibleTrigger>
               <div className="flex items-center gap-2">
-                {!g.key.startsWith("_") && (
+                {editableTracks && !g.key.startsWith("_") && (
                   <>
                     {/* Everything about a track lives on this row: who owns it,
                         how it looks, and what it contains. */}
@@ -922,7 +979,7 @@ export function ListView({
                       </Fragment>
                     );
                   })}
-                  {!g.key.startsWith("_") && (
+                  {editableTracks && !g.key.startsWith("_") && (
                     <tr
                       onDragOver={(e) => { e.preventDefault(); setDragOverRow(`_end_${g.key}`); }}
                       onDragLeave={() => setDragOverRow((r) => (r === `_end_${g.key}` ? null : r))}
@@ -939,7 +996,7 @@ export function ListView({
         );
       })}
 
-      {groups.length === 0 && (
+      {buckets.length === 0 && (
         <p className="text-muted-foreground py-12 text-center text-sm">No tasks match the current filters.</p>
       )}
     </div>

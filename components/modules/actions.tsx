@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Rows3, GitBranch, Calendar, KanbanSquare, SlidersHorizontal, ArrowUpDown, Search, X, Plus, EyeOff, ChevronDown, Check } from "lucide-react";
+import { Rows3, GitBranch, Calendar, KanbanSquare, SlidersHorizontal, ArrowUpDown, Layers, Search, X, Plus, EyeOff, ChevronDown, Check } from "lucide-react";
 import { useProject } from "@/lib/api/hooks";
 import { taskMatchesFilter, taskIdMap, NO_TRACK_ID, NONE_SELECTED } from "@/lib/tasks";
 import { peopleOf, unknownAssignees } from "@/lib/people";
@@ -21,8 +21,13 @@ import { TimelineView, TimelineFilterPopover, TimelineSortPopover, TimelineLayer
 import type { TimelineFilters, TimelineSortMode, TimelineLayers } from "@/components/modules/actions/timeline-view";
 import { CalendarView } from "@/components/modules/actions/calendar-view";
 import { KanbanView } from "@/components/modules/actions/kanban-view";
-import type { ActionsView, SortMode } from "@/components/modules/actions/shared";
+import type { ActionsView, LegacySortMode } from "@/components/modules/actions/shared";
 import { VIEW_STORAGE_KEY, SORT_STORAGE_KEY } from "@/components/modules/actions/shared";
+import type { GroupMode, SortMode } from "@/lib/grouping";
+import {
+  GROUP_OPTIONS, SORT_OPTIONS, GROUP_STORAGE_KEY,
+  SORT_STORAGE_KEY as SORT_BY_STORAGE_KEY,
+} from "@/lib/grouping";
 
 const STATUS_FILTERS = [
   { id: "backlog", label: "Backlog", var: "--hue-backlog" },
@@ -298,9 +303,24 @@ function FilterPopover({
   );
 }
 
-// ── header Sort by dropdown (List + Timeline only) ──────────────────────────
+// ── header Group by / Sort by dropdowns (List + Timeline) ───────────────────
 
-function SortByDropdown({ sort, onChange }: { sort: SortMode; onChange: (v: SortMode) => void }) {
+/* Two controls rather than one. The old "Sort by" answered two questions at
+ * once — "Track" bucketed rows under headings while "Upcoming deadlines"
+ * reordered a flat list — so it could only ever express half the useful
+ * combinations. "My tracks, but deadline-first inside each" had no way to be
+ * said. Splitting them makes every pairing available. */
+
+function PickerDropdown<T extends string>({
+  icon, label, value, options, onChange, width = "w-44",
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: T;
+  options: readonly { id: T; label: string }[];
+  onChange: (v: T) => void;
+  width?: string;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -308,30 +328,24 @@ function SortByDropdown({ sort, onChange }: { sort: SortMode; onChange: (v: Sort
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
-  const OPTIONS: { id: SortMode; label: string }[] = [
-    { id: "category", label: "Track" },
-    { id: "upcoming", label: "Upcoming deadlines" },
-    { id: "status", label: "Status" },
-    { id: "owner", label: "Owner" },
-  ];
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((o) => !o)}
         className="inline-flex h-10 items-center gap-2 rounded-[var(--radius-sm)] border px-4 text-[14.5px] font-semibold transition hover:bg-muted"
       >
-        <ArrowUpDown className="size-4" />
-        <span className="text-muted-foreground">Sort by</span> {OPTIONS.find((o) => o.id === sort)?.label}
+        {icon}
+        <span className="text-muted-foreground">{label}</span> {options.find((o) => o.id === value)?.label}
       </button>
       {open && (
-        <div className="bg-popover absolute right-0 z-[70] mt-1.5 w-44 rounded-[var(--radius-md)] border p-1.5 shadow-lg">
-          {OPTIONS.map((o) => (
+        <div className={cn("bg-popover absolute right-0 z-[70] mt-1.5 rounded-[var(--radius-md)] border p-1.5 shadow-lg", width)}>
+          {options.map((o) => (
             <button
               key={o.id}
               onClick={() => { onChange(o.id); setOpen(false); }}
               className={cn(
                 "flex w-full items-center rounded-[var(--radius-sm)] px-3 py-2 text-left text-[14px] transition",
-                sort === o.id ? "bg-muted font-semibold" : "hover:bg-muted",
+                value === o.id ? "bg-muted font-semibold" : "hover:bg-muted",
               )}
             >
               {o.label}
@@ -349,7 +363,8 @@ function SortByDropdown({ sort, onChange }: { sort: SortMode; onChange: (v: Sort
 export function ActionsModule({ projectId }: { projectId: string }) {
   const { data: ws } = useProject(projectId);
   const [view, setView] = useState<View>("list");
-  const [sort, setSort] = useState<SortMode>("category");
+  const [groupBy, setGroupBy] = useState<GroupMode>("track");
+  const [sortBy, setSortBy] = useState<SortMode>("sequence");
   const [fCat, setFCat] = useState<string[]>([]);
   const [fWho, setFWho] = useState<string[]>([]);
   const [fStatus, setFStatus] = useState<string[]>(DEFAULT_STATUS_FILTER);
@@ -375,14 +390,36 @@ export function ActionsModule({ projectId }: { projectId: string }) {
   const [msDialog, setMsDialog] = useState<{ open: boolean; milestone: Milestone | null; defaultCategoryId?: string | null; defaultType?: "milestone" | "gate" }>({ open: false, milestone: null });
   const [trackModal, setTrackModal] = useState<{ open: boolean; track: Category | null }>({ open: false, track: null });
 
-  // remembers the last-used view (atlas.actions.mode) and sort (atlas.actions.sort)
+  // Restores the last-used view, grouping and ordering, and migrates anyone
+  // still carrying the old combined "sort" value.
   useEffect(() => {
     try {
       const savedView = localStorage.getItem(VIEW_STORAGE_KEY) as View | null;
       if (savedView && VIEWS.some((v) => v.id === savedView)) setView(savedView);
-      const savedSort = localStorage.getItem(SORT_STORAGE_KEY) as SortMode | null;
-      const validSorts: SortMode[] = ["category", "upcoming", "status", "owner"];
-      if (savedSort && validSorts.includes(savedSort)) setSort(savedSort);
+      const savedGroup = localStorage.getItem(GROUP_STORAGE_KEY) as GroupMode | null;
+      if (savedGroup && GROUP_OPTIONS.some((o) => o.id === savedGroup)) setGroupBy(savedGroup);
+      const savedSort = localStorage.getItem(SORT_BY_STORAGE_KEY) as SortMode | null;
+      if (savedSort && SORT_OPTIONS.some((o) => o.id === savedSort)) setSortBy(savedSort);
+
+      // One-time migration off the old combined control. Each legacy mode was
+      // a grouping and an ordering fused together; splitting it preserves what
+      // the user was looking at rather than resetting them to the default.
+      if (!savedGroup && !savedSort) {
+        const legacy = localStorage.getItem(SORT_STORAGE_KEY) as LegacySortMode | null;
+        const migrated: Partial<Record<LegacySortMode, [GroupMode, SortMode]>> = {
+          category: ["track", "sequence"],
+          upcoming: ["none", "deadline"],
+          status: ["status", "sequence"],
+          owner: ["owner", "sequence"],
+        };
+        const pair = legacy ? migrated[legacy] : undefined;
+        if (pair) {
+          setGroupBy(pair[0]);
+          setSortBy(pair[1]);
+          localStorage.setItem(GROUP_STORAGE_KEY, pair[0]);
+          localStorage.setItem(SORT_BY_STORAGE_KEY, pair[1]);
+        }
+      }
     } catch {
       // ignore
     }
@@ -391,9 +428,13 @@ export function ActionsModule({ projectId }: { projectId: string }) {
     setView(v);
     try { localStorage.setItem(VIEW_STORAGE_KEY, v); } catch { /* ignore */ }
   }
-  function changeSort(v: SortMode) {
-    setSort(v);
-    try { localStorage.setItem(SORT_STORAGE_KEY, v); } catch { /* ignore */ }
+  function changeGroupBy(v: GroupMode) {
+    setGroupBy(v);
+    try { localStorage.setItem(GROUP_STORAGE_KEY, v); } catch { /* ignore */ }
+  }
+  function changeSortBy(v: SortMode) {
+    setSortBy(v);
+    try { localStorage.setItem(SORT_BY_STORAGE_KEY, v); } catch { /* ignore */ }
   }
 
   // Search matches the task's permanent ID (see taskIdMap), its title, or
@@ -541,7 +582,25 @@ export function ActionsModule({ projectId }: { projectId: string }) {
               showStatus={view !== "kanban"}
             />
           )}
-          {showSortBy && <SortByDropdown sort={sort} onChange={changeSort} />}
+          {showSortBy && (
+            <>
+              <PickerDropdown
+                icon={<Layers className="size-4" />}
+                label="Group by"
+                value={groupBy}
+                options={GROUP_OPTIONS}
+                onChange={changeGroupBy}
+              />
+              <PickerDropdown
+                icon={<ArrowUpDown className="size-4" />}
+                label="Sort by"
+                value={sortBy}
+                options={SORT_OPTIONS}
+                onChange={changeSortBy}
+                width="w-48"
+              />
+            </>
+          )}
           {/* What the filter is holding back, said in words.
           The badge on the Filter button ("Filter · 1") shows that something
           is hidden but not what, and on a project whose finished work is most
@@ -588,7 +647,7 @@ export function ActionsModule({ projectId }: { projectId: string }) {
 
       {view === "list" && (
         <ListView
-          ws={ws} projectId={projectId} filtered={filtered} sort={sort}
+          ws={ws} projectId={projectId} filtered={filtered} groupBy={groupBy} sortBy={sortBy}
           filteredNoStatus={filteredNoStatus}
           fCat={fCat} setFCat={setFCat}
           onEdit={openTask} onEditMilestone={openMilestone}
