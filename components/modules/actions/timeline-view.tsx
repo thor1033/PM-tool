@@ -7,6 +7,7 @@ import { GitBranch, ChevronDown, SlidersHorizontal, ArrowUpDown, Eye, EyeOff } f
 import { useUpdateEntity } from "@/lib/api/hooks";
 import type { Task, WorkingSet, Milestone } from "@/lib/types";
 import { daysBetween, fmtD, NO_TRACK_ID } from "@/lib/tasks";
+import { todayLocal } from "@/lib/task-dates";
 import { accentVar } from "@/lib/colors";
 import { stackMarkers } from "@/lib/marker-stack";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,10 @@ import { Button } from "@/components/ui/button";
 import { UnscheduledTray, UNSCHEDULED_DRAG_TYPE } from "@/components/modules/actions/unscheduled-tray";
 
 const DAYW = 15; // px per day, matches the reference's density
+
+/** How far back finished work stays on the grid. Older done tasks are history,
+ *  not schedule — they live in the list and the audit trail. */
+const DONE_VISIBLE_MONTHS = 3;
 
 // How far the grid opens by default — always symmetric around today, so the
 // "today" line sits exactly in the middle of the axis. A real task/milestone
@@ -344,8 +349,33 @@ export function TimelineView({
     });
   }, [filtered, filters, catMap]);
 
-  const dated = dateFiltered.filter((t) => !t.parentId && t.start && t.end);
-  const undated = dateFiltered.filter((t) => !t.parentId && (!t.start || !t.end));
+  // The timeline shows work that is happening or has happened. A backlog task
+  // has not started, so a bar for it asserts a schedule nobody committed to —
+  // and any dates it still carries are leftovers from before it was pushed
+  // back. It belongs in the list, not on a dated grid.
+  //
+  // Finished work ages out. A project accumulates far more done tasks than
+  // live ones — 82 against 3 here — and left in, they crowd out the work
+  // someone actually needs to look at. Three months is long enough to cover a
+  // recent quarter and short enough that the grid stays about the present.
+  const doneCutoff = useMemo(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - DONE_VISIBLE_MONTHS);
+    return todayLocal(d);
+  }, []);
+
+  const dated = dateFiltered.filter((t) => {
+    if (t.parentId || !t.start || !t.end) return false;
+    if (t.status === "backlog") return false;
+    if (t.status === "done") {
+      // A done task with no completion date predates the rule that stamps one.
+      // Falling back to its planned end keeps it placeable rather than
+      // silently dropping it.
+      return (t.completedOn || t.end) >= doneCutoff;
+    }
+    return true;
+  });
+  const undated = dateFiltered;
   const datedMs = ws.milestones.filter((m) => m.date);
 
   // Dated subtasks get their own thin nested bar under the parent's row —
@@ -359,6 +389,7 @@ export function TimelineView({
     if (!layers.subtasks) return map;
     dateFiltered.forEach((t) => {
       if (!t.parentId || !t.start || !t.end) return;
+      if (t.status === "backlog") return;
       const arr = map.get(t.parentId) ?? [];
       arr.push(t);
       map.set(t.parentId, arr);
@@ -382,7 +413,14 @@ export function TimelineView({
     );
   }
 
-  const allDates = [...dated.flatMap((t) => [t.start, t.end]), ...datedMs.map((m) => m.date)];
+  // Where a task actually ends on the grid. For finished work that is the day
+  // it was completed, not the day it was planned to finish — a task delivered
+  // three weeks late genuinely occupies those three weeks, and one delivered
+  // early should stop where it stopped rather than stretching the axis to a
+  // deadline it beat.
+  const effEnd = (t: Task) => (t.status === "done" && t.completedOn ? t.completedOn : t.end);
+
+  const allDates = [...dated.flatMap((t) => [t.start, effEnd(t)]), ...datedMs.map((m) => m.date)];
   const now = Date.now();
   // The axis is always symmetric around today, so "today" lands exactly in
   // the middle. "All" spans the full data range (equally padded both ways so
@@ -411,8 +449,10 @@ export function TimelineView({
   // track looking abruptly empty right at the edge, the single nearest
   // non-overlapping task just before rangeMin and just after rangeMax are
   // pulled in too and clamped to render at that edge.
-  const overlapping = dated.filter((t) => t.start <= maxStr && t.end >= minStr);
-  const before = dated.filter((t) => t.end < minStr).sort((a, b) => b.end.localeCompare(a.end))[0];
+  const overlapping = dated.filter((t) => t.start <= maxStr && effEnd(t) >= minStr);
+  const before = dated
+    .filter((t) => effEnd(t) < minStr)
+    .sort((a, b) => effEnd(b).localeCompare(effEnd(a)))[0];
   const after = dated.filter((t) => t.start > maxStr).sort((a, b) => a.start.localeCompare(b.start))[0];
   const inRangeDated = [...overlapping, ...(before ? [before] : []), ...(after ? [after] : [])];
   const edgeClampedIds = new Set([before?.id, after?.id].filter(Boolean) as string[]);
@@ -567,7 +607,7 @@ export function TimelineView({
     // marker pinned right at that edge — its true bar would be off-screen
     // (or absurdly wide), so it isn't drawn to scale, just placed as "the
     // last one" at the boundary.
-    if (edgeClampedIds.has(t.id) && t.end < minStr) {
+    if (edgeClampedIds.has(t.id) && effEnd(t) < minStr) {
       barWidth = EDGE_BAR_W;
       barLeft = 0;
     } else if (edgeClampedIds.has(t.id) && t.start > maxStr) {
@@ -575,7 +615,12 @@ export function TimelineView({
       barLeft = totalW - barWidth;
     } else {
       barLeft = daysBetween(minStr, t.start) * DAYW;
-      barWidth = Math.max(DAYW, daysBetween(t.start, t.end) * DAYW);
+      // The planned span sets the base width so the deadline stays visible as
+      // a ghost edge; for work that overran, the bar has to reach the later of
+      // the two or the actual overlay would be clipped by its own container.
+      const planned = daysBetween(t.start, t.end) * DAYW;
+      const actual = daysBetween(t.start, effEnd(t)) * DAYW;
+      barWidth = Math.max(DAYW, planned, actual);
     }
     // A finished task is drawn to the date it actually finished, with the
     // planned end left behind as a ghost so the gap is visible. Undated or
