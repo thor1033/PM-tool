@@ -9,6 +9,8 @@ import {
 } from "@tanstack/react-query";
 import { apiFetch } from "./client";
 import type { EntityName } from "@/lib/entities";
+import { milestoneJustCompleted } from "@/lib/milestone-completion";
+import { onMilestoneComplete } from "@/lib/milestone-prompt";
 import {
   describeCreate,
   describeUpdate,
@@ -242,6 +244,23 @@ export function useUpdateEntity(projectId: string, entity: EntityName) {
     },
     onSuccess: (_res, { id, data }, ctx) => {
       record(projectId, describeUpdate(entity, data, ctx?.before, id));
+      // Closing the last task under a milestone is the moment someone can say
+      // whether the outcome was actually reached — and the one moment they are
+      // not looking at the milestone header where that button lives. Asking
+      // here rather than in a view covers every path a task can be closed
+      // from: the board, the workspace, a card, the plan runner.
+      if (entity === "tasks" && "status" in data) {
+        const hit = milestoneJustCompleted(
+          ctx?.previous,
+          qc.getQueryData<WorkingSet>(projectKey(projectId)),
+          id,
+        );
+        if (hit) {
+          onMilestoneComplete(projectId, hit, () =>
+            qc.invalidateQueries({ queryKey: projectKey(projectId) }),
+          );
+        }
+      }
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: projectKey(projectId) });
