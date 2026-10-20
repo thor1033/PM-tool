@@ -110,8 +110,40 @@ the hub repo at `docs/pm-tool-integration.md`.
 
 The endpoint is **stateless Streamable HTTP, POST only** — a fresh MCP server per
 request, since Vercel keeps no process between invocations. It authenticates
-with a **bearer token, not the WorkOS cookie**: the caller is a machine with no
-user session.
+with a **bearer token, not the WorkOS cookie**, in one of two forms.
+
+### Per-user OAuth (people)
+
+Anyone who can sign in to the PM tool can connect their own MCP client (Claude
+Code, claude.ai, Claude Desktop…) and reach the projects of **their own
+workspace** — the same projects they see in the UI, with the same allowlist.
+WorkOS AuthKit is the authorization server; this app is only the resource
+server. The client discovers AuthKit from
+`/.well-known/oauth-protected-resource`, sends the person through the normal
+AuthKit sign-in, and calls `/api/mcp` with the resulting JWT. Writes are
+attributed to `<name> (via MCP)` in the audit trail.
+
+Setup, once per environment:
+
+1. **WorkOS dashboard → Connect → Configuration**: enable **Client ID Metadata
+   Document** and **Dynamic Client Registration**, and add the MCP URL (e.g.
+   `https://pm.teqneo.co/api/mcp`) as a **Resource Indicator**.
+2. **Env**: `WORKOS_AUTHKIT_DOMAIN=https://<subdomain>.authkit.app` (WorkOS →
+   Domains). Optionally `MCP_RESOURCE_URL` if the public URL differs from the
+   request origin; it must equal the Resource Indicator exactly.
+3. Users connect with, e.g.:
+
+   ```bash
+   claude mcp add --transport http --scope user pm-tool https://pm.teqneo.co/api/mcp
+   ```
+
+   then run `/mcp` in Claude Code and choose **Authenticate**.
+
+Unset `WORKOS_AUTHKIT_DOMAIN` ⇒ OAuth is off and only machine tokens work.
+
+### Machine tokens (AI Hub)
+
+For callers with no user session:
 
 ```
 PM_TOOL_MCP_TOKENS={"<secret>":{"org":"org_...","label":"AI Hub","scopes":["read"]}}

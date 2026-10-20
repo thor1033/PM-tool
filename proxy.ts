@@ -20,6 +20,8 @@ const authProxy = authkitProxy({
       // WorkOS sign-in page when unauthenticated — the route's own guard
       // (`requireApiAuth`) returns a JSON 401 instead. path-to-regexp glob.
       "/api/:path*",
+      // MCP OAuth discovery documents — public by definition.
+      "/.well-known/:path*",
     ],
   },
 });

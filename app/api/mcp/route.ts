@@ -1,5 +1,10 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { authenticateMachine } from "@/lib/api/machineAuth";
+import { authenticateMachine, type MachineContext } from "@/lib/api/machineAuth";
+import {
+  authenticateOAuthUser,
+  authkitIssuer,
+  protectedResourceMetadataUrl,
+} from "@/lib/api/oauthAuth";
 import { buildMcpServer } from "@/lib/mcp/server";
 
 /*
@@ -10,30 +15,42 @@ import { buildMcpServer } from "@/lib/mcp/server";
  * session between invocations, and the hub's client calls this without session
  * resumption, so every request re-authenticates.
  *
- * Auth is a bearer token (PM_TOOL_MCP_TOKENS), never the WorkOS cookie: the
- * caller is a machine with no user. proxy.ts already exempts /api/* from the
- * sign-in redirect, so the 401 below is what an unauthenticated caller gets.
+ * Auth is always a bearer token, never the WorkOS cookie, and comes in two kinds:
+ *  - a machine token (PM_TOOL_MCP_TOKENS) for callers with no user, e.g. the
+ *    AI Hub — see lib/api/machineAuth.ts;
+ *  - a per-user AuthKit OAuth access token, which any MCP client obtains by
+ *    sending the person through the normal PM sign-in — see lib/api/oauthAuth.ts.
+ * proxy.ts already exempts /api/* from the sign-in redirect, so the 401 below
+ * is what an unauthenticated caller gets, and it points the client at our
+ * protected-resource metadata so it can start that sign-in.
  */
 
 // `ws` (the Neon driver's WebSocket) needs Node — this must never run on edge.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function unauthorized() {
+function unauthorized(request: Request) {
+  // Tells a spec-compliant MCP client this endpoint wants a bearer token and,
+  // when OAuth is configured, where to discover how to get one.
+  const challenge = authkitIssuer()
+    ? `Bearer realm="atlas-pm", error="unauthorized", resource_metadata="${protectedResourceMetadataUrl(request)}"`
+    : 'Bearer realm="atlas-pm"';
   return Response.json(
     { error: "Unauthorized" },
-    {
-      status: 401,
-      // Tells a spec-compliant MCP client this endpoint wants a bearer token,
-      // rather than leaving it to guess at a bare 401.
-      headers: { "WWW-Authenticate": 'Bearer realm="atlas-pm"' },
-    },
+    { status: 401, headers: { "WWW-Authenticate": challenge } },
   );
 }
 
+async function authenticate(request: Request): Promise<MachineContext | null> {
+  const machine = await authenticateMachine(request.headers);
+  if (machine) return machine;
+  const match = (request.headers.get("authorization") ?? "").match(/^Bearer\s+(.+)$/i);
+  return match ? authenticateOAuthUser(match[1].trim(), request) : null;
+}
+
 export async function POST(request: Request): Promise<Response> {
-  const ctx = await authenticateMachine(request.headers);
-  if (!ctx) return unauthorized();
+  const ctx = await authenticate(request);
+  if (!ctx) return unauthorized(request);
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     // Stateless: no session id in any response.
