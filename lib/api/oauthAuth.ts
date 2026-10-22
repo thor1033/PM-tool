@@ -21,6 +21,15 @@ import type { MachineContext } from "@/lib/api/machineAuth";
  *   WORKOS_AUTHKIT_DOMAIN  https://<your-subdomain>.authkit.app (issuer)
  *   MCP_RESOURCE_URL       optional; the audience. Defaults to <origin>/api/mcp,
  *                          and must match a Resource Indicator in WorkOS.
+ *   MCP_TRUSTED_AUDIENCES  optional; other resource indicators whose tokens are
+ *                          accepted too, comma-separated. Set to the AI Hub's
+ *                          (https://hub.teqneo.co/api/mcp) so a person signed in
+ *                          to the hub reaches their projects THROUGH the hub, as
+ *                          themselves: the hub forwards their own token instead
+ *                          of its machine token, and the audit trail reads
+ *                          "<name> (via MCP)" rather than "AI Hub". Every entry
+ *                          is a system trusted to act for a signed-in person,
+ *                          so keep the list to the hub.
  *
  * Fails closed: unset domain, bad signature, wrong issuer/audience, expired,
  * unknown or non-allowlisted user ⇒ null ⇒ 401.
@@ -41,6 +50,20 @@ export function mcpResourceUrl(request: Request): string {
 
 export function protectedResourceMetadataUrl(request: Request): string {
   return `${new URL(mcpResourceUrl(request)).origin}/.well-known/oauth-protected-resource`;
+}
+
+/**
+ * The audiences a token may carry: ours, plus the systems trusted to forward a
+ * person's token (MCP_TRUSTED_AUDIENCES). A token for anything else is refused
+ * exactly as before — this widens nothing about WHO is accepted, only which
+ * door the same person may have come through.
+ */
+export function acceptedAudiences(request: Request): string[] {
+  const trusted = (process.env.MCP_TRUSTED_AUDIENCES ?? "")
+    .split(",")
+    .map((s) => s.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+  return [mcpResourceUrl(request), ...trusted];
 }
 
 // One JWKS fetcher per issuer for the life of the instance; jose caches the
@@ -113,7 +136,7 @@ export async function authenticateOAuthUser(
   try {
     const { payload } = await jwtVerify(token, jwksFor(issuer), {
       issuer,
-      audience: mcpResourceUrl(request),
+      audience: acceptedAudiences(request),
     });
     return await contextForUser(payload);
   } catch (err) {
