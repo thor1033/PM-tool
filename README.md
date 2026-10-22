@@ -139,6 +139,15 @@ Setup, once per environment:
 
    then run `/mcp` in Claude Code and choose **Authenticate**.
 
+**Through the AI Hub.** A person signed in to the hub can reach their projects
+*via* the hub's single MCP endpoint — the hub forwards their own access token
+rather than its machine token, so the call is theirs and is audited as theirs.
+For that, this app must accept tokens issued for the hub's resource as well as
+its own: set `MCP_TRUSTED_AUDIENCES=https://hub.teqneo.co/api/mcp`. Nothing
+else changes; a token for any other audience is still refused. The hub keeps a
+read-only agent read-only on its side using the `readOnlyHint` annotation every
+tool here now carries.
+
 Unset `WORKOS_AUTHKIT_DOMAIN` ⇒ OAuth is off and only machine tokens work.
 
 ### Machine tokens (AI Hub)

@@ -29,7 +29,14 @@ export function buildMcpServer(ctx: MachineContext): McpServer {
   for (const tool of toolsFor(ctx)) {
     server.registerTool(
       tool.name,
-      { description: tool.description, inputSchema: tool.inputSchema },
+      {
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        // Said in the standard place so a proxy in front of this endpoint — the
+        // AI Hub, forwarding a signed-in person's token through a read-only
+        // agent — can tell reads from writes without knowing our tool names.
+        annotations: { readOnlyHint: !tool.write },
+      },
       // The SDK validates args against inputSchema before this runs.
       async (args: Record<string, unknown>) => {
         try {
