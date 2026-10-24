@@ -72,7 +72,6 @@ export function opLabel(op: PlanOp): string {
   if (t === "edit_milestone") {
     const bits: string[] = [];
     if (op.title) bits.push(`rename to "${op.title}"`);
-    if (op.date) bits.push(`move to ${op.date}`);
     if (op.reached === true) bits.push("mark reached");
     if (op.reached === false) bits.push("mark not reached");
     if (op.category !== undefined) bits.push("change track");
@@ -290,12 +289,11 @@ export async function applyOp(op: PlanOp, h: Hooks): Promise<string | null> {
     const ex = ws.milestones.find((m) => m.title.toLowerCase() === String(op.title ?? "").toLowerCase());
     if (ex) {
       const patch: Record<string, unknown> = { type: op.kind ?? ex.type };
-      if (op.date) patch.date = op.date;
       if (op.note) patch.note = op.note;
       if (op.category !== undefined) patch.category = op.category;
       await mut(h.updateMilestone.mutateAsync({ id: ex.id, data: patch }));
     } else {
-      await mut(h.createMilestone.mutateAsync({ title: String(op.title), type: op.kind ?? "milestone", date: op.date ?? "", category: op.category, note: op.note ?? "" }));
+      await mut(h.createMilestone.mutateAsync({ title: String(op.title), type: op.kind ?? "milestone", category: op.category, note: op.note ?? "" }));
     }
     return `${op.kind === "gate" ? "Gate" : "Milestone"}: "${op.title}"`;
   }
@@ -306,7 +304,6 @@ export async function applyOp(op: PlanOp, h: Hooks): Promise<string | null> {
     if (!id) return null;
     const patch: Record<string, unknown> = {};
     if (op.title) patch.title = op.title;
-    if (op.date !== undefined) patch.date = op.date;
     if (op.kind) patch.type = op.kind;
     if (op.note !== undefined) patch.note = op.note;
     if (op.category !== undefined) patch.category = op.category;

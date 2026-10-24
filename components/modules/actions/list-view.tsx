@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  Plus, Trash2, Pencil, ChevronRight, ChevronDown, MessageSquare, GripVertical, Flag, Milestone as MilestoneIcon, CalendarClock,
+  Plus, Trash2, Pencil, ChevronRight, ChevronDown, MessageSquare, GripVertical, Flag, Milestone as MilestoneIcon,
   TriangleAlert, RotateCw, UserRound, Check, ListTodo,
 } from "lucide-react";
 import { useCreateEntity, useUpdateEntity, useDeleteEntity } from "@/lib/api/hooks";
@@ -24,9 +24,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
-import { milestoneStanding, isPressing } from "@/lib/milestone-urgency";
 import { COLLAPSE_STORAGE_KEY_PREFIX, OPEN_SUBS_STORAGE_KEY_PREFIX, MS_FOLD_STORAGE_KEY_PREFIX } from "@/components/modules/actions/shared";
-import { groupTasks, sortTasks, showsMilestoneHeaders, milestoneDateMap, GROUP_OPTIONS, type GroupMode, type SortMode } from "@/lib/grouping";
+import { groupTasks, sortTasks, showsMilestoneHeaders, GROUP_OPTIONS, type GroupMode, type SortMode } from "@/lib/grouping";
 import { useConfirm } from "@/components/project/confirm";
 
 const SYNTH_GROUPS = [
@@ -158,6 +157,13 @@ export function ListView({
   const del = useDeleteEntity(projectId, "tasks");
   const updateCat = useUpdateEntity(projectId, "categories");
   const updateMilestone = useUpdateEntity(projectId, "milestones");
+
+  // Unticking puts the task back where it would otherwise be: under way if it
+  // has started, backlog if not.
+  function toggleDone(t: Task) {
+    const status = t.status === "done" ? (t.start ? "inprogress" : "backlog") : "done";
+    update.mutate({ id: t.id, data: { status } }, { onError: (e) => toast.error((e as Error).message) });
+  }
   const delCat = useDeleteEntity(projectId, "categories");
 
   /** Deleting a track would orphan its tasks, so they're moved to "no track"
@@ -178,10 +184,10 @@ export function ListView({
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => loadJSON(`${COLLAPSE_STORAGE_KEY_PREFIX}${projectId}`, {}));
   const [expandedSubs, setExpandedSubs] = useState<Record<string, boolean>>(() => loadJSON(`${OPEN_SUBS_STORAGE_KEY_PREFIX}${projectId}`, {}));
-  // Milestones fold individually. Only a deliberate choice is stored, so a
-  // reached milestone stays folded by default without an entry per row.
+  // Milestones fold individually and start unfolded. Only a deliberate
+  // choice is stored.
   const [msFold, setMsFold] = useState<Record<string, boolean>>(() => loadJSON(`${MS_FOLD_STORAGE_KEY_PREFIX}${projectId}`, {}));
-  const msOpen = (mg: MilestoneGroup) => msFold[mg.key] ?? !mg.reachedOn;
+  const msOpen = (mg: MilestoneGroup) => msFold[mg.key] ?? true;
   function toggleMilestone(key: string, isOpen: boolean) {
     setMsFold((s) => {
       const next = { ...s, [key]: !isOpen };
@@ -220,15 +226,6 @@ export function ListView({
       return next;
     });
   }
-
-  // Milestones and gates are deadlines too — a list of what is coming that
-  // omits them tells you when the work lands but not what it is for.
-  const upcomingMarkers = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    return ws.milestones
-      .filter((m) => m.date && m.date >= today)
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, [ws.milestones]);
 
   // Categories default to expanded — a group only collapses once the user
   // explicitly closes it (and that choice is what's persisted).
@@ -339,10 +336,6 @@ export function ListView({
 
   const editableTracks = groupBy === "track";
 
-  // Deadline ordering falls back to the milestone for tasks that carry no
-  // end date of their own — which by the date rules is every backlog task.
-  const msDates = useMemo(() => milestoneDateMap(ws.milestones), [ws.milestones]);
-
 
   // Grouped once per render instead of re-filtering the full task list for
   // every parent row — that per-row filter turned quadratic as task counts grew.
@@ -402,13 +395,11 @@ export function ListView({
   // as a single flat list. Everything else goes through the grouped renderer
   // below, whatever the bucket key happens to be.
   if (groupBy === "none") {
-    const flat = sortTasks(filtered.filter((t) => !t.parentId), sortBy, msDates);
+    const flat = sortTasks(filtered.filter((t) => !t.parentId), sortBy);
     return (
       <SequenceList
         ws={ws}
         tasks={flat}
-        markers={sortBy === "deadline" ? upcomingMarkers : undefined}
-        onEditMilestone={onEditMilestone}
         onEdit={onEdit}
         showDueIn={sortBy === "deadline"}
         emptyLabel="Nothing matches the current filters."
@@ -435,73 +426,42 @@ export function ListView({
         // whichever ones its tasks actually point at. Matching on g.key would
         // compare a milestone's track against "owner:Ditlev" and find nothing,
         // filing every task under "not tied to a milestone".
+        // Milestones and gates both group the tasks beneath them; the type
+        // only changes the icon.
         const bucketMsIds = new Set(g.tasks.map((t) => t.milestoneId).filter(Boolean) as string[]);
         const groupMilestones = editableTracks
-          ? ws.milestones.filter((m) => m.type === "milestone" && m.category === g.key)
-          : ws.milestones.filter((m) => m.type === "milestone" && bucketMsIds.has(m.id));
-        const groupGates = editableTracks
-          ? ws.milestones.filter((m) => m.type === "gate" && m.category === g.key && m.date)
-          : [];
+          ? ws.milestones.filter((m) => m.category === g.key)
+          : ws.milestones.filter((m) => bucketMsIds.has(m.id));
+        const msCount = groupMilestones.filter((m) => m.type !== "gate").length;
+        const gateCount = groupMilestones.length - msCount;
 
-        // Interleave gates between task rows by date. Follow-up tasks sort
-        // exactly like any other task here — no forced adjacency to their
-        // origin. They're only visually distinguished by the gutter icon in
-        // TaskRow (see followupOf), which shows the origin's row number no
-        // matter which track the follow-up ends up in.
-        // Tasks sit beneath the milestone they drive at, in the order they
-        // should be executed. Gates still interleave by date, since a gate is
-        // a checkpoint the whole track passes rather than one milestone's work.
+        // Each milestone heads the tasks beneath it; tasks with no milestone
+        // follow, directly in the track. Follow-up tasks sort exactly like any
+        // other task — they are only marked by the gutter icon in TaskRow.
         type Row =
           | { kind: "task"; task: Task }
-          | { kind: "gate"; gate: Milestone }
           | { kind: "msHeader"; group: MilestoneGroup };
         const rows: Row[] = [];
-        const sortedGates = [...groupGates].sort((x, y) => (x.date < y.date ? -1 : 1));
-        let gateIdx = 0;
-        const flushGatesUpTo = (date: string) => {
-          while (gateIdx < sortedGates.length && sortedGates[gateIdx].date <= date) {
-            rows.push({ kind: "gate", gate: sortedGates[gateIdx] });
-            gateIdx++;
-          }
-        };
 
         // Grouping by milestone already puts them at the top level, so the
         // bucket's rows are its tasks directly — repeating the header inside
         // would nest each bucket under a copy of its own heading.
         if (!showsMilestoneHeaders(groupBy)) {
-          sortTasks(g.tasks, sortBy, msDates).forEach((t) => rows.push({ kind: "task", task: t }));
-          sortedGates.forEach((gate) => rows.push({ kind: "gate", gate }));
-          gateIdx = sortedGates.length;
+          sortTasks(g.tasks, sortBy).forEach((t) => rows.push({ kind: "task", task: t }));
         } else {
-        for (const mg of groupByMilestone(g.tasks, groupMilestones)) {
-          rows.push({ kind: "msHeader", group: mg });
-          // A reached milestone is a record of finished work, so it folds
-          // shut and states its count instead of listing every task.
-          //
-          // Unfolding one is a deliberate "show me this", so it overrides the
-          // status filter: a milestone reached by definition has finished
-          // work under it, and opening it only to find nothing there because
-          // Done is hidden makes the control look broken.
-          if (msOpen(mg)) {
-            const shown = mg.reachedOn ? milestoneTasksFor(mg, g.key) : mg.tasks;
-            // The chosen order applies inside each milestone. Execution order
-            // is what groupByMilestone already produced, so it is left alone.
-            const ordered = sortBy === "sequence" ? shown : sortTasks(shown, sortBy, msDates);
-            ordered.forEach((t) => rows.push({ kind: "task", task: t }));
+          for (const mg of groupByMilestone(g.tasks, groupMilestones)) {
+            // Tasks that sit directly in the track need no heading of their own.
+            if (mg.milestone) rows.push({ kind: "msHeader", group: mg });
+            if (!mg.milestone || msOpen(mg)) {
+              // Unfolding a checked-off milestone is a deliberate "show me
+              // this", so it reaches past the status filter to its finished work.
+              const shown = mg.reachedOn ? milestoneTasksFor(mg, g.key) : mg.tasks;
+              const ordered = sortBy === "sequence" ? shown : sortTasks(shown, sortBy);
+              ordered.forEach((t) => rows.push({ kind: "task", task: t }));
+            }
           }
-          // Gates land between milestones, never inside one: a gate dropped
-          // mid-group visually orphans the tasks below it from their header.
-          const closesAt = mg.milestone?.date
-            || mg.tasks.reduce((m, t) => (t.end > m ? t.end : m), "");
-          if (closesAt) flushGatesUpTo(closesAt);
-        }
-        }
-        while (gateIdx < sortedGates.length) {
-          rows.push({ kind: "gate", gate: sortedGates[gateIdx] });
-          gateIdx++;
         }
 
-        const today = new Date().toISOString().slice(0, 10);
         const isUndefined = g.key === "_none";
 
         return (
@@ -558,16 +518,16 @@ export function ListView({
                       below with their own headers, so a count here just says
                       the same thing twice. One glyph per concept — the
                       milestone mark for milestones, the flag for gates. */}
-                  {groupMilestones.length > 0 && (
+                  {msCount > 0 && (
                     <MilestoneIcon
                       className="text-muted-foreground size-3.5"
-                      aria-label={`${groupMilestones.length} milestone${groupMilestones.length === 1 ? "" : "s"}`}
+                      aria-label={`${msCount} milestone${msCount === 1 ? "" : "s"}`}
                     />
                   )}
-                  {groupGates.length > 0 && (
+                  {gateCount > 0 && (
                     <Flag
                       className="size-3.5 text-[var(--t-red)]"
-                      aria-label={`${groupGates.length} gate${groupGates.length === 1 ? "" : "s"}`}
+                      aria-label={`${gateCount} gate${gateCount === 1 ? "" : "s"}`}
                     />
                   )}
                 </button>
@@ -605,7 +565,7 @@ export function ListView({
                     <TrackAddMenu
                       trackLabel={g.label}
                       hasMilestones={groupMilestones.length > 0}
-                      onTask={() => onEdit(null, g.key, groupMilestones[0]?.id ?? null)}
+                      onTask={() => onEdit(null, g.key, null)}
                       onMilestone={() => onEditMilestone(null, g.key, "milestone")}
                       onGate={() => onEditMilestone(null, g.key, "gate")}
                     />
@@ -630,8 +590,9 @@ export function ListView({
               <table className="w-full text-[14.5px]">
                 <thead>
                   <tr className="border-b text-left">
-                    <th className="w-14 py-4 pl-2 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">
+                    <th className="w-20 py-4 pl-2 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">
                       <div className="flex items-center">
+                        <span className="mr-1.5 size-4 shrink-0" />
                         <span className="size-4 shrink-0" />
                         <span className="ml-1">ID</span>
                       </div>
@@ -647,27 +608,6 @@ export function ListView({
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={() => handleDrop(null, g)}
                 >
-                  {groupMilestones.length === 0 && !isUndefined && (
-                    <tr>
-                      <td colSpan={7} className="py-2">
-                        <div className="text-muted-foreground rounded-[var(--radius-sm)] border border-dashed px-4 py-5 text-center text-[13px] leading-relaxed">
-                          <p className="font-semibold">No milestones in this track yet</p>
-                          <p className="mt-1">
-                            Milestones are what the work is aiming at — add one, then tasks can be
-                            assigned to it.
-                          </p>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="mt-2.5 h-8 text-[12.5px]"
-                            onClick={() => onEditMilestone(null, g.key, "milestone")}
-                          >
-                            <MilestoneIcon className="size-3.5" /> Add a milestone
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
                   {rows.length === 0 && !isUndefined && (
                     <tr
                       onDragOver={(e) => { e.preventDefault(); setDragOverRow(`_empty_${g.key}`); }}
@@ -689,79 +629,19 @@ export function ListView({
                     </tr>
                   )}
                   {rows.map((row) => {
-                    if (row.kind === "gate") {
-                      const overdue = row.gate.date && row.gate.date < today;
-                      return (
-                        <tr key={`gate-${row.gate.id}`}>
-                          <td colSpan={7} className="py-2">
-                            <button
-                              onClick={() => onEditMilestone(row.gate)}
-                              className="group/gate relative flex w-full items-center gap-4 overflow-hidden rounded-[var(--radius-sm)] border-l-[4px] border-l-[var(--t-red)] px-4 py-3.5 text-left transition"
-                              style={{
-                                backgroundImage:
-                                  "repeating-linear-gradient(-45deg, color-mix(in oklch, var(--t-red) 12%, var(--panel)) 0 8px, var(--panel) 8px 16px)",
-                              }}
-                            >
-                              <span className="absolute inset-0 bg-[var(--t-red)]/0 transition group-hover/gate:bg-[var(--t-red)]/5" />
-                              <span className="relative flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--t-red)] text-white shadow-sm">
-                                <svg viewBox="0 0 16 16" className="size-5" fill="none">
-                                  <rect x="1" y="1" width="6" height="6" rx="1" fill="currentColor" />
-                                  <rect x="9" y="1" width="6" height="6" rx="1" fill="currentColor" opacity="0.6" />
-                                  <rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor" opacity="0.6" />
-                                  <rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" />
-                                </svg>
-                              </span>
-                              <div className="relative min-w-0 flex-1">
-                                <div className="flex items-center gap-2.5">
-                                  <span className="text-[16px] font-bold">{row.gate.title || "Untitled gate"}</span>
-                                  <span className="rounded-full bg-[var(--t-red)]/15 px-2.5 py-0.5 font-mono text-[10.5px] font-bold uppercase tracking-wide text-[var(--t-red)]">
-                                    Gate
-                                  </span>
-                                </div>
-                                <p className="text-muted-foreground mt-1 text-[13.5px]">
-                                  Checkpoint · everything above must pass before continuing
-                                </p>
-                              </div>
-                              {a && (
-                                <span
-                                  className="relative shrink-0 rounded-full px-3 py-1.5 text-[11.5px] font-medium"
-                                  style={{ background: `color-mix(in oklch, ${accentVar(g.color)} 16%, var(--panel))`, color: accentVar(g.color) }}
-                                >
-                                  {g.label}
-                                </span>
-                              )}
-                              <span className={cn("relative shrink-0 font-mono text-[13px]", overdue ? "font-bold text-[var(--t-red)]" : "text-muted-foreground")}>
-                                {row.gate.date ? fmtD(row.gate.date) : "No date"}
-                              </span>
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    }
-
                     if (row.kind === "msHeader") {
                       const mg = row.group;
-                      const m = mg.milestone;
-                      const col = a ? accentVar(g.color) : "var(--accent-deep)";
-                      const overdue = m?.date && m.date < today && !mg.complete;
+                      const m = mg.milestone!;
+                      const isGate = m.type === "gate";
+                      const col = isGate ? "var(--t-red)" : a ? accentVar(g.color) : "var(--accent-deep)";
                       const done = !!mg.reachedOn;
                       const open = msOpen(mg);
-                      // Judged against everything the milestone holds, not
-                      // what the status filter is showing: with Done hidden
-                      // its finished tasks are absent, and a milestone whose
-                      // work was complete would otherwise read as overdue.
-                      const msAll = milestoneTasksFor(mg, g.key);
-                      const msFinishable = msAll.filter((t) => t.kind !== "ongoing");
-                      const standing = milestoneStanding(
-                        { date: m?.date, reachedOn: mg.reachedOn },
-                        msFinishable.length > 0 && msFinishable.every((t) => t.status === "done"),
-                      );
                       return (
                         <tr key={`ms-${mg.key}`}>
                           <td colSpan={7} className="pb-1 pt-4 first:pt-1">
-                            {/* A reached milestone is a record, not a to-do:
-                                it recedes to grey, keeps a green mark, and
-                                folds shut over its finished tasks. */}
+                            {/* A milestone is checked off by a person, never
+                                by its last task finishing. Once it is, it
+                                recedes and keeps a green mark. */}
                             <div className={cn("flex items-center gap-2.5", done && "opacity-65")}>
                               <button
                                 onClick={() => toggleMilestone(mg.key, open)}
@@ -771,139 +651,60 @@ export function ListView({
                               >
                                 <ChevronRight className={cn("size-3.5 transition", open && "rotate-90")} />
                               </button>
-                              {m ? (
-                                <button
-                                  onClick={() => onEditMilestone(m)}
-                                  className="group/ms flex min-w-0 items-center gap-2.5 text-left"
-                                  title="Edit this milestone"
+                              <button
+                                onClick={() => onEditMilestone(m)}
+                                className="group/ms flex min-w-0 items-center gap-2.5 text-left"
+                                title={isGate ? "Edit this gate" : "Edit this milestone"}
+                              >
+                                <span
+                                  className="flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)]"
+                                  style={
+                                    done
+                                      ? { background: "color-mix(in oklch, var(--hue-done) 16%, var(--panel))", color: "var(--hue-done)" }
+                                      : { background: `color-mix(in oklch, ${col} 16%, var(--panel))`, color: col }
+                                  }
                                 >
-                                  <span
-                                    className="flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)]"
-                                    style={
-                                      done
-                                        ? { background: "color-mix(in oklch, var(--hue-done) 16%, var(--panel))", color: "var(--hue-done)" }
-                                        : { background: `color-mix(in oklch, ${col} 16%, var(--panel))`, color: col }
-                                    }
-                                  >
-                                    {done ? <Check className="size-3.5" /> : <MilestoneIcon className="size-3.5" />}
-                                  </span>
-                                  <span className={cn(
-                                    "truncate text-[14px] font-bold group-hover/ms:underline",
-                                    done && "text-muted-foreground",
-                                  )}>
-                                    {m.title || "Untitled milestone"}
-                                  </span>
-                                  <span
-                                    className={cn(
-                                      "shrink-0 font-mono text-[12px]",
-                                      overdue ? "font-bold text-[var(--t-red)]" : "text-muted-foreground",
-                                    )}
-                                  >
-                                    {m.date ? fmtD(m.date) : "no date"}
-                                  </span>
-                                  {/* A milestone deadline is a different kind
-                                      of pressure from a task's — the outcome
-                                      the plan is built around is what moves —
-                                      so it is said in words on the milestone
-                                      itself, before the date passes rather
-                                      than after. */}
-                                  {isPressing(standing) && (
-                                    <span
-                                      className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-[2px] text-[11px] font-semibold"
-                                      style={{
-                                        color: `color-mix(in oklch, ${standing.tone} 74%, var(--ink))`,
-                                        background: `color-mix(in oklch, ${standing.tone} 13%, var(--panel))`,
-                                      }}
-                                    >
-                                      {standing.urgency === "awaiting" ? (
-                                        <Check className="size-3" />
-                                      ) : (
-                                        <CalendarClock className="size-3" />
-                                      )}
-                                      {standing.label}
-                                    </span>
-                                  )}
-                                  {/* Folded away tasks are counted, never
-                                      silently dropped. */}
-                                  {!open && milestoneTasksFor(mg, g.key).length > 0 && (
-                                    <span className="text-muted-foreground shrink-0 text-[11.5px]">
-                                      {milestoneTasksFor(mg, g.key).filter((t) => t.status === "done").length}
-                                      /{milestoneTasksFor(mg, g.key).length} tasks
-                                    </span>
-                                  )}
-                                  {mg.reachedOn && (
-                                    <span
-                                      className="shrink-0 font-mono text-[11.5px] font-semibold"
-                                      style={{ color: "color-mix(in oklch, var(--hue-done) 72%, var(--ink))" }}
-                                    >
-                                      reached {fmtD(mg.reachedOn)}
-                                      {mg.slipDays !== null && mg.slipDays !== 0 &&
-                                        ` · ${Math.abs(mg.slipDays)}d ${mg.slipDays > 0 ? "late" : "early"}`}
-                                    </span>
-                                  )}
-                                </button>
-                              ) : (
-                                <span className="text-muted-foreground flex items-center gap-2.5 text-[13.5px] font-semibold">
-                                  <span className="flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-dashed">
-                                    <MilestoneIcon className="size-3.5" />
-                                  </span>
-                                  Not tied to a milestone
+                                  {done ? <Check className="size-3.5" /> : isGate ? <Flag className="size-3.5" /> : <MilestoneIcon className="size-3.5" />}
                                 </span>
-                              )}
-                              <span className="text-muted-foreground shrink-0 font-mono text-[11.5px]">
-                                {/* Counted against what the milestone really
-                                    holds, not what the status filter is
-                                    showing — a reached milestone whose work
-                                    is all done otherwise reads "no tasks
-                                    yet" while listing its tasks below. */}
-                                {(() => {
-                                  const all = milestoneTasksFor(mg, g.key);
-                                  if (all.length === 0) return "no tasks yet";
-                                  const done = all.filter((t) => t.status === "done").length;
-                                  return `${done}/${all.length}`;
-                                })()}
-                              </span>
+                                <span className={cn("truncate text-[14px] font-bold group-hover/ms:underline", done && "text-muted-foreground")}>
+                                  {m.title || (isGate ? "Untitled gate" : "Untitled milestone")}
+                                </span>
+                                {isGate && (
+                                  <span className="shrink-0 rounded-full bg-[var(--t-red)]/12 px-2 py-[1px] font-mono text-[10px] font-bold uppercase tracking-wide text-[var(--t-red)]">
+                                    Gate
+                                  </span>
+                                )}
+                                {done && (
+                                  <span
+                                    className="shrink-0 font-mono text-[11.5px] font-semibold"
+                                    style={{ color: "color-mix(in oklch, var(--hue-done) 72%, var(--ink))" }}
+                                  >
+                                    {isGate ? "approved" : "reached"} {fmtD(mg.reachedOn)}
+                                  </span>
+                                )}
+                              </button>
                               <span className="h-px flex-1 bg-[var(--line)]" />
-                              {/* Reaching a milestone is declared, not inferred:
-                                  the work being finished is a prompt, not proof
-                                  the outcome was achieved. */}
-                              {m && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className={cn(
-                                    "h-7 shrink-0 text-[12px]",
-                                    mg.awaitingConfirmation
-                                      ? "font-semibold text-[var(--hue-done)]"
-                                      : "text-muted-foreground hover:text-foreground",
-                                  )}
-                                  onClick={() =>
-                                    updateMilestone.mutate(
-                                      { id: m.id, data: { reachedOn: mg.reachedOn ? "" : todayISO() } },
-                                      { onError: (e) => toast.error((e as Error).message) },
-                                    )
-                                  }
-                                  title={
-                                    mg.reachedOn
-                                      ? "Mark this milestone as not yet reached"
-                                      : mg.awaitingConfirmation
-                                        ? "Every task is done — confirm the milestone was reached"
-                                        : "Mark this milestone reached"
-                                  }
-                                >
-                                  <Check className="size-3.5" />
-                                  {mg.reachedOn ? "Reached" : mg.awaitingConfirmation ? "Mark reached" : "Reached?"}
-                                </Button>
-                              )}
-                              {/* Work is added to a milestone, not to the
-                                  track at large — the milestone is what the
-                                  task is for. */}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className={cn("h-7 shrink-0 text-[12px]", done ? "text-[var(--hue-done)]" : "text-muted-foreground hover:text-foreground")}
+                                onClick={() =>
+                                  updateMilestone.mutate(
+                                    { id: m.id, data: { reachedOn: done ? "" : todayISO() } },
+                                    { onError: (e) => toast.error((e as Error).message) },
+                                  )
+                                }
+                                title={done ? "Mark as not reached" : isGate ? "Check this gate off as approved" : "Check this milestone off as reached"}
+                              >
+                                <Check className="size-3.5" />
+                                {done ? (isGate ? "Approved" : "Reached") : (isGate ? "Approve" : "Mark reached")}
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 className="text-muted-foreground hover:text-foreground h-7 shrink-0 text-[12px]"
-                                onClick={() => onEdit(null, g.key, m?.id ?? null)}
-                                title={m ? `Add a task toward “${m.title}”` : "Add a task with no milestone"}
+                                onClick={() => onEdit(null, g.key, m.id)}
+                                title={`Add a task under “${m.title}”`}
                               >
                                 <Plus className="size-3.5" /> Task
                               </Button>
@@ -941,6 +742,7 @@ export function ListView({
                           onDrop={() => handleDrop(t, g)}
                           onStartAddSubtask={() => { setAddingSubFor(t.id); setSubTitle(""); }}
                           onJumpTo={(target) => onEdit(target)}
+                          onToggleDone={() => toggleDone(t)}
                         />
                         {addingSubFor === t.id && (
                           <tr>
@@ -974,6 +776,7 @@ export function ListView({
                             dragging={false} dragOver={false}
                             onDragStart={() => {}} onDragOver={() => {}} onDrop={() => {}}
                             onJumpTo={(target) => onEdit(target)}
+                            onToggleDone={() => toggleDone(sub)}
                           />
                         ))}
                       </Fragment>
@@ -1007,12 +810,8 @@ export function ListView({
 
 function SequenceList({
   ws, tasks, onEdit, showDueIn = false, emptyLabel = "No tasks match the current filters.",
-  markers = [], onEditMilestone,
 }: {
   ws: WorkingSet; tasks: Task[]; onEdit: (t: Task | null) => void;
-  /** Milestones and gates to interleave by date, when this is a deadline view. */
-  markers?: Milestone[];
-  onEditMilestone?: (m: Milestone | null) => void;
   /** Adds a "Due in" column — how long until (or since) each end date. */
   showDueIn?: boolean;
   emptyLabel?: string;
@@ -1020,14 +819,7 @@ function SequenceList({
   const catMap = new Map(ws.categories.map((c) => [c.id, c]));
   const today = new Date().toISOString().slice(0, 10);
 
-  // Rows are tasks and markers merged on date, so the reader sees the
-  // milestone a run of work is driving at, in sequence with that work.
-  const merged: ({ t: Task; d: string } | { m: Milestone; d: string })[] = [
-    ...tasks.map((t) => ({ t, d: t.end })),
-    ...markers.map((m) => ({ m, d: m.date })),
-  ].sort((a, b) => a.d.localeCompare(b.d));
-
-  if (merged.length === 0) {
+  if (tasks.length === 0) {
     return <p className="text-muted-foreground py-12 text-center text-sm">{emptyLabel}</p>;
   }
 
@@ -1049,45 +841,7 @@ function SequenceList({
           </tr>
         </thead>
         <tbody>
-          {merged.map((row, i) => {
-            if ("m" in row) {
-              const m = row.m;
-              const isGate = m.type === "gate";
-              const cat = m.category ? catMap.get(m.category) : null;
-              return (
-                <tr
-                  key={`mk-${m.id}`}
-                  onClick={() => onEditMilestone?.(m)}
-                  className="cursor-pointer border-b border-[var(--line)] transition last:border-0 hover:bg-[var(--paper-2)]"
-                  style={{ background: isGate
-                    ? "color-mix(in oklch, var(--t-red) 5%, transparent)"
-                    : "color-mix(in oklch, var(--accent-c) 5%, transparent)" }}
-                >
-                  <td className="text-muted-foreground py-4 pl-4 font-mono text-[13px]">{i + 1}</td>
-                  <td className="py-4 pr-6">
-                    <span className="flex items-center gap-2.5">
-                      {isGate
-                        ? <Flag className="size-3.5 shrink-0 text-[var(--t-red)]" />
-                        : <MilestoneIcon className="size-3.5 shrink-0 text-[var(--accent-deep)]" />}
-                      <span
-                        className="font-semibold"
-                        style={{ color: isGate ? "var(--t-red)" : "var(--accent-deep)" }}
-                      >
-                        {m.title || "Untitled"}
-                      </span>
-                    </span>
-                  </td>
-                  <td className="text-muted-foreground py-4 pr-4 text-[12.5px]">{cat?.label ?? ""}</td>
-                  <td className="py-4 pr-4" />
-                  <td className="py-4 pr-4" />
-                  <td className="py-4 pr-4" />
-                  <td className="text-muted-foreground py-4 pr-4 font-mono text-[13px]">{fmtD(m.date)}</td>
-                  {showDueIn && <td className="py-4 pr-4" />}
-                  <td className="py-4 pr-4" />
-                </tr>
-              );
-            }
-            const t = row.t;
+          {tasks.map((t, i) => {
             const cat = t.category ? catMap.get(t.category) : null;
             const catIcon = cat?.icon ? TRACK_ICONS[cat.icon] : null;
             const deps = depsOf(t, { tasks: ws.tasks, products: ws.products, externals: ws.externals });
@@ -1121,6 +875,7 @@ function SequenceList({
                         />
                       );
                     })()}
+                    {t.priority && <PriorityDot />}
                     <span className="font-medium">{t.title}</span>
                     {blocked && <span className="text-[11px] font-bold text-[var(--t-red)]" title="Dependency block">⛔</span>}
                   </span>
@@ -1160,8 +915,8 @@ function SequenceList({
                   {t.start && t.end ? (
                     `${fmtD(t.start)} → ${fmtD(t.end)}`
                   ) : (
-                    <span className="inline-flex items-center gap-2 text-[var(--t-red)]" title="Missing start and/or end date">
-                      <span className="size-2 shrink-0 rounded-full border-[1.5px] border-[var(--t-red)]" />
+                    <span className="inline-flex items-center gap-2 text-muted-foreground" title="Missing start and/or end date">
+                      <span className="size-2 shrink-0 rounded-full border-[1.5px] border-current opacity-60" />
                       {t.start || t.end ? `${t.start ? fmtD(t.start) : "?"} → ${t.end ? fmtD(t.end) : "?"}` : "No dates"}
                     </span>
                   )}
@@ -1195,11 +950,17 @@ function SequenceList({
   );
 }
 
+/** Marks a task that takes priority. Red because it is the one thing in the
+ *  row that asks to be looked at first. */
+function PriorityDot() {
+  return <span className="size-2 shrink-0 rounded-full bg-[var(--t-red)]" title="Priority" aria-label="Priority" />;
+}
+
 function TaskRow({
   seq, originSeq, task, ws, blocked, hasSubtasks, subsOpen, doneCount, totalCount,
   onToggleSubs, onEdit, onDelete, indent,
   dragging, dragOver, onDragStart, onDragOver, onDrop,
-  onStartAddSubtask, onJumpTo,
+  onStartAddSubtask, onJumpTo, onToggleDone,
 }: {
   seq: number | null; task: Task; ws: WorkingSet; blocked: boolean;
   /** The origin task's list-wide row number — set whenever this task is a
@@ -1212,8 +973,10 @@ function TaskRow({
   onDragStart: () => void; onDragOver: () => void; onDrop: () => void;
   onStartAddSubtask?: () => void;
   onJumpTo: (t: Task) => void;
+  onToggleDone: () => void;
 }) {
   const who = task.assignees ?? [];
+  const done = task.status === "done";
   const ownerLabel = who.length === 0 ? "—" : who.length === 1 ? who[0] : `${who.length} people`;
 
   const followupOfId = (task.deps ?? []).find((d) => d.type === "followup")?.refId;
@@ -1233,8 +996,27 @@ function TaskRow({
         dragOver && "border-t-2 border-t-primary",
       )}
     >
-      <td className="w-14 py-4 pl-2">
+      <td className="w-20 py-4 pl-2">
         <div className="flex items-center">
+          {/* Check off in place. Hidden until the row is hovered so the list
+              stays quiet, but always shown once ticked — done is worth seeing. */}
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={done}
+            aria-label={done ? "Mark as not done" : "Mark as done"}
+            title={done ? "Mark as not done" : "Mark as done"}
+            onClick={(e) => { e.stopPropagation(); onToggleDone(); }}
+            onDoubleClick={(e) => e.stopPropagation()}
+            className={cn(
+              "mr-1.5 flex size-4 shrink-0 items-center justify-center rounded-[4px] border-[1.5px] transition",
+              done
+                ? "border-[var(--t-green)] bg-[var(--t-green)] text-white"
+                : "border-[var(--ink-soft)] opacity-0 hover:border-foreground focus-visible:opacity-100 group-hover/row:opacity-100",
+            )}
+          >
+            {done && <Check className="size-3" strokeWidth={3} />}
+          </button>
           <span className="flex size-4 shrink-0 items-center justify-center">
             <GripVertical className="text-muted-foreground/30 size-4 cursor-grab opacity-0 group-hover:opacity-100" />
           </span>
@@ -1252,7 +1034,20 @@ function TaskRow({
       </td>
       <td className="relative py-4 pr-6">
         <div className={cn("flex items-center gap-3", indent > 0 && "text-[13.5px]")}>
-          <span className="leading-snug font-medium">{task.title}</span>
+          {task.priority && <PriorityDot />}
+          {/* The line runs through the title when it is checked off. It is a
+              width transition, so it only animates on the change — a task
+              that was already done loads with the line in place. */}
+          <span className={cn("relative leading-snug font-medium transition-colors duration-500", done && "text-muted-foreground")}>
+            {task.title}
+            <span
+              aria-hidden
+              className={cn(
+                "pointer-events-none absolute top-1/2 left-0 h-[1.5px] bg-current transition-[width] duration-500 ease-out",
+                done ? "w-full" : "w-0",
+              )}
+            />
+          </span>
           {originSeq !== null && originSeq !== undefined && (
             <button
               onClick={(e) => { e.stopPropagation(); if (followupOf) onJumpTo(followupOf); }}
@@ -1290,8 +1085,8 @@ function TaskRow({
         {task.start && task.end ? (
           `${fmtD(task.start)} → ${fmtD(task.end)}`
         ) : (
-          <span className="inline-flex items-center gap-2 text-[var(--t-red)]" title="Missing start and/or end date">
-            <span className="size-2 shrink-0 rounded-full border-[1.5px] border-[var(--t-red)]" />
+          <span className="inline-flex items-center gap-2 text-muted-foreground" title="Missing start and/or end date">
+            <span className="size-2 shrink-0 rounded-full border-[1.5px] border-current opacity-60" />
             {task.start || task.end ? `${task.start ? fmtD(task.start) : "?"} → ${task.end ? fmtD(task.end) : "?"}` : "No dates"}
           </span>
         )}

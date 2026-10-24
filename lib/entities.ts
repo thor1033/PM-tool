@@ -30,6 +30,7 @@ const taskSchema = z
     kind: z.string(),
     milestoneId: z.string().nullable(),
     meeting: z.record(z.string(), z.any()),
+    priority: z.boolean(),
   })
   .partial();
 

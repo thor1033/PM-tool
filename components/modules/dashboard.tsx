@@ -388,19 +388,18 @@ function RoadAhead({
     [viewTasks],
   );
 
-  const futureMs = useMemo(
-    () => milestones.filter((m) => m.date && new Date(m.date) >= today),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [milestones],
-  );
+  // Milestones have no date, so they are not drawn on this axis. What the
+  // panel can say is how many are still open, waiting for someone to check
+  // them off.
+  const openMs = milestones.filter((m) => !m.reachedOn);
 
-  if (!upcoming.length && !futureMs.length) {
+  if (!upcoming.length) {
     return (
       <Panel
         title="The road ahead"
         action={<PanelLink href={`/projects/${projectId}/actions`} label="Timeline" />}
       >
-        <DashEmpty>Nothing scheduled ahead. Add dates to tasks or milestones to see them here.</DashEmpty>
+        <DashEmpty>Nothing scheduled ahead. Add dates to tasks to see them here.</DashEmpty>
       </Panel>
     );
   }
@@ -410,10 +409,6 @@ function RoadAhead({
   upcoming.forEach((t) => {
     min = Math.min(min, +new Date(t.start));
     max = Math.max(max, +new Date(t.end));
-  });
-  futureMs.forEach((m) => {
-    min = Math.min(min, +new Date(m.date));
-    max = Math.max(max, +new Date(m.date));
   });
   min = Math.min(min, +today);
   max = Math.max(max, +today + 7 * DAYMS);
@@ -433,8 +428,8 @@ function RoadAhead({
     cur.setMonth(cur.getMonth() + 1);
   }
 
-  const gates = futureMs.filter((m) => m.type === "gate");
-  const miles = futureMs.filter((m) => m.type !== "gate");
+  const gates = openMs.filter((m) => m.type === "gate");
+  const miles = openMs.filter((m) => m.type !== "gate");
 
   return (
     <Panel
@@ -516,8 +511,8 @@ function RoadAhead({
         </span>
         {(gates.length > 0 || miles.length > 0) && (
           <span className="inline-flex items-center gap-1.5">
-            {miles.length} milestone{miles.length === 1 ? "" : "s"} ahead
-            {gates.length > 0 && ` · ${gates.length} gate${gates.length === 1 ? "" : "s"}`}
+            {miles.length} open milestone{miles.length === 1 ? "" : "s"}
+            {gates.length > 0 && ` · ${gates.length} gate${gates.length === 1 ? "" : "s"} awaiting approval`}
           </span>
         )}
       </div>
@@ -602,7 +597,6 @@ export function DashboardModule({ projectId }: { projectId: string }) {
 
   const tasks = useMemo(() => data?.tasks ?? [], [data]);
   const risks = useMemo(() => data?.risks ?? [], [data]);
-  const allMilestones = useMemo(() => data?.milestones ?? [], [data]);
   const personal = !!who && people.includes(who);
 
   const viewTasks = useMemo(
@@ -616,18 +610,10 @@ export function DashboardModule({ projectId }: { projectId: string }) {
     [personal, risks, viewTasks],
   );
 
-  // In the personal view a milestone is relevant when the person has work in
-  // its track — a milestone nobody here contributes to isn't "what needs me".
-  const viewMilestones = useMemo(() => {
-    if (!personal) return allMilestones;
-    const mine = new Set(viewTasks.map((t) => t.category).filter(Boolean));
-    return allMilestones.filter((m) => m.category && mine.has(m.category));
-  }, [personal, allMilestones, viewTasks]);
-
   const health = useMemo(() => computeHealth(viewTasks, tasks), [viewTasks, tasks]);
   const attention = useMemo(
-    () => attentionList(viewTasks, tasks, viewRisks, new Date(), viewMilestones),
-    [viewTasks, tasks, viewRisks, viewMilestones],
+    () => attentionList(viewTasks, tasks, viewRisks, new Date()),
+    [viewTasks, tasks, viewRisks],
   );
   const blockedHidden = useMemo(() => blockedOverflow(viewTasks, tasks), [viewTasks, tasks]);
 

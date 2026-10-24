@@ -65,10 +65,11 @@ export function CalendarView({
     );
   }
 
+  // A milestone has no date; it appears on the day someone checked it off.
   const msByDay = useMemo(() => {
     const map = new Map<string, Milestone[]>();
-    ws.milestones.filter((m) => m.date).forEach((m) => {
-      const k = m.date.slice(0, 10);
+    ws.milestones.filter((m) => m.reachedOn).forEach((m) => {
+      const k = (m.reachedOn ?? "").slice(0, 10);
       const arr = map.get(k) ?? [];
       arr.push(m);
       map.set(k, arr);

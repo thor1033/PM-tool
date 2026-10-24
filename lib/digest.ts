@@ -149,15 +149,16 @@ export function buildDigest({
   }
 
   for (const m of milestones) {
-    if (m.date && m.date >= weekFrom && m.date <= today) {
+    const reached = m.reachedOn ?? "";
+    if (reached && reached >= weekFrom && reached <= today) {
       const track = m.category
         ? categories.find((c) => c.id === m.category)?.label ?? null
         : null;
       derived.push({
         id: `d:ms:${m.id}`,
-        ts: dayTs(m.date),
+        ts: dayTs(reached),
         kind: "milestone",
-        text: `Milestone “${m.title}” reached`,
+        text: `${m.type === "gate" ? "Gate" : "Milestone"} “${m.title}” ${m.type === "gate" ? "approved" : "reached"}`,
         actor: "",
         track,
         categoryId: m.category ?? null,

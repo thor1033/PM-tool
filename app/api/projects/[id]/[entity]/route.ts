@@ -2,13 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireApiAuth } from "@/lib/api/guard";
 import { createEntity, getWorkingSet } from "@/lib/db/queries";
 import { entityConfig, isEntityName } from "@/lib/entities";
-import {
-  checkMilestone,
-  checkTask,
-  checkTaskDeadline,
-  trackForTask,
-  inheritFromParent,
-} from "@/lib/hierarchy";
+import { checkMilestone, checkTask, inheritFromParent } from "@/lib/hierarchy";
 import { applyDateRules } from "@/lib/task-dates";
 
 type Ctx = { params: Promise<{ id: string; entity: string }> };
@@ -31,7 +25,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   // Preserve a client-provided id if present (used by AI setup / import flows).
   const data = { ...parsed.data } as Record<string, unknown>;
 
-  // track → milestone → task → subtask. Enforced here because this endpoint
+  // track → (milestone) → task → subtask. Enforced here because this endpoint
   // is the one gate every creation path shares, the raw API included.
   if (entity === "milestones") {
     const issue = checkMilestone(data, true);
@@ -42,23 +36,11 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     if (!ws) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const issue = checkTask(data, true, ws);
     if (issue) return NextResponse.json(issue, { status: 400 });
-    if (data.parentId) {
-      // A subtask takes its parent's milestone, track and stage outright.
-      inheritFromParent(data, ws, { withStatus: true });
-    } else {
-      // The milestone owns the track, so it is derived rather than trusted —
-      // a caller cannot file a task under a milestone in another track.
-      const track = trackForTask(data, ws);
-      if (track) data.category = track;
-    }
+    // A subtask takes its parent's milestone, track and stage outright.
+    if (data.parentId) inheritFromParent(data, ws, { withStatus: true });
 
     // Runs after the status is settled, since every date rule keys off it.
     applyDateRules(data, true, undefined);
-
-    // Checked after the date rules, so it judges the dates that will actually
-    // be stored rather than the ones the caller happened to send.
-    const late = checkTaskDeadline(data, undefined, ws);
-    if (late) return NextResponse.json(late, { status: 400 });
   }
   if (typeof body.id === "string") data.id = body.id;
   const row = await createEntity(ctx.orgId, id, entity, data);

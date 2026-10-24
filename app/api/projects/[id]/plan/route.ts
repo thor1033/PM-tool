@@ -110,7 +110,7 @@ function buildContext(text: string, ws: WorkingSet): string {
             (m, i) =>
               `M${i + 1}: ${m.title}` +
               (m.type === "gate" ? " (gate)" : "") +
-              (m.date ? " " + m.date : " (no date)") +
+              (m.category ? " [track " + m.category + "]" : "") +
               (m.reachedOn ? " REACHED" : ""),
           )
           .join(" | ") || "(none)"),
@@ -154,12 +154,12 @@ function buildContext(text: string, ws: WorkingSet): string {
 
 const OP_CATALOG = `You are an AI project management assistant. Analyse the user's text against the project context and return ONLY minified JSON: { "groups": [ { "quote": "<span of user text>", "ops": [ {op}, … ] } ] }. Up to 16 groups.
 
-ROUTING GUIDANCE: blocker→dependency; threat→risk (+comment); scope decision→scope_in/out; fact learned→finding; term defined→glossary; deadline/go-no-go→milestone (ALWAYS set category to a track id or label from TRACKS — a milestone without a track is invalid and will be rejected; pick the closest track); owner change→assign;new person→member; explicit delete→remove/delete; document/output→deliverable; new work area→track; strategy/positioning text→strategy; new service→feature; pin/hide pages→favorite/section; reminder/buffer→setting; a change to something that already exists→edit_task/edit_risk/edit_member/edit_milestone; renaming or rescheduling a milestone that is already in EXISTING MILESTONES/GATES→edit_milestone (NEVER a new milestone op); the same change across many tasks→ONE bulk op; a question→answer only. JSON only.
+ROUTING GUIDANCE: blocker→dependency; threat→risk (+comment); scope decision→scope_in/out; fact learned→finding; term defined→glossary; go-no-go/stage worth marking→milestone (milestones have NO date and decide nothing about tasks; ALWAYS set category to a track id or label from TRACKS — a milestone without a track is invalid and will be rejected; pick the closest track); owner change→assign;new person→member; explicit delete→remove/delete; document/output→deliverable; new work area→track; strategy/positioning text→strategy; new service→feature; pin/hide pages→favorite/section; reminder/buffer→setting; a change to something that already exists→edit_task/edit_risk/edit_member/edit_milestone; renaming, re-tracking or checking off a milestone that is already in EXISTING MILESTONES/GATES→edit_milestone (NEVER a new milestone op); the same change across many tasks→ONE bulk op; a question→answer only. JSON only.
 
 OP TYPES (use exact field names):
-Task ops: create{type,title,track?,status?,assignee?,start?,end?} | status{type,task:"T3",to:"backlog|inprogress|done"}  | dates{type,task,start?,end?} | assign{type,task,who,clear?:false} | edit_task{type,task,title?,desc?,track?} | move_track{type,task,track} | make_subtask{type,task,parent:"T5"} | promote{type,task} | reorder{type,task,to:"top|bottom"} | tag{type,task,label} | untag{type,task,label} | comment{type,task,text,author?:"AI import"} | subtask{type,parent:"T5",title} | dependency{type,task,on:"T5"|external:"name",scope?} | remove_dep{type,task,on:"T5"|external:"name"} | shift_all{type,days:N} | bulk{type,filter:{track?,status?,assignee?,unassigned?},set:{status?,assign?,track?},shiftDays?:0}
+Task ops: create{type,title,track:REQUIRED,status?,assignee?,start?,end?} | status{type,task:"T3",to:"backlog|inprogress|done"}  | dates{type,task,start?,end?} | assign{type,task,who,clear?:false} | edit_task{type,task,title?,desc?,track?} | move_track{type,task,track} | make_subtask{type,task,parent:"T5"} | promote{type,task} | reorder{type,task,to:"top|bottom"} | tag{type,task,label} | untag{type,task,label} | comment{type,task,text,author?:"AI import"} | subtask{type,parent:"T5",title} | dependency{type,task,on:"T5"|external:"name",scope?} | remove_dep{type,task,on:"T5"|external:"name"} | shift_all{type,days:N} | bulk{type,filter:{track?,status?,assignee?,unassigned?},set:{status?,assign?,track?},shiftDays?:0}
 Risk ops: risk{type,title,likelihood,impact,mitigation,owner?,task?} | edit_risk{type,risk:"R2",title?,likelihood?,impact?,mitigation?,owner?,status?}
-List entities: finding{type,title,summary,category?} | deliverable{type,name,link?,task?} | milestone{type,title,kind:"milestone|gate",category:REQUIRED,date?,note?} | edit_milestone{type,milestone:"M2",title?,date?,kind?,category?,note?,reached?:true|false} | member{type,name,role?} | edit_member{type,name,rename?,role?} | track{type,label}
+List entities: finding{type,title,summary,category?} | deliverable{type,name,link?,task?} | milestone{type,title,kind:"milestone|gate",category:REQUIRED,note?} | edit_milestone{type,milestone:"M2",title?,kind?,category?,note?,reached?:true|false} | member{type,name,role?} | edit_member{type,name,rename?,role?} | track{type,label}
 Remove: remove{type,kind:"risk|scope|finding|glossary|milestone|deliverable|budget|track|tag|member|feature|package|persona|value",name:"…"} | delete{type,task:"T3"}
 JSONB ops: scope_in{type,line} | scope_out{type,line} | glossary{type,term,definition} | budget{type,label,amount} | favorite{type,page,on:true} | section{type,page,on:true} | setting{type,key:"autoStart|leadStart|leadDue|buffer",value} | org_report{type,who,to}
 Strategy ops: strategy{type,section:"mission|vision|valueprop|bmc_<block>",text} | value{type,label,desc?} | vp_segment{type,segment,jobs[],pains[],gains[]} | persona{type,name,role?,segment?,goals[],pains[],note?} | market{type,field:"tam|sam|som|positioning",text} | competitor{type,name,note?} | gtm{type,field:"motion",text}|{type,field:"channels|launch",items[]} | feature{type,name,group?,how?,what?} | package{type,name,tagline?,features:[names]}
@@ -315,7 +315,14 @@ function normalizeOp(op: PlanOp, ws: WorkingSet): PlanOp | null {
     }
   }
 
-  // edit_milestone: an existing milestone changing its name or date. Without
+  // Every task sits in a track, so a create without one has nowhere to go.
+  if (o.type === "create") {
+    const tr = resolveTrack(o.track, categories);
+    if (!tr) return null;
+    o.track = tr.id;
+  }
+
+  // edit_milestone: an existing milestone changing its name or track. Without
   // this the model could only propose a new milestone, which silently left a
   // duplicate behind and the original untouched.
   if (o.type === "edit_milestone") {
@@ -323,7 +330,6 @@ function normalizeOp(op: PlanOp, ws: WorkingSet): PlanOp | null {
     if (!ms) return null;
     o.refId = ms.id;
     o.taskTitle = ms.title;
-    o.fromDate = ms.date ?? "";
   }
 
   // assign: normalize member name
@@ -380,7 +386,7 @@ function annotateOp(op: PlanOp, ws: WorkingSet): PlanOp {
       o._cascade = `Creates a dependency block — it starts before "${p.title}" finishes`;
   }
   if (o.type === "shift_all")
-    o._cascade = "Moves every dated task — milestones & gates keep their own dates";
+    o._cascade = "Moves every dated task";
   if (o.type === "bulk" && (o.shiftDays ?? 0) !== 0)
     o._cascade = `Moves ${o.count} tasks — dependents outside the selection may need review`;
   if (o.type === "remove" && o.kind === "member")

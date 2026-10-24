@@ -377,9 +377,8 @@ export function subtaskDefaults(
     // Whoever owns the parent owns its parts until someone says otherwise.
     assignees: parent.assignees ?? [],
     tags: parent.tags ?? [],
-    // Only work that has actually started carries a start date. Backlog work
-    // takes its deadline from the milestone, and dating it on creation makes
-    // every unstarted task look under way. The end stays open because how
+    // Only work that has actually started carries a start date. Dating
+    // backlog work on creation makes every unstarted task look under way. The end stays open because how
     // long it takes is the thing being decided.
     start: status === "backlog" ? "" : today,
     end: "",

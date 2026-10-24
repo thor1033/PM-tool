@@ -13,7 +13,8 @@ import {
   useDeleteEntity,
 } from "@/lib/api/hooks";
 import { ACCENTS, accent, accentVar } from "@/lib/colors";
-import { TRACK_ICONS } from "@/lib/tasks";
+import { TRACK_ICONS, fmtD } from "@/lib/tasks";
+import { sortMilestones } from "@/lib/milestone-grouping";
 import { computeHealth } from "@/lib/project-health";
 import type { Category, Milestone } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -344,10 +345,7 @@ export function TrackModal({
                     </p>
                   ) : (
                     <ul className="divide-y rounded-[var(--radius-md)] border">
-                      {milestonesIn
-                        .slice()
-                        .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"))
-                        .map((m) => (
+                      {sortMilestones(milestonesIn).map((m) => (
                           <li key={m.id}>
                             <button
                               type="button"
@@ -363,7 +361,7 @@ export function TrackModal({
                                 {m.title || "Untitled"}
                               </span>
                               <span className="text-muted-foreground shrink-0 font-mono text-[11.5px]">
-                                {m.date || "no date"}
+                                {m.reachedOn ? (m.type === "gate" ? "approved " : "reached ") + fmtD(m.reachedOn) : "open"}
                               </span>
                             </button>
                           </li>

@@ -120,6 +120,9 @@ export const tasks = pgTable(
      *  Held as a blob because the invite mechanism is still being decided —
      *  when it lands, this is where the real event data will live. */
     meeting: jsonb("meeting").$type<TaskMeeting>().default({}).notNull(),
+    /** Whether this task takes priority. A plain yes or no — no levels to
+     *  argue over, just the work that goes first. */
+    priority: boolean("priority").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

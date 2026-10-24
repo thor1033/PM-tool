@@ -1,48 +1,39 @@
 import type { Task, Milestone } from "@/lib/types";
-import { isOngoing } from "@/lib/task-kinds";
 
-/* Grouping tasks beneath the milestone they drive at.
+/* Grouping a track's tasks beneath its milestones.
  *
- * A track says which part of the project a task belongs to. A milestone says
- * which outcome it is working toward. Without the second, every task in a
- * track appears to serve every milestone in it at once, which says nothing
- * about order or purpose.
+ * A task always sits in a track, and may sit under one of that track's
+ * milestones (or gates). The milestone is a grouping only: it has no date and
+ * decides nothing about the tasks under it. It is reached when someone checks
+ * it off, never because its last task finished.
  *
- * Subtasks are deliberately not placed here: they belong to their parent, and
- * the parent's milestone is the one that counts. */
+ * Subtasks are deliberately not placed here: they belong to their parent. */
 
 export interface MilestoneGroup {
-  /** Null for the trailing "not tied to a milestone" bucket. */
+  /** Null for the trailing group of tasks that sit directly in the track. */
   milestone: Milestone | null;
   key: string;
   tasks: Task[];
-  /** True once every task beneath it is done. This is about the work, not
-   *  the outcome: it is what prompts someone to confirm the milestone, not
-   *  what marks it reached. */
-  complete: boolean;
-  doneCount: number;
-  /** The day the milestone was declared reached, or "" while outstanding. */
+  /** The day someone checked the milestone off, or "" while it is open. */
   reachedOn: string;
-  /** Days between the planned date and the day it was reached; positive is
-   *  late. Null when it has not been reached, or had no planned date. */
-  slipDays: number | null;
-  /** Every task is done but nobody has confirmed the outcome yet. */
-  awaitingConfirmation: boolean;
 }
 
-/** Milestones run in date order: an undated one has no place in a sequence,
- *  so it sorts to the end rather than jumping to the front. */
+/** Open milestones first, in the order they were created; checked-off ones
+ *  after them, in the order they were reached. */
 export function sortMilestones(list: Milestone[]): Milestone[] {
-  return [...list].sort(
-    (a, b) =>
-      (a.date || "9999-99-99").localeCompare(b.date || "9999-99-99") ||
-      a.title.localeCompare(b.title),
-  );
+  return list
+    .map((m, i) => ({ m, i }))
+    .sort((a, b) => {
+      const ar = a.m.reachedOn ?? "", br = b.m.reachedOn ?? "";
+      if (!!ar !== !!br) return ar ? 1 : -1;
+      if (ar && br && ar !== br) return ar.localeCompare(br);
+      return a.i - b.i;
+    })
+    .map(({ m }) => m);
 }
 
-/** Execution order within a milestone: scheduled work first, by start date,
- *  then by the manual position the board already maintains. Finished tasks
- *  sink so the next thing to do is what you read first. */
+/** Working order within a milestone: unfinished work first, then by start
+ *  date, then by the manual position the board already maintains. */
 function byExecution(a: Task, b: Task): number {
   if ((a.status === "done") !== (b.status === "done")) return a.status === "done" ? 1 : -1;
   const aStart = a.start || "9999-99-99";
@@ -53,10 +44,11 @@ function byExecution(a: Task, b: Task): number {
 }
 
 /**
- * Splits a track's tasks into milestone groups, in delivery order.
+ * Splits a track's tasks into its milestone groups, then the tasks that sit
+ * directly in the track.
  *
- * @param tasks    top-level tasks already filtered to one track
- * @param milestones milestones belonging to that track
+ * @param tasks      top-level tasks already filtered to one track
+ * @param milestones milestones and gates belonging to that track
  */
 export function groupByMilestone(
   tasks: Task[],
@@ -66,66 +58,31 @@ export function groupByMilestone(
   const buckets = new Map<string, Task[]>();
 
   for (const t of tasks) {
-    // A milestone that has been deleted leaves its tasks unassigned rather
-    // than hiding them in a group nothing renders.
+    // A milestone that has been deleted leaves its tasks directly in the
+    // track rather than hiding them in a group nothing renders.
     const key = t.milestoneId && valid.has(t.milestoneId) ? t.milestoneId : "_none";
     const arr = buckets.get(key) ?? [];
     arr.push(t);
     buckets.set(key, arr);
   }
 
-  const out: MilestoneGroup[] = [];
-  for (const m of sortMilestones(milestones)) {
-    const list = (buckets.get(m.id) ?? []).sort(byExecution);
-    const doneCount = list.filter((t) => t.status === "done").length;
-    // Ongoing work never finishes, so it cannot be what a milestone is
-    // waiting on: a milestone whose only remaining tasks are maintenance is
-    // as complete as it will ever be, and holding it open would mean it
-    // could never be reached at all.
-    const finishable = list.filter((t) => !isOngoing(t.kind));
-    const complete =
-      finishable.length > 0 && finishable.every((t) => t.status === "done");
-    const reachedOn = m.reachedOn ?? "";
-    out.push({
-      milestone: m,
-      key: m.id,
-      tasks: list,
-      complete,
-      doneCount,
-      reachedOn,
-      slipDays:
-        reachedOn && m.date
-          ? Math.round((+new Date(reachedOn) - +new Date(m.date)) / 86_400_000)
-          : null,
-      awaitingConfirmation: complete && !reachedOn,
-    });
-  }
+  const out: MilestoneGroup[] = sortMilestones(milestones).map((m) => ({
+    milestone: m,
+    key: m.id,
+    tasks: (buckets.get(m.id) ?? []).sort(byExecution),
+    reachedOn: m.reachedOn ?? "",
+  }));
 
-  // Unassigned work sits last: it is the leftover, not the plan.
   const loose = (buckets.get("_none") ?? []).sort(byExecution);
-  if (loose.length) {
-    out.push({
-      milestone: null,
-      key: "_none",
-      tasks: loose,
-      complete: false,
-      doneCount: loose.filter((t) => t.status === "done").length,
-      reachedOn: "",
-      slipDays: null,
-      awaitingConfirmation: false,
-    });
-  }
-
+  if (loose.length) out.push({ milestone: null, key: "_none", tasks: loose, reachedOn: "" });
   return out;
 }
 
-/** Milestones a task could be tied to — those in its own track. A task with
- *  no track can only be tied to a milestone that has no track either. */
+/** Milestones and gates a task can sit under — those in its own track. */
 export function milestonesForTask(
   taskCategory: string | null,
   milestones: Milestone[],
 ): Milestone[] {
-  return sortMilestones(
-    milestones.filter((m) => (m.category ?? null) === (taskCategory ?? null)),
-  );
+  if (!taskCategory) return [];
+  return sortMilestones(milestones.filter((m) => (m.category ?? null) === taskCategory));
 }

@@ -143,8 +143,8 @@ export const BLOCKED_SHOWN = 2;
  *  A task appears once, under its most severe reason.
  *
  *  Ordering follows what the reader can act on. Overdue work comes first —
- *  it is late and it is theirs. Then what is coming up, tasks and milestones
- *  interleaved by date, because "what do I have next" is the question this
+ *  it is late and it is theirs. Then what is coming up, by date, because
+ *  "what do I have next" is the question this
  *  panel exists to answer. Blocked work sorts below that and is capped: it
  *  is work nobody can start, and a wall of it buries everything actionable.
  *  The count of what was held back is still reported, so a blocked project
@@ -154,7 +154,6 @@ export function attentionList(
   all: Task[],
   risks: Risk[] = [],
   now: Date = new Date(),
-  milestones: Milestone[] = [],
 ): AttentionItem[] {
   const day = today(now);
   const soon = addDays(day, 7);
@@ -219,49 +218,6 @@ export function attentionList(
     }
   }
 
-  // Milestones sit in the same ranking band as upcoming tasks so the two
-  // interleave by date: a milestone landing on Tuesday should read above a
-  // task due Thursday, not below every task regardless of when it falls.
-  for (const m of milestones) {
-    if (m.reachedOn || !m.date) continue;
-    const days = Math.round((+new Date(m.date) - +new Date(day)) / DAY_MS);
-    // A milestone whose work is all finished is not late — it is waiting on
-    // somebody to say the outcome was achieved. Calling that "overdue" sends
-    // people looking for work that is already done.
-    const own = all.filter((t) => t.milestoneId === m.id && t.kind !== "ongoing");
-    const allDone = own.length > 0 && own.every((t) => t.status === "done");
-    if (allDone) {
-      out.push({
-        task: milestoneAsTask(m),
-        milestone: m,
-        severity: "info",
-        label: "Confirm milestone",
-        detail: "Every task is done — mark it reached if the outcome landed",
-        rank: 1500,
-      });
-    } else if (days < 0) {
-      out.push({
-        task: milestoneAsTask(m),
-        milestone: m,
-        severity: "critical",
-        label: "Milestone overdue",
-        detail: `${-days} day${days === -1 ? "" : "s"} past its planned date`,
-        rank: 900 + days, // longest overdue first, above overdue tasks
-      });
-    } else if (days <= 14) {
-      // A fortnight rather than a week: milestones are the dates people plan
-      // around, and one is worth seeing before the week it lands in.
-      out.push({
-        task: milestoneAsTask(m),
-        milestone: m,
-        severity: "info",
-        label: days === 0 ? "Milestone today" : `Milestone in ${days}d`,
-        detail: "Upcoming milestone",
-        rank: 2000 + days - 0.5, // ties break ahead of a task on the same day
-      });
-    }
-  }
-
   const sorted = out.sort(
     (a, b) => a.rank - b.rank || a.task.title.localeCompare(b.task.title),
   );
@@ -290,16 +246,3 @@ export function blockedOverflow(
   return Math.max(0, blocked.length - BLOCKED_SHOWN);
 }
 
-/** Milestones ride through the attention list in a task-shaped wrapper: the
- *  row renderer, the track colouring and the click-to-open path all key off
- *  a task, and a parallel type for two extra rows would cost more than it
- *  clarifies. `milestone` on the item is what tells the two apart. */
-function milestoneAsTask(m: Milestone): Task {
-  return {
-    id: m.id,
-    title: m.title,
-    category: m.category ?? null,
-    end: m.date,
-    status: "backlog",
-  } as Task;
-}

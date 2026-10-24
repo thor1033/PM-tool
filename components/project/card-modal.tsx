@@ -26,6 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/project/confirm";
 import { ViewSettingsButton, useViewSettings } from "@/components/project/view-settings";
+import { LineageSection, lineageDeps } from "@/components/project/lineage-graph";
 
 // ── status segmented control ────────────────────────────────────────────────
 
@@ -50,6 +51,31 @@ function StatusSeg({ value, onChange }: { value: string; onChange: (v: string) =
         >
           <span className="size-1.5 rounded-full" style={{ background: value === s.id ? "currentColor" : `var(${s.var})` }} />
           {s.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── priority ─────────────────────────────────────────────────────────────────
+// A plain yes or no. Yes is marked with the same red dot the list uses, so the
+// two read as one signal.
+
+function PrioritySeg({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex gap-1 rounded-[var(--radius-sm)] border bg-[var(--paper-2)] p-1">
+      {[false, true].map((v) => (
+        <button
+          key={String(v)}
+          type="button"
+          onClick={() => onChange(v)}
+          className={cn(
+            "flex flex-1 items-center justify-center gap-1.5 rounded-[6px] px-2 py-1.5 text-xs font-semibold transition",
+            value === v ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {v && <span className="size-1.5 rounded-full bg-[var(--t-red)]" />}
+          {v ? "Yes" : "No"}
         </button>
       ))}
     </div>
@@ -327,14 +353,19 @@ function TaskFiles({
   task,
   ws,
   projectId,
+  inGraph = false,
 }: {
   task: Task;
   ws: WorkingSet;
   projectId: string;
+  /** The files are drawn in the lineage graph above, so the list is folded
+   *  away behind "Manage" and only the controls to add or unlink remain. */
+  inGraph?: boolean;
 }) {
   const updateProduct = useUpdateEntity(projectId, "products");
   const createProduct = useCreateEntity(projectId, "products");
   const [picking, setPicking] = useState(false);
+  const [managing, setManaging] = useState(false);
   const [newName, setNewName] = useState("");
   const [newUrl, setNewUrl] = useState("");
 
@@ -381,8 +412,8 @@ function TaskFiles({
   }
 
   return (
-    <div className="border-t pt-4">
-      <h4 className="mb-3 flex items-center gap-1.5 text-sm font-medium">
+    <div className={inGraph ? "" : "border-t pt-4"}>
+      <h4 className={cn("flex items-center gap-1.5 text-sm font-medium", inGraph ? "mb-2" : "mb-3")}>
         <FilesIcon className="text-muted-foreground size-4" />
         Files
         {linked.length > 0 && (
@@ -390,9 +421,21 @@ function TaskFiles({
             {linked.length}
           </span>
         )}
+        {inGraph && linked.length > 0 && (
+          <>
+            <span className="text-muted-foreground text-[11.5px] font-normal">shown in the graph</span>
+            <button
+              type="button"
+              onClick={() => setManaging((m) => !m)}
+              className="text-muted-foreground hover:text-foreground ml-auto text-[11.5px] font-medium"
+            >
+              {managing ? "Done" : "Manage"}
+            </button>
+          </>
+        )}
       </h4>
 
-      {linked.length > 0 && (
+      {linked.length > 0 && (!inGraph || managing) && (
         <ul className="mb-2 flex flex-col gap-1">
           {linked.map((p) => (
             <li
@@ -548,6 +591,7 @@ export function CardModal({
     deps: activeTask?.deps ?? ([] as TaskDep[]),
     kind: activeTask?.kind ?? DEFAULT_KIND,
     milestoneId: activeTask?.milestoneId ?? defaultMilestoneId ?? null,
+    priority: activeTask?.priority ?? false,
     mtTime: (activeTask?.meeting as TaskMeeting | undefined)?.time ?? "",
     mtDuration: String((activeTask?.meeting as TaskMeeting | undefined)?.durationMins ?? 60),
     mtLocation: (activeTask?.meeting as TaskMeeting | undefined)?.location ?? "",
@@ -575,6 +619,7 @@ export function CardModal({
       deps: activeTask?.deps ?? ([] as TaskDep[]),
     kind: activeTask?.kind ?? DEFAULT_KIND,
       milestoneId: activeTask?.milestoneId ?? defaultMilestoneId ?? null,
+      priority: activeTask?.priority ?? false,
     mtTime: (activeTask?.meeting as TaskMeeting | undefined)?.time ?? "",
     mtDuration: String((activeTask?.meeting as TaskMeeting | undefined)?.durationMins ?? 60),
     mtLocation: (activeTask?.meeting as TaskMeeting | undefined)?.location ?? "",
@@ -653,14 +698,10 @@ export function CardModal({
     setCommentText("");
   }
 
-  /** A task inside a track has to say which milestone it drives at —
-   *  otherwise it sits in the track serving every milestone at once, which is
-   *  exactly the ambiguity milestones exist to remove. A task with no track at
-   *  all is genuinely unassigned and needs no milestone. */
-  function missingMilestone() {
-    const inTrack = form.category !== "none" && !!form.category;
-    if (!inTrack || form.milestoneId) return false;
-    return milestonesForTask(form.category, ws.milestones).length > 0;
+  /** A task always sits in a track; a milestone is optional. A subtask's
+   *  track is its parent's, so only a top-level task can be missing one. */
+  function missingTrack() {
+    return !parentTask && (!form.category || form.category === "none");
   }
 
   function buildPayload() {
@@ -677,6 +718,7 @@ export function CardModal({
       assignees: form.assignees.split(",").map((s) => s.trim()).filter(Boolean),
       start: form.start, end: form.end, tags: activeTask?.tags ?? [], deps: form.deps,
       kind: form.kind,
+      priority: form.priority,
       ...(parentTask ? {} : { milestoneId: form.milestoneId }),
       // Meeting detail is only kept for meetings — switching kind away from
       // meeting clears it rather than leaving orphaned times behind.
@@ -701,8 +743,8 @@ export function CardModal({
   }
 
   function save() {
-    if (missingMilestone()) {
-      toast.error("Pick the milestone this task works toward, or move it out of the track.");
+    if (missingTrack()) {
+      toast.error("Pick the track this task sits in.");
       return;
     }
     const payload = buildPayload();
@@ -728,7 +770,7 @@ export function CardModal({
     }
     if (lastSaved.current.key === autosaveKey) return;
     // Never persist a state the explicit save would reject.
-    if (missingMilestone()) return;
+    if (missingTrack()) return;
     const t = setTimeout(() => {
       lastSaved.current = { id: activeTask.id, key: autosaveKey };
       update.mutate(
@@ -740,6 +782,24 @@ export function CardModal({
     // buildPayload reads the same form this key is derived from.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autosaveKey, activeTask?.id]);
+
+  // Jumping to another task inside the dialog would cancel an autosave still
+  // waiting on its timer, so the pending edit is written first.
+  function openTask(id: string) {
+    if (
+      activeTask &&
+      lastSaved.current?.id === activeTask.id &&
+      lastSaved.current.key !== autosaveKey &&
+      !missingTrack()
+    ) {
+      lastSaved.current = { id: activeTask.id, key: autosaveKey };
+      update.mutate(
+        { id: activeTask.id, data: buildPayload() },
+        { onError: (e) => toast.error((e as Error).message) },
+      );
+    }
+    setActiveTaskId(id);
+  }
 
 
   async function remove() {
@@ -757,7 +817,28 @@ export function CardModal({
 
   // With every relational section switched off, the right column would be an
   // empty pane, so the view collapses to one column instead.
-  const showChain = shows("followupChain") && chain.length > 1;
+  // The lineage has something to draw once the task is part of a history:
+  // spun off from or into other work, split into subtasks, or carrying files.
+  const depCount = activeTask ? lineageDeps(activeTask, ws).length : 0;
+  const showChain =
+    shows("lineage") &&
+    !!activeTask &&
+    (chain.length > 1 ||
+      !!activeTask.parentId ||
+      subtasks.length > 0 ||
+      depCount > 0 ||
+      ws.products.some((p) => (p.taskIds ?? []).includes(activeTask.id)));
+  // With several links or files the graph says more than a list can, so it
+  // leads the right column at full size and the files are drawn in it.
+  const linkCount = activeTask
+    ? (isFollowup ? 1 : 0) +
+      (activeTask.parentId ? 1 : 0) +
+      subtasks.length +
+      ws.tasks.filter((t) => (t.deps ?? []).some((d) => d.type === "followup" && d.refId === activeTask.id)).length +
+      ws.products.filter((p) => (p.taskIds ?? []).includes(activeTask.id)).length +
+      depCount
+    : 0;
+  const graphView = showChain && linkCount >= 2;
   const rightColumn =
     showChain ||
     shows("dependencies") ||
@@ -919,6 +1000,13 @@ export function CardModal({
               </div>
             )}
 
+            {shows("priority") && (
+              <div className="space-y-1.5">
+                <Label>Priority</Label>
+                <PrioritySeg value={form.priority} onChange={(v) => set("priority", v)} />
+              </div>
+            )}
+
             {parentTask ? (
               // Placement is the parent task's. Shown so the reader knows
               // where this sits, but changed by moving the task itself.
@@ -926,7 +1014,7 @@ export function CardModal({
                 <Label>Track &amp; milestone</Label>
                 <div className="rounded-[var(--radius-sm)] border bg-[var(--paper-2)] px-3 py-2 text-[13px]">
                   <span className="text-muted-foreground">
-                    {ws.categories.find((c) => c.id === parentTask.category)?.label ?? "No track"}
+                    {ws.categories.find((c) => c.id === parentTask.category)?.label ?? "Undefined track"}
                     {" · "}
                     {ws.milestones.find((m) => m.id === parentTask.milestoneId)?.title ??
                       "No milestone"}
@@ -942,20 +1030,32 @@ export function CardModal({
             <div className="grid grid-cols-1 gap-3">
               <div className="space-y-1.5">
                 <Label>Track</Label>
-                <Select value={form.category} onValueChange={(v) => set("category", v)}>
-                  <SelectTrigger><SelectValue placeholder="No track" /></SelectTrigger>
+                {/* A milestone belongs to one track, so moving the task to
+                    another track takes it out from under its milestone. */}
+                <Select
+                  value={form.category === "none" ? undefined : form.category}
+                  onValueChange={(v) =>
+                    setForm((f) => ({
+                      ...f,
+                      category: v,
+                      milestoneId: milestonesForTask(v, ws.milestones).some((m) => m.id === f.milestoneId)
+                        ? f.milestoneId
+                        : null,
+                    }))
+                  }
+                >
+                  <SelectTrigger><SelectValue placeholder="Pick a track" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">No track</SelectItem>
                     {ws.categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            {/* Which outcome this task drives at. Scoped to the chosen track,
-                since a milestone belongs to one track. */}
+            {/* Optional. A task can sit under one of its track's milestones,
+                or directly in the track. The milestone decides nothing else. */}
             <div className="space-y-1.5">
-              <Label>Milestone</Label>
+              <Label>Milestone <span className="text-muted-foreground/70 font-normal">· optional</span></Label>
               <Select
                 value={form.milestoneId ?? "none"}
                 onValueChange={(v) => set("milestoneId", v === "none" ? null : v)}
@@ -964,28 +1064,17 @@ export function CardModal({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">
-                    {form.category !== "none" && form.category
-                      ? "— pick one —"
-                      : "Not tied to a milestone"}
-                  </SelectItem>
+                  <SelectItem value="none">No milestone · directly in the track</SelectItem>
                   {milestonesForTask(
                     form.category === "none" ? null : form.category,
                     ws.milestones,
                   ).map((m) => (
                     <SelectItem key={m.id} value={m.id}>
-                      {m.title || "Untitled"}{m.date ? ` · ${fmtD(m.date)}` : ""}
+                      {m.title || "Untitled"}{m.type === "gate" ? " · gate" : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {form.category !== "none" && form.category &&
-                milestonesForTask(form.category, ws.milestones).length === 0 && (
-                  <p className="text-muted-foreground text-[11.5px]">
-                    This track has no milestones yet — add one from the task list to give this
-                    work something to aim at.
-                  </p>
-                )}
             </div>
 
               </>
@@ -1134,32 +1223,16 @@ export function CardModal({
           {/* Right column — relational content: lineage, dependencies, risks, comments */}
           {rightColumn && (
           <div className="space-y-4 overflow-y-auto p-6">
-            {showChain && (
-              <div className="space-y-2">
-                <Label className="flex items-center gap-1.5"><GitBranch className="size-3.5" /> Follow-up chain</Label>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {chain.map((node, i) => (
-                    <span key={node.id} className="flex items-center gap-1.5">
-                      {i > 0 && <span className="text-muted-foreground/50">→</span>}
-                      <button
-                        type="button"
-                        onClick={() => { if (node.direction !== "self") setActiveTaskId(node.id); }}
-                        disabled={node.direction === "self"}
-                        className={cn(
-                          "rounded-full border px-2.5 py-1 text-xs font-medium transition",
-                          node.direction === "self"
-                            ? "border-primary bg-primary/10 text-primary cursor-default"
-                            : "hover:bg-muted",
-                          node.status === "done" && "line-through opacity-60",
-                        )}
-                        title={node.direction === "self" ? "This task" : `Jump to "${node.title}"`}
-                      >
-                        {node.title || "Untitled task"}
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
+            {showChain && activeTask && (
+              <LineageSection
+                task={activeTask}
+                ws={ws}
+                onOpenTask={openTask}
+                height={graphView ? 460 : 300}
+              />
+            )}
+            {graphView && activeTask && shows("files") && (
+              <TaskFiles task={activeTask} ws={ws} projectId={projectId} inGraph />
             )}
 
             {shows("dependencies") && (
@@ -1170,7 +1243,7 @@ export function CardModal({
               />
             )}
 
-            {activeTask && shows("files") && (
+            {activeTask && shows("files") && !graphView && (
               <TaskFiles task={activeTask} ws={ws} projectId={projectId} />
             )}
 
@@ -1214,7 +1287,7 @@ export function CardModal({
                     </span>
                     <button
                       type="button"
-                      onClick={() => setActiveTaskId(sub.id)}
+                      onClick={() => openTask(sub.id)}
                       className="text-muted-foreground hover:text-foreground shrink-0 text-[11px]"
                       title="Open this subtask"
                     >

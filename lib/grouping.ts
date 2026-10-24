@@ -87,71 +87,26 @@ function byDate(field: "end" | "start") {
   };
 }
 
-/**
- * When a task is actually due.
- *
- * A backlog task carries no end date by rule — its deadline is the milestone's,
- * and copying that date onto the task would assert a commitment nobody made.
- * But that rule made deadline sorting nearly useless in practice: most of a
- * plan is backlog, so most rows read as "no date" and sank to the bottom
- * together, even though every one of them has a real date behind it.
- *
- * So the ordering resolves what the rule deliberately leaves unstored. The
- * task's own end date wins where it exists; otherwise its milestone's date
- * stands in. Nothing is written back — this is a question about order, not a
- * change to the data.
- */
-export function effectiveDeadline(
-  t: Task,
-  milestoneDates: Map<string, string>,
-): string {
-  if (t.end) return t.end;
-  const ms = t.milestoneId ? milestoneDates.get(t.milestoneId) : undefined;
-  return ms || "";
+/** Deadline order: tasks with an end date first, earliest first; undated work
+ *  after them. A milestone has no date, so nothing stands in for a missing one. */
+function byDeadline(a: Task, b: Task): number {
+  const av = a.end || "9999-99-99";
+  const bv = b.end || "9999-99-99";
+  if (av !== bv) return av.localeCompare(bv);
+  return a.title.localeCompare(b.title);
 }
 
-function byEffectiveDeadline(milestoneDates: Map<string, string>) {
-  return (a: Task, b: Task) => {
-    const av = effectiveDeadline(a, milestoneDates) || "9999-99-99";
-    const bv = effectiveDeadline(b, milestoneDates) || "9999-99-99";
-    if (av !== bv) return av.localeCompare(bv);
-    // A task with its own date is a firmer commitment than one inheriting the
-    // milestone's, so it leads when the two land on the same day.
-    if (!!a.end !== !!b.end) return a.end ? -1 : 1;
-    return a.title.localeCompare(b.title);
-  };
-}
-
-/**
- * Orders tasks within a bucket.
- *
- * @param milestoneDates milestone id → date, so deadline sorting can fall back
- *   to the milestone for tasks that carry no end date of their own. Omit it and
- *   those tasks simply sort last, as they did before.
- */
-export function sortTasks(
-  tasks: Task[],
-  mode: SortMode,
-  milestoneDates?: Map<string, string>,
-): Task[] {
+/** Orders tasks within a bucket. */
+export function sortTasks(tasks: Task[], mode: SortMode): Task[] {
   const cmp =
     mode === "deadline"
-      ? byEffectiveDeadline(milestoneDates ?? new Map())
+      ? byDeadline
       : mode === "start"
         ? byDate("start")
         : mode === "title"
           ? (a: Task, b: Task) => a.title.localeCompare(b.title)
           : byExecution;
   return [...tasks].sort(cmp);
-}
-
-/** milestone id → date, for the deadline fallback. Milestones without a date
- *  are left out so they resolve to "undated" rather than to an empty string
- *  that would sort early. */
-export function milestoneDateMap(milestones: Milestone[]): Map<string, string> {
-  const m = new Map<string, string>();
-  for (const ms of milestones) if (ms.date) m.set(ms.id, ms.date);
-  return m;
 }
 
 // ── bucketing ───────────────────────────────────────────────────────────────
@@ -214,8 +169,6 @@ export function groupTasks(
       byId.set(t.milestoneId, arr);
     }
     const out: Bucket[] = [];
-    // Milestones run in date order; an undated one has no place in a sequence
-    // so it sorts to the end rather than jumping to the front.
     for (const m of sortMilestones(milestones.filter((x) => byId.has(x.id)))) {
       out.push({
         key: m.id,

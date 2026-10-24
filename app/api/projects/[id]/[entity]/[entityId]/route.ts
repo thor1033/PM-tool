@@ -5,8 +5,7 @@ import { entityConfig, isEntityName } from "@/lib/entities";
 import {
   checkMilestone,
   checkTask,
-  checkTaskDeadline,
-  trackForTask,
+  milestoneLeftBehind,
   cascadeToSubtasks,
 } from "@/lib/hierarchy";
 import { applyDateRules } from "@/lib/task-dates";
@@ -35,6 +34,19 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   if (entity === "milestones") {
     const issue = checkMilestone(data, false);
     if (issue) return NextResponse.json(issue, { status: 400 });
+    // A milestone moving to another track leaves its tasks where they are:
+    // they keep their track and are taken out from under the milestone, since
+    // a milestone decides nothing about the tasks beneath it.
+    if ("category" in data) {
+      const ws = await getWorkingSet(ctx.orgId, id);
+      if (!ws) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      const nextTrack = String(data.category ?? "");
+      for (const t of ws.tasks) {
+        if (t.milestoneId === entityId && (t.category ?? "") !== nextTrack) {
+          await updateEntity(ctx.orgId, id, "tasks", t.id, { milestoneId: null });
+        }
+      }
+    }
   }
   if (entity === "tasks") {
     const ws = await getWorkingSet(ctx.orgId, id);
@@ -47,7 +59,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     // The row's existing parent is folded in before checking, so a patch that
     // names only a milestone is still judged as the subtask edit it is —
     // otherwise moving a subtask away is silently ignored rather than refused.
-    const issue = checkTask(parentId ? { ...data, parentId } : data, false, ws);
+    const issue = checkTask(parentId ? { ...data, parentId } : data, false, ws, self);
     if (issue) return NextResponse.json(issue, { status: 400 });
     if (parentId) {
       const parent = ws.tasks.find((t) => t.id === parentId);
@@ -62,20 +74,16 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
           data.status = parent.status === "done" ? "backlog" : parent.status ?? "backlog";
         }
       }
-    } else if ("milestoneId" in data || "parentId" in data) {
-      // Re-derive the track whenever the milestone moves, so the two cannot
-      // drift apart.
-      const track = trackForTask(data, ws);
-      if (track) data.category = track;
+    } else if ("category" in data && !("milestoneId" in data)) {
+      // A task changing track cannot stay under a milestone of the old one.
+      // The task's track wins; the milestone link is dropped.
+      if (milestoneLeftBehind(data.category as string | null, self?.milestoneId, ws)) {
+        data.milestoneId = null;
+      }
     }
 
     // Runs after the status is settled, since every date rule keys off it.
     applyDateRules(data, false, self);
-
-    // Checked after the date rules, so it judges the dates that will actually
-    // be stored rather than the ones the caller happened to send.
-    const late = checkTaskDeadline(data, self, ws);
-    if (late) return NextResponse.json(late, { status: 400 });
 
     // Whatever happens to a task happens to its parts: moving it takes them
     // along, and so does changing its status.

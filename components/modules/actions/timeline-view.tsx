@@ -3,13 +3,13 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { addMonths } from "date-fns";
-import { GitBranch, ChevronDown, SlidersHorizontal, ArrowUpDown, Eye, EyeOff } from "lucide-react";
+import { GitBranch, ChevronDown, ChevronRight, SlidersHorizontal, ArrowUpDown, Eye, EyeOff, Flag, Milestone as MilestoneIcon } from "lucide-react";
 import { useUpdateEntity } from "@/lib/api/hooks";
 import type { Task, WorkingSet, Milestone } from "@/lib/types";
 import { daysBetween, fmtD, NO_TRACK_ID } from "@/lib/tasks";
 import { todayLocal } from "@/lib/task-dates";
 import { accentVar } from "@/lib/colors";
-import { stackMarkers } from "@/lib/marker-stack";
+import { sortMilestones } from "@/lib/milestone-grouping";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { UnscheduledTray, UNSCHEDULED_DRAG_TYPE } from "@/components/modules/actions/unscheduled-tray";
@@ -41,11 +41,11 @@ const SORT_OPTIONS: { id: TimelineSortMode; label: string }[] = [
 ];
 
 const MAX_VISIBLE_ROWS = 8;
-const ROW_H = 48, HDR_H = 44, TRACK_H = 40, SUB_ROW_H = 34;
+const ROW_H = 48, HDR_H = 44, TRACK_H = 40, SUB_ROW_H = 34, MS_H = 34;
 /** Minimum clear space between two markers before one drops to the next row,
  *  and the height of each of those rows. */
-const MARKER_GAP = 26, MARKER_ROW_H = 21;
 const LABEL_W = 250;
+const MS_FOLD_KEY = "pm.timeline.msFold";
 
 
 export interface TimelineFilters {
@@ -69,8 +69,8 @@ export const ALL_TIMELINE_LAYERS: TimelineLayers = {
 };
 export const LAYER_OPTIONS: { id: keyof TimelineLayers; label: string; hint: string }[] = [
   { id: "deps", label: "Dependency lines", hint: "Arrows between linked tasks" },
-  { id: "milestones", label: "Milestones", hint: "Diamond markers in each track" },
-  { id: "gates", label: "Gates", hint: "Full-height checkpoint lines" },
+  { id: "milestones", label: "Milestones", hint: "A line per milestone in its track, with its tasks beneath" },
+  { id: "gates", label: "Gates", hint: "A line per gate in its track, with its tasks beneath" },
   { id: "subtasks", label: "Subtask bars", hint: "Nested bars under their parent" },
   { id: "today", label: "Today line", hint: "The vertical marker on today" },
 ];
@@ -314,6 +314,19 @@ export function TimelineView({
     return RANGE_OPTIONS.some((r) => r.id === saved) ? (saved as RangeId) : "1m";
   });
   const [rangeMenuOpen, setRangeMenuOpen] = useState(false);
+  // Milestone lines start unfolded; only a deliberate fold is remembered.
+  const [msFold, setMsFold] = useState<Record<string, boolean>>(() => {
+    if (typeof window === "undefined") return {};
+    try { return JSON.parse(window.localStorage.getItem(`${MS_FOLD_KEY}.${projectId}`) ?? "{}"); } catch { return {}; }
+  });
+  const msOpen = (id: string) => !(msFold[id] ?? false);
+  function toggleMs(id: string) {
+    setMsFold((f) => {
+      const next = { ...f, [id]: msOpen(id) };
+      try { window.localStorage.setItem(`${MS_FOLD_KEY}.${projectId}`, JSON.stringify(next)); } catch { /* best-effort */ }
+      return next;
+    });
+  }
   function changeRange(id: RangeId) {
     setRange(id);
     setRangeMenuOpen(false);
@@ -376,7 +389,9 @@ export function TimelineView({
     return true;
   });
   const undated = dateFiltered;
-  const datedMs = ws.milestones.filter((m) => m.date);
+  // A milestone has no date. It gets its own line in its track; its icon only
+  // appears once someone has checked it off, on the day they did.
+  const shownMs = ws.milestones.filter((m) => (m.type === "gate" ? layers.gates : layers.milestones));
 
   // Dated subtasks get their own thin nested bar under the parent's row —
   // they don't participate in track grouping or dependency
@@ -400,7 +415,7 @@ export function TimelineView({
   // The grid below runs hooks, so the empty case must not be an early return
   // out of this component — it renders as a sibling instead. Filtering to a
   // track with nothing dated used to unmount those hooks mid-render.
-  if (!dated.length && !datedMs.length) {
+  if (!dated.length) {
     return (
       <div>
         <UnscheduledTray tasks={undated} onEdit={onEdit} needsStart />
@@ -420,7 +435,10 @@ export function TimelineView({
   // deadline it beat.
   const effEnd = (t: Task) => (t.status === "done" && t.completedOn ? t.completedOn : t.end);
 
-  const allDates = [...dated.flatMap((t) => [t.start, effEnd(t)]), ...datedMs.map((m) => m.date)];
+  const allDates = [
+    ...dated.flatMap((t) => [t.start, effEnd(t)]),
+    ...shownMs.map((m) => m.reachedOn ?? "").filter(Boolean),
+  ];
   const now = Date.now();
   // The axis is always symmetric around today, so "today" lands exactly in
   // the middle. "All" spans the full data range (equally padded both ways so
@@ -456,21 +474,6 @@ export function TimelineView({
   const after = dated.filter((t) => t.start > maxStr).sort((a, b) => a.start.localeCompare(b.start))[0];
   const inRangeDated = [...overlapping, ...(before ? [before] : []), ...(after ? [after] : [])];
   const edgeClampedIds = new Set([before?.id, after?.id].filter(Boolean) as string[]);
-  const inRangeMs = datedMs.filter((m) => m.date >= minStr && m.date <= maxStr);
-  // Layer toggles are applied at the source so every downstream render — the
-  // full-height lines, the in-band chips and the ungrouped strip — all drop
-  // out together rather than each needing its own guard.
-  const inRangeGates = (layers.gates ? inRangeMs : [])
-    .filter((m) => m.type === "gate")
-    .map((m) => ({ ...m, left: daysBetween(minStr, m.date) * DAYW }));
-  const inRangeMilestones = (layers.milestones ? inRangeMs : [])
-    .filter((m) => m.type !== "gate")
-    .map((m) => ({
-      ...m,
-      left: daysBetween(minStr, m.date) * DAYW,
-      color: m.category ? accentVar(catMap.get(m.category)?.color ?? "") : "var(--accent-c)",
-    }));
-
   const months: { left: number; width: number; label: string }[] = [];
   let cur = new Date(rangeMin);
   cur.setDate(1);
@@ -523,9 +526,7 @@ export function TimelineView({
   if (deadlineMode) {
     const flat = [...inRangeDated].sort((a, b) => a.end.localeCompare(b.end));
     groups.push({ id: "_deadline", label: "Upcoming deadlines", color: null, tasks: flat });
-    // Milestones and gates are deadlines too. In this mode there are no track
-    // bands to hold them, so they render in the strip above the flat list —
-    // still on their real dates, so they line up with the work driving them.
+    // There are no track bands in this mode, so there are no milestone lines.
   } else {
     const bycat = new Map<string, Task[]>();
     inRangeDated.forEach((t) => {
@@ -545,12 +546,9 @@ export function TimelineView({
       sort === "sequence"
         ? sortBySequence(tasks)
         : orderByDependencyFlow(tasks, new Set(tasks.map((t) => t.id)));
-    // A track earns a band if it has dated work *or* dated milestones. Without
-    // the second, a milestone belonging to an empty track failed the group
-    // lookup below and fell into the "ungrouped" strip, which renders at the
-    // top — so it appeared to sit on whichever track happened to be first.
+    // A track earns a band if it has dated work or milestones of its own.
     const trackHasMilestone = new Set(
-      inRangeMs.map((m) => m.category).filter((c): c is string => !!c),
+      shownMs.map((m) => m.category).filter((c): c is string => !!c),
     );
     ws.categories.forEach((c) => {
       const tasks = bycat.get(c.id);
@@ -575,30 +573,21 @@ export function TimelineView({
     }
   }
 
-  // Gates/milestones belong to a track, not to whichever row happens to sit
-  // nearby — each renders inside its own track's colored band, at its date's
-  // x-position, instead of a single global marker strip with no real
-  // association to what it visually overlaps. "Upcoming deadlines" sort has
-  // no track bands at all, so everything falls back to "ungrouped" there too.
-  const groupIds = new Set(groups.map((g) => g.id));
-  const gatesByGroup = new Map<string, typeof inRangeGates>();
-  const milestonesByGroup = new Map<string, typeof inRangeMilestones>();
-  const ungroupedGates: typeof inRangeGates = [];
-  const ungroupedMilestones: typeof inRangeMilestones = [];
-  inRangeGates.forEach((g) => {
-    const key = g.category && groupIds.has(g.category) ? g.category : null;
-    if (deadlineMode || !key) { ungroupedGates.push(g); return; }
-    const arr = gatesByGroup.get(key) ?? [];
-    arr.push(g);
-    gatesByGroup.set(key, arr);
-  });
-  inRangeMilestones.forEach((m) => {
-    const key = m.category && groupIds.has(m.category) ? m.category : null;
-    if (deadlineMode || !key) { ungroupedMilestones.push(m); return; }
-    const arr = milestonesByGroup.get(key) ?? [];
-    arr.push(m);
-    milestonesByGroup.set(key, arr);
-  });
+  // Within a track, each milestone heads the tasks beneath it and the tasks
+  // with no milestone follow, directly in the track. A task appears once.
+  // The order the track already settled on is kept inside each section.
+  type Section = { ms: Milestone | null; tasks: Task[] };
+  const sectionsOf = (g: { id: string; tasks: Task[] }): Section[] => {
+    if (deadlineMode) return [{ ms: null, tasks: g.tasks }];
+    const mine = sortMilestones(shownMs.filter((m) => m.category === g.id));
+    const ids = new Set(mine.map((m) => m.id));
+    return [
+      ...mine.map((m) => ({ ms: m, tasks: g.tasks.filter((t) => t.milestoneId === m.id) })),
+      { ms: null, tasks: g.tasks.filter((t) => !t.milestoneId || !ids.has(t.milestoneId)) },
+    ];
+  };
+  const sections = new Map(groups.map((g) => [g.id, sectionsOf(g)]));
+  const visibleTasks = (sec: Section) => (!sec.ms || msOpen(sec.ms.id) ? sec.tasks : []);
 
   const EDGE_BAR_W = DAYW * 3;
   function layoutBar(t: Task, rowTop: number, rowH: number) {
@@ -636,14 +625,17 @@ export function TimelineView({
   let yCursor = HDR_H;
   groups.forEach((g) => {
     yCursor += TRACK_H;
-    g.tasks.forEach((t) => {
-      taskLayout.set(t.id, layoutBar(t, yCursor, ROW_H));
-      yCursor += ROW_H;
-      (datedSubsByParent.get(t.id) ?? []).forEach((sub) => {
-        subLayout.set(sub.id, layoutBar(sub, yCursor, SUB_ROW_H));
-        yCursor += SUB_ROW_H;
+    for (const sec of sections.get(g.id) ?? []) {
+      if (sec.ms) yCursor += MS_H;
+      visibleTasks(sec).forEach((t) => {
+        taskLayout.set(t.id, layoutBar(t, yCursor, ROW_H));
+        yCursor += ROW_H;
+        (datedSubsByParent.get(t.id) ?? []).forEach((sub) => {
+          subLayout.set(sub.id, layoutBar(sub, yCursor, SUB_ROW_H));
+          yCursor += SUB_ROW_H;
+        });
       });
-    });
+    }
   });
   const totalH = yCursor + 20;
 
@@ -785,10 +777,6 @@ export function TimelineView({
               )}
             </>
           )}
-          {inRangeGates.map((g) => (
-            // Gate line — runs the full height of the grid, same as the today line
-            <div key={g.id} onClick={() => onEditMilestone(g)} className="absolute bottom-0 top-0 z-40 cursor-pointer border-l-[2.5px] border-[var(--t-red)]" style={{ left: LABEL_W + g.left }} title={`${g.title} (gate) — ${fmtD(g.date)}`} />
-          ))}
           {depLines.length > 0 && (
             <svg className="pointer-events-none absolute top-0 z-20 overflow-visible" style={{ left: LABEL_W, width: totalW, height: totalH }}>
               <defs>
@@ -862,51 +850,6 @@ export function TimelineView({
               </span>
             </div>
           )}
-          {/* Milestones/gates with no track (or in deadline-sort mode, which
-              drops track grouping entirely) have no band of their own to
-              live in — surfaced here instead, pinned under the header. */}
-          {(ungroupedGates.length > 0 || ungroupedMilestones.length > 0) && (() => {
-            // Diamonds, not labelled pills: a title needs ~19 days of room at
-            // this zoom and often has two, so inline text always collided.
-            // Anything still too close drops to the next row.
-            const marks = [
-              ...ungroupedGates.map((g) => ({ ...g, isGate: true as const })),
-              ...ungroupedMilestones.map((m) => ({ ...m, isGate: false as const })),
-            ];
-            const { placed, rows } = stackMarkers(marks, MARKER_GAP);
-            return (
-              <div
-                className="pointer-events-none sticky z-40 h-0"
-                style={{ top: HDR_H + 6 }}
-              >
-                {placed.map(({ item, row }) => (
-                  <button
-                    key={item.id}
-                    onClick={() => onEditMilestone(item)}
-                    className="group/mk pointer-events-auto absolute flex size-[18px] -translate-x-1/2 cursor-pointer items-center justify-center rounded-[4px] text-white transition hover:scale-110 hover:brightness-110"
-                    style={{
-                      left: LABEL_W + item.left,
-                      top: row * MARKER_ROW_H,
-                      background: item.isGate ? "var(--t-red)" : item.color,
-                    }}
-                    title={`${item.title || "Untitled"}${item.isGate ? " (gate)" : ""} — ${fmtD(item.date)}`}
-                  >
-                    <span className="text-[11px] leading-none">{item.isGate ? "▮" : "◆"}</span>
-                    {/* The title on demand, so the band stays readable while
-                        the detail is still one hover away. */}
-                    <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 hidden -translate-x-1/2 whitespace-nowrap rounded-[var(--radius-sm)] border bg-[var(--panel)] px-2 py-1 text-[11.5px] font-medium text-[var(--ink)] shadow-md group-hover/mk:block">
-                      {item.title || "Untitled"}
-                      <span className="text-muted-foreground ml-1.5 font-mono text-[10.5px]">
-                        {fmtD(item.date)}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-                <span style={{ display: "block", height: rows * MARKER_ROW_H }} />
-              </div>
-            );
-          })()}
-
           {/* Groups */}
           {groups.map((g) => {
             const col = g.color ? accentVar(g.color) : "var(--ink-ghost)";
@@ -922,47 +865,23 @@ export function TimelineView({
                       <span className="eyebrow text-[11.5px]" style={g.color ? { color: col } : undefined}>{g.label}</span>
                     </div>
                     <div className="relative flex-1" style={{ width: totalW }}>
-                      {(gatesByGroup.get(g.id) ?? []).map((gate) => (
-                        <button
-                          key={gate.id}
-                          onClick={() => onEditMilestone(gate)}
-                          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer whitespace-nowrap rounded bg-[var(--t-red)] px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wide text-white"
-                          style={{ left: gate.left }}
-                          title={`${gate.title} (gate) — ${fmtD(gate.date)}`}
-                        >
-                          Gate
-                        </button>
-                      ))}
-                      {/* Same treatment as the ungrouped band: diamonds that
-                          stack rather than titles that collide. */}
-                      {stackMarkers(milestonesByGroup.get(g.id) ?? [], MARKER_GAP, 2).placed.map(
-                        ({ item: m, row }) => (
-                          <button
-                            key={m.id}
-                            onClick={() => onEditMilestone(m)}
-                            className="group/tm absolute flex size-[17px] -translate-x-1/2 cursor-pointer items-center justify-center rounded-[4px] text-white transition hover:scale-110 hover:brightness-110"
-                            style={{
-                              left: m.left,
-                              top: `calc(50% + ${(row - 0.5) * 18}px)`,
-                              transform: "translate(-50%, -50%)",
-                              background: m.color,
-                            }}
-                            title={`${m.title || "Untitled"} — ${fmtD(m.date)}`}
-                          >
-                            <span className="text-[10px] leading-none">◆</span>
-                            <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 hidden -translate-x-1/2 whitespace-nowrap rounded-[var(--radius-sm)] border bg-[var(--panel)] px-2 py-1 text-[11.5px] font-medium text-[var(--ink)] shadow-md group-hover/tm:block">
-                              {m.title || "Untitled"}
-                              <span className="text-muted-foreground ml-1.5 font-mono text-[10.5px]">
-                                {fmtD(m.date)}
-                              </span>
-                            </span>
-                          </button>
-                        ),
-                      )}
                     </div>
                   </div>
                 )}
-                {g.tasks.map((t) => (
+                {(sections.get(g.id) ?? []).map((sec) => (
+                  <Fragment key={sec.ms?.id ?? "_loose"}>
+                    {sec.ms && (
+                      <MilestoneLine
+                        ms={sec.ms}
+                        open={msOpen(sec.ms.id)}
+                        count={sec.tasks.length}
+                        color={sec.ms.type === "gate" ? "var(--t-red)" : col}
+                        minStr={minStr} maxStr={maxStr} totalW={totalW}
+                        onToggle={() => toggleMs(sec.ms!.id)}
+                        onEdit={() => onEditMilestone(sec.ms!)}
+                      />
+                    )}
+                {visibleTasks(sec).map((t) => (
                   // The fragment is the list child, so it carries the key —
                   // on GanttRow it left the fragment itself unkeyed.
                   <Fragment key={t.id}>
@@ -971,7 +890,6 @@ export function TimelineView({
                       barColorVar={t.category ? accentVar(catMap.get(t.category)?.color ?? "") : col}
                       trackLabel={deadlineMode ? (t.category ? catMap.get(t.category)?.label ?? "No track" : "No track") : null}
                       minStr={minStr} totalW={totalW}
-                      gates={inRangeMs.filter((m) => m.type === "gate")}
                       edgeClamped={edgeClampedIds.has(t.id)}
                       onEdit={() => onEdit(t)}
                       onCommit={(start, end) => updateTask.mutate({ id: t.id, data: { start, end } }, { onError: (e) => toast.error((e as Error).message) })}
@@ -987,6 +905,8 @@ export function TimelineView({
                     ))}
                   </Fragment>
                 ))}
+                  </Fragment>
+                ))}
               </div>
             );
           })}
@@ -999,8 +919,8 @@ export function TimelineView({
         <span className="inline-flex items-center gap-2">
           <span className="inline-block h-3 w-5 rounded-[3px] border border-dashed" style={{ borderColor: "color-mix(in oklch, var(--accent-c) 55%, transparent)" }} /> Planned end
         </span>
-        <span className="inline-flex items-center gap-2" style={{ color: "var(--accent-deep)" }}>◆ Milestone</span>
-        <span className="inline-flex items-center gap-2 text-[var(--t-red)]">▐ Gate</span>
+        <span className="inline-flex items-center gap-2" style={{ color: "var(--accent-deep)" }}><MilestoneIcon className="size-3.5" /> Milestone reached</span>
+        <span className="inline-flex items-center gap-2 text-[var(--t-red)]"><Flag className="size-3.5" /> Gate approved</span>
         <span className="inline-flex items-center gap-2 text-[var(--t-red)]">Dependency block (double-click to inspect)</span>
       </div>
     </div>
@@ -1246,17 +1166,74 @@ function orderByDependencyFlow(tasks: Task[], scopeIds?: Set<string>): Task[] {
   return ordered.flat().map((id) => byId.get(id)!);
 }
 
+// ── milestone line ──────────────────────────────────────────────────────────
+
+/** A milestone's own line in its track. The label folds the tasks beneath it;
+ *  the icon appears on the grid only once someone has checked the milestone
+ *  off, at the day they did. */
+function MilestoneLine({
+  ms, open, count, color, minStr, maxStr, totalW, onToggle, onEdit,
+}: {
+  ms: Milestone; open: boolean; count: number; color: string;
+  minStr: string; maxStr: string; totalW: number;
+  onToggle: () => void; onEdit: () => void;
+}) {
+  const isGate = ms.type === "gate";
+  const reached = ms.reachedOn ?? "";
+  const inRange = !!reached && reached >= minStr && reached <= maxStr;
+  const Icon = isGate ? Flag : MilestoneIcon;
+  return (
+    <div className="flex border-b border-dashed" style={{ height: MS_H }}>
+      <div
+        className="sticky left-0 z-30 flex shrink-0 items-center gap-1.5 border-r bg-[var(--panel)] py-1 pl-3 pr-3"
+        style={{ width: LABEL_W }}
+      >
+        <button
+          onClick={onToggle}
+          className="text-muted-foreground hover:text-foreground shrink-0 transition"
+          title={open ? "Fold the tasks under this milestone" : "Show the tasks under this milestone"}
+          aria-expanded={open}
+        >
+          <ChevronRight className={cn("size-3.5 transition", open && "rotate-90")} />
+        </button>
+        <Icon className="size-3.5 shrink-0" style={{ color: reached ? "var(--hue-done)" : color }} />
+        <button
+          onClick={onEdit}
+          className={cn("min-w-0 flex-1 truncate text-left text-[12.5px] font-semibold hover:underline", reached && "text-muted-foreground")}
+          title={ms.title}
+        >
+          {ms.title || (isGate ? "Untitled gate" : "Untitled milestone")}
+        </button>
+        {!open && count > 0 && (
+          <span className="text-muted-foreground shrink-0 font-mono text-[10.5px]">{count}</span>
+        )}
+      </div>
+      <div className="relative flex-1" style={{ width: totalW }}>
+        {inRange && (
+          <button
+            onClick={onEdit}
+            className="group/ml absolute top-1/2 flex size-[18px] -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center rounded-[4px] text-white transition hover:scale-110"
+            style={{ left: daysBetween(minStr, reached) * DAYW, background: isGate ? "var(--t-red)" : "var(--hue-done)" }}
+            title={`${ms.title || "Untitled"} — ${isGate ? "approved" : "reached"} ${fmtD(reached)}`}
+          >
+            <Icon className="size-3" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── gantt row with drag-move / drag-resize ──────────────────────────────────
 
 function GanttRow({
-  task, layout, barColorVar, trackLabel, minStr, totalW, gates, edgeClamped, onEdit, onCommit,
+  task, layout, barColorVar, trackLabel, minStr, totalW, edgeClamped, onEdit, onCommit,
 }: {
   task: Task;
   layout: { rowY: number; barLeft: number; barWidth: number; actualWidth: number | null };
   barColorVar: string;
   trackLabel: string | null;
   minStr: string; totalW: number;
-  gates: Milestone[];
   edgeClamped: boolean;
   onEdit: () => void;
   onCommit: (start: string, end: string) => void;
@@ -1329,9 +1306,6 @@ function GanttRow({
         <button onClick={onEdit} className="hover:text-primary min-w-0 flex-1 truncate text-left text-[13.5px]" title={task.title}>{task.title}</button>
       </div>
       <div className="relative flex-1 overflow-hidden" style={{ width: totalW }}>
-        {gates.map((m) => (
-          <div key={m.id} className="pointer-events-none absolute inset-y-0 border-l-[1.5px] border-dashed border-[oklch(0.63_0.12_25/0.3)]" style={{ left: daysBetween(minStr, m.date) * DAYW }} />
-        ))}
         {/* Planned end, ghosted behind the real bar, so a task that finished
             early or late shows the gap rather than just moving. Only drawn
             when the two actually differ. */}

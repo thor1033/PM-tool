@@ -2,13 +2,14 @@ import type { WorkingSet } from "@/lib/types";
 
 /* The plan's containment rules, enforced on the server.
  *
- *   track → milestone → task → subtask
+ *   track → (milestone) → task → subtask
  *
- * Every level names its parent. A milestone belongs to a track, a task to a
- * milestone, and a subtask inherits its parent task's milestone. Anything
- * that skips a level has no place in the plan: it appears in no track view,
- * rolls up into no milestone, and drifts until someone notices it by
- * accident.
+ * A task always sits in a track. Within its track it may sit under one of the
+ * track's milestones, or directly in the track — a milestone is an optional
+ * grouping, not a requirement, and it decides nothing about the task: not its
+ * track, not its dates, not its order. A milestone belongs to one track. A
+ * subtask sits under its parent task and so shares its parent's track and
+ * milestone.
  *
  * This lives behind the API rather than in each form because a form is only
  * one of the ways rows are written — the AI planner, the importer and the
@@ -42,43 +43,31 @@ export function checkMilestone(data: Row, isCreate: boolean): HierarchyIssue | n
 }
 
 /**
- * Checks a task write against the milestone it claims.
+ * Checks a task write: it must sit in a track, and a milestone, when it has
+ * one, must be one of that track's.
  *
- * Subtasks are not exempt: they take their parent's milestone, so the rule is
- * the same one applied to an inherited value rather than a second rule.
+ * @param current the task as stored, on update — a partial patch is judged
+ *                against the track and milestone it already has
  */
 export function checkTask(
   data: Row,
   isCreate: boolean,
   ws: Pick<WorkingSet, "tasks" | "milestones">,
+  current?: { category?: string | null; milestoneId?: string | null },
 ): HierarchyIssue | null {
   const parentId = str(data.parentId);
 
-  // A subtask does not have a milestone of its own — it has its parent's.
-  // The parent must therefore exist and be placed itself, and any milestone
-  // named in the payload must agree with it. Checking the parent rather than
-  // trusting the payload stops a subtask being used as a side door around
-  // the rule, or drifting away from the task it belongs to.
+  // A subtask's place is its parent's. The parent must exist, and the payload
+  // may not try to put the subtask somewhere else.
   if (parentId) {
     const parent = ws.tasks.find((t) => t.id === parentId);
     if (!parent) {
       return { error: "That parent task does not exist." };
     }
-    if (!str(parent.milestoneId)) {
-      return {
-        error: "A subtask needs a milestone — its parent task has none yet.",
-      };
-    }
     // Nesting deeper than one level has no representation anywhere in the
     // app, so it is refused rather than stored and rendered inconsistently.
     if (str(parent.parentId)) {
       return { error: "Subtasks cannot be nested further." };
-    }
-    const wantMs = str(data.milestoneId);
-    if (wantMs && wantMs !== str(parent.milestoneId)) {
-      return {
-        error: "A subtask belongs to the same milestone as its task. Move the task instead.",
-      };
     }
     const wantTrack = "category" in data ? str(data.category) : "";
     if (wantTrack && wantTrack !== str(parent.category)) {
@@ -86,80 +75,49 @@ export function checkTask(
         error: "A subtask belongs to the same track as its task. Move the task instead.",
       };
     }
-    // Everything below concerns a task that carries its own milestone; a
-    // subtask's is settled by the parent, and inheritFromParent applies it.
+    const wantMs = "milestoneId" in data ? str(data.milestoneId) : "";
+    if (wantMs && wantMs !== str(parent.milestoneId)) {
+      return {
+        error: "A subtask sits under the same milestone as its task. Move the task instead.",
+      };
+    }
     return null;
   }
 
-  if (!isCreate && !("milestoneId" in data)) return null;
-
-  const milestoneId = str(data.milestoneId) || (parentId ? "inherited" : "");
-  if (!milestoneId) {
-    return { error: "A task must belong to a milestone." };
+  // The track a task will have once this write lands.
+  const track = "category" in data ? str(data.category) : str(current?.category);
+  if ((isCreate || "category" in data) && !track) {
+    return { error: "A task must sit in a track." };
   }
-  if (milestoneId === "inherited") return null;
 
+  const milestoneId = "milestoneId" in data ? str(data.milestoneId) : "";
+  if (!milestoneId) return null;
   const ms = ws.milestones.find((m) => m.id === milestoneId);
   if (!ms) {
     return { error: "That milestone does not exist." };
   }
-  // The milestone carries the track, so a task pointing at one in a different
-  // track would sit in two places at once.
-  const taskTrack = "category" in data ? str(data.category) : null;
-  if (taskTrack && str(ms.category) && taskTrack !== str(ms.category)) {
-    return {
-      error: "That milestone belongs to a different track than the task.",
-    };
+  if (track && str(ms.category) !== track) {
+    return { error: "That milestone belongs to a different track than the task." };
   }
   return null;
 }
 
 /**
- * Refuses a task deadline that falls after the milestone it serves.
+ * Whether a task moving to `nextTrack` has to leave its milestone behind.
  *
- * A milestone is the date its work is meant to be finished by, so a task due
- * after it is a contradiction: the milestone could not be reached on time
- * even if everything went to plan. Caught on write rather than reported
- * later, because by then the plan already says something impossible.
- *
- * Ongoing work is exempt — it has no end date to compare.
+ * A milestone belongs to one track, so a task that changes track cannot keep
+ * sitting under it. The milestone does not pull the task back — the task's
+ * track wins and the milestone link is dropped.
  */
-export function checkTaskDeadline(
-  data: Row,
-  current: { end?: string | null; milestoneId?: string | null; kind?: string | null } | undefined,
+export function milestoneLeftBehind(
+  nextTrack: string | null | undefined,
+  milestoneId: string | null | undefined,
   ws: Pick<WorkingSet, "milestones">,
-): HierarchyIssue | null {
-  const kind = "kind" in data ? str(data.kind) : str(current?.kind);
-  if (kind === "ongoing") return null;
-
-  const end = "end" in data ? str(data.end) : str(current?.end);
-  if (!end) return null;
-  const msId = "milestoneId" in data ? str(data.milestoneId) : str(current?.milestoneId);
-  if (!msId) return null;
+): boolean {
+  const msId = str(milestoneId);
+  if (!msId) return false;
   const ms = ws.milestones.find((m) => m.id === msId);
-  if (!ms || !str(ms.date) || end <= str(ms.date)) return null;
-
-  const name = ms.title || "Untitled";
-  return {
-    error:
-      `This task is due ${end}, after its milestone "${name}" on ${ms.date}. ` +
-      `Move the milestone, bring the task forward, or make it an ongoing task.`,
-  };
-}
-
-/** The track a task inherits, given the milestone it sits under. Keeps the
- *  two in step without asking the caller to set both. */
-export function trackForTask(
-  data: Row,
-  ws: Pick<WorkingSet, "tasks" | "milestones">,
-): string | null {
-  const parentId = str(data.parentId);
-  if (parentId) {
-    const parent = ws.tasks.find((t) => t.id === parentId);
-    if (parent) return str(parent.category) || null;
-  }
-  const ms = ws.milestones.find((m) => m.id === str(data.milestoneId));
-  return ms ? str(ms.category) || null : null;
+  return !ms || str(ms.category) !== str(nextTrack);
 }
 
 /**
@@ -199,12 +157,10 @@ export function inheritFromParent(
  * The subtasks that must follow their parent, as id → patch.
  *
  * A subtask belongs to its task, so what happens to the task happens to its
- * parts. Moving the task takes them with it — leaving them behind would
- * strand them under a milestone their parent has left, the exact orphaning
- * the hierarchy exists to prevent, arrived at one step later. Changing the
- * task's status carries too: parts of a piece of work that has started are
- * themselves under way, and a task cannot honestly be done while the work
- * beneath it is not.
+ * parts. Moving the task — to another track or under another milestone —
+ * takes them with it. Changing the task's status carries too: parts of a
+ * piece of work that has started are themselves under way, and a task cannot
+ * honestly be done while the work beneath it is not.
  *
  * Only the status is set here; the dates that follow from it are applied by
  * the shared date rules, so there is one statement of them rather than a

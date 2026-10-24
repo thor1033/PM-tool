@@ -10,6 +10,7 @@ import {
 import { entityConfig } from "@/lib/entities";
 import type { MachineContext } from "@/lib/api/machineAuth";
 import type { Task, Risk, Milestone } from "@/lib/db/schema";
+import { checkTask, milestoneLeftBehind } from "@/lib/hierarchy";
 
 /*
  * The tools the AI Hub sees on this workspace.
@@ -56,6 +57,7 @@ function taskView(t: Task) {
     kind: t.kind,
     track: t.category,
     milestoneId: t.milestoneId,
+    priority: t.priority,
     owner: (Array.isArray(t.assignees) ? t.assignees : [])[0] ?? null,
     start: t.start || null,
     end: t.end || null,
@@ -79,8 +81,8 @@ const milestoneView = (m: Milestone) => ({
   id: m.id,
   title: m.title,
   type: m.type,
-  date: m.date || null,
   track: m.category,
+  reachedOn: m.reachedOn || null,
 });
 
 export interface ToolDef {
@@ -227,6 +229,7 @@ const projectStatusTool: ToolDef = {
     const until = new Date(Date.now() + horizon * 86_400_000)
       .toISOString()
       .slice(0, 10);
+    const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
 
     const tasks = ws.tasks.map(taskView);
     const byStatus = Object.fromEntries(
@@ -245,12 +248,12 @@ const projectStatusTool: ToolDef = {
       dueNext: tasks.filter(
         (t) => t.status !== "done" && t.end && t.end >= now && t.end <= until,
       ),
-      upcomingMilestones: ws.milestones
+      // Milestones carry no date, so nothing about them is upcoming or
+      // missed — only open, or checked off by someone.
+      openMilestones: ws.milestones.map(milestoneView).filter((m) => !m.reachedOn),
+      recentlyReachedMilestones: ws.milestones
         .map(milestoneView)
-        .filter((m) => m.date && m.date >= now && m.date <= until),
-      missedMilestones: ws.milestones
-        .map(milestoneView)
-        .filter((m) => m.date && m.date < now),
+        .filter((m) => m.reachedOn && m.reachedOn >= weekAgo),
       openRisks: ws.risks
         .map(riskView)
         .filter((r) => r.status.toLowerCase() === "open")
@@ -289,8 +292,12 @@ const createTaskTool: ToolDef = {
     start: z.string().optional().describe("Planned start, ISO date (YYYY-MM-DD)."),
     end: z.string().optional().describe("Planned end, ISO date (YYYY-MM-DD)."),
     owner: z.string().optional().describe("Person's name, as it appears on the project."),
-    track: z.string().optional().describe("Track/category id this task belongs to."),
-    milestoneId: z.string().optional(),
+    track: z.string().describe("Track/category id this task sits in. Every task sits in a track."),
+    priority: z.boolean().optional().describe("Whether the task takes priority. Defaults to no."),
+    milestoneId: z
+      .string()
+      .optional()
+      .describe("Optional milestone to sit under. Must be one of the task's own track."),
   },
   handler: async (args, ctx) => {
     const projectId = String(args.projectId ?? "");
@@ -307,6 +314,7 @@ const createTaskTool: ToolDef = {
       assignees: owner ? [owner] : [],
       category: (args.track as string) ?? null,
       milestoneId: (args.milestoneId as string) ?? null,
+      priority: (args.priority as boolean) ?? false,
       position: ws.tasks.length,
     };
 
@@ -314,6 +322,8 @@ const createTaskTool: ToolDef = {
     // write a shape the UI cannot render.
     const parsed = entityConfig.tasks.schema.safeParse(draft);
     if (!parsed.success) return fail(`Invalid task: ${parsed.error.message}`);
+    const issue = checkTask(draft, true, ws);
+    if (issue) return fail(issue.error);
 
     const row = await createEntity(ctx.orgId, projectId, "tasks", parsed.data);
     if (!row) return fail(`Could not create the task in project "${projectId}".`);
@@ -340,7 +350,12 @@ const updateTaskTool: ToolDef = {
     start: z.string().optional(),
     end: z.string().optional(),
     owner: z.string().optional(),
-    milestoneId: z.string().optional(),
+    track: z.string().optional().describe("Move the task to another track."),
+    priority: z.boolean().optional().describe("Whether the task takes priority."),
+    milestoneId: z
+      .string()
+      .optional()
+      .describe("Milestone to sit under, from the task's own track. Pass \"\" to take it out."),
   },
   handler: async (args, ctx) => {
     const projectId = String(args.projectId ?? "");
@@ -352,10 +367,23 @@ const updateTaskTool: ToolDef = {
     if (!existing) return fail(`No task "${taskId}" in project "${projectId}".`);
 
     const patch: Record<string, unknown> = {};
-    for (const field of ["title", "status", "description", "start", "end", "milestoneId"]) {
+    for (const field of ["title", "status", "description", "start", "end", "milestoneId", "priority"]) {
       if (args[field] !== undefined) patch[field] = args[field];
     }
     if (args.owner !== undefined) patch.assignees = args.owner ? [args.owner] : [];
+    if (args.track !== undefined) patch.category = args.track;
+    if (patch.milestoneId === "") patch.milestoneId = null;
+
+    const issue = checkTask(patch, false, ws, existing);
+    if (issue) return fail(issue.error);
+    // A task that changes track cannot keep a milestone from the old one.
+    if (
+      patch.category !== undefined &&
+      patch.milestoneId === undefined &&
+      milestoneLeftBehind(patch.category as string, existing.milestoneId, ws)
+    ) {
+      patch.milestoneId = null;
+    }
 
     // The board sets completedOn when a card reaches done; a tool moving the
     // same task must keep that in step or the delivery-vs-plan comparison lies.
