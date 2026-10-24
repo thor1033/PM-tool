@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/project/confirm";
+import { ViewSettingsButton, useViewSettings } from "@/components/project/view-settings";
 
 // ── status segmented control ────────────────────────────────────────────────
 
@@ -515,6 +516,9 @@ export function CardModal({
   // Carrying files onto a follow-up writes to the file, not the task.
   const updateProductLink = useUpdateEntity(projectId, "products");
   const confirm = useConfirm();
+  // What this view shows is set from the gear in its header. Title, track,
+  // milestone, dates and owner are always shown — they are what a task is.
+  const { shows } = useViewSettings(ws, projectId, "task");
 
   // Which task this modal instance is actually showing — starts as the
   // `task` prop, but "+ Follow-up" and clicking a chain node swap this
@@ -595,7 +599,6 @@ export function CardModal({
   const parentTask = activeTask?.parentId
     ? ws.tasks.find((t) => t.id === activeTask.parentId) ?? null
     : null;
-
   function addSubtask() {
     const title = subTitle.trim();
     if (!activeTask || !title) return;
@@ -752,37 +755,61 @@ export function CardModal({
   // "reason" explains, so the field only belongs on those.
   const isFollowup = (activeTask?.deps ?? []).some((d) => d.type === "followup");
 
+  // With every relational section switched off, the right column would be an
+  // empty pane, so the view collapses to one column instead.
+  const showChain = shows("followupChain") && chain.length > 1;
+  const rightColumn =
+    showChain ||
+    shows("dependencies") ||
+    (!!activeTask &&
+      (shows("files") || shows("subtasks") || shows("risks") || shows("comments")));
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[85dvh] max-h-[1050px] w-[90vw] max-w-[1400px] sm:max-w-[1400px] flex-col overflow-hidden p-0">
+      <DialogContent
+        className={cn(
+          "flex h-[85dvh] max-h-[1050px] w-[90vw] flex-col overflow-hidden p-0",
+          rightColumn ? "max-w-[1400px] sm:max-w-[1400px]" : "max-w-[760px] sm:max-w-[760px]",
+        )}
+      >
         <DialogHeader className="flex-row items-center justify-between border-b px-6 py-4 space-y-0">
           <DialogTitle className="font-serif-display font-medium">{activeTask ? "Edit task" : swapped ? "Opening…" : "New task"}</DialogTitle>
-          {activeTask && (
-            <Button
-              variant="outline" size="sm" className="mr-8"
-              onClick={createFollowup}
-              disabled={create.isPending}
-              title="Create a new task linked back to this one"
-            >
-              <GitBranch className="size-3.5" /> Follow-up
-            </Button>
-          )}
+          <div className="mr-8 flex items-center gap-2">
+            <ViewSettingsButton ws={ws} projectId={projectId} view="task" />
+            {activeTask && (
+              <Button
+                variant="outline" size="sm"
+                onClick={createFollowup}
+                disabled={create.isPending}
+                title="Create a new task linked back to this one"
+              >
+                <GitBranch className="size-3.5" /> Follow-up
+              </Button>
+            )}
+          </div>
         </DialogHeader>
 
-        <div className="grid min-h-0 flex-1 grid-cols-2 divide-x overflow-hidden">
+        <div
+          className={cn(
+            "grid min-h-0 flex-1 overflow-hidden",
+            rightColumn ? "grid-cols-2 divide-x" : "grid-cols-1",
+          )}
+        >
           {/* Left column — core, directly-editable fields */}
           <div className="space-y-4 overflow-y-auto p-6">
             <div className="space-y-1.5">
               <Label>Title</Label>
               <Input value={form.title} onChange={(e) => set("title", e.target.value)} autoFocus />
             </div>
-            <div className="space-y-1.5">
-              <Label>Description</Label>
-              <Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={3} />
-            </div>
+            {shows("description") && (
+              <div className="space-y-1.5">
+                <Label>Description</Label>
+                <Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={3} />
+              </div>
+            )}
             {/* Only meaningful on a task that was actually spun off another —
                 on a standalone task it's a field with nothing to explain. */}
-            {isFollowup && (
+            {isFollowup && shows("followupReason") && (
               <div className="space-y-1.5">
                 <Label>Reason for follow-up</Label>
                 <Textarea
@@ -796,6 +823,7 @@ export function CardModal({
 
             {/* How the work gets done. A meeting needs a time and people;
                 a build does not — so the kind decides what we ask for. */}
+            {shows("kind") && (
             <div className="space-y-1.5">
               <Label>Kind</Label>
               <div className="grid grid-cols-3 gap-1.5">
@@ -820,8 +848,9 @@ export function CardModal({
                 })}
               </div>
             </div>
+            )}
 
-            {form.kind === "meeting" && (
+            {form.kind === "meeting" && shows("meeting") && (
               <div className="space-y-3 rounded-[var(--radius-md)] border bg-[var(--paper-2)] p-3">
                 <div className="flex items-center gap-2">
                   <Users className="size-3.5 shrink-0 text-[var(--t-blue)]" />
@@ -883,10 +912,12 @@ export function CardModal({
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <Label>Status</Label>
-              <StatusSeg value={form.status} onChange={(v) => set("status", v)} />
-            </div>
+            {shows("status") && (
+              <div className="space-y-1.5">
+                <Label>Status</Label>
+                <StatusSeg value={form.status} onChange={(v) => set("status", v)} />
+              </div>
+            )}
 
             {parentTask ? (
               // Placement is the parent task's. Shown so the reader knows
@@ -1016,6 +1047,7 @@ export function CardModal({
             {/* Recorded automatically when the task is marked done, and cleared
                 if it's reopened — read-only so the measured date can't drift
                 from what actually happened. */}
+            {shows("actualEnd") && (
             <div className="space-y-1.5">
               <Label className="flex items-center gap-1.5">
                 Actual end
@@ -1046,6 +1078,7 @@ export function CardModal({
                 </div>
               )}
             </div>
+            )}
 
             <div className="space-y-1.5">
               <Label>Owner</Label>
@@ -1081,7 +1114,7 @@ export function CardModal({
             </div>
 
             {/* custom fields — "occurrence" has its own dedicated field above */}
-            {activeTask && Object.entries(activeTask.custom ?? {}).filter(([k]) => k !== "occurrence").length > 0 && (
+            {activeTask && shows("customFields") && Object.entries(activeTask.custom ?? {}).filter(([k]) => k !== "occurrence").length > 0 && (
               <div className="space-y-1.5 border-t pt-4">
                 <Label>Custom fields</Label>
                 <div className="space-y-1">
@@ -1099,8 +1132,9 @@ export function CardModal({
           </div>
 
           {/* Right column — relational content: lineage, dependencies, risks, comments */}
+          {rightColumn && (
           <div className="space-y-4 overflow-y-auto p-6">
-            {chain.length > 1 && (
+            {showChain && (
               <div className="space-y-2">
                 <Label className="flex items-center gap-1.5"><GitBranch className="size-3.5" /> Follow-up chain</Label>
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -1128,17 +1162,19 @@ export function CardModal({
               </div>
             )}
 
-            <DepEditor
-              task={activeTask} ws={ws} projectId={projectId}
-              deps={form.deps.filter((d) => d.type !== "followup")}
-              onChange={(next) => set("deps", [...next, ...form.deps.filter((d) => d.type === "followup")])}
-            />
+            {shows("dependencies") && (
+              <DepEditor
+                task={activeTask} ws={ws} projectId={projectId}
+                deps={form.deps.filter((d) => d.type !== "followup")}
+                onChange={(next) => set("deps", [...next, ...form.deps.filter((d) => d.type === "followup")])}
+              />
+            )}
 
-            {activeTask && (
+            {activeTask && shows("files") && (
               <TaskFiles task={activeTask} ws={ws} projectId={projectId} />
             )}
 
-            {activeTask && (
+            {activeTask && shows("subtasks") && (
               <div className="border-t pt-4">
                 <h4 className="mb-3 flex items-center gap-1.5 text-sm font-medium">
                   <ListChecks className="text-muted-foreground size-4" />
@@ -1205,13 +1241,13 @@ export function CardModal({
               </div>
             )}
 
-            {activeTask && (
+            {activeTask && shows("risks") && (
               <div className="border-t pt-4">
                 <RiskLinker task={activeTask} ws={ws} projectId={projectId} />
               </div>
             )}
 
-            {activeTask && (
+            {activeTask && shows("comments") && (
               <div className="border-t pt-4">
                 <h4 className="mb-3 flex items-center gap-1.5 text-sm font-medium">
                   <MessageSquare className="text-muted-foreground size-4" />
@@ -1260,6 +1296,7 @@ export function CardModal({
               </div>
             )}
           </div>
+          )}
         </div>
 
         <DialogFooter className="-mx-0 -mb-0 flex items-center justify-between rounded-b-xl border-t bg-muted/50 px-6 py-4 sm:justify-between">
