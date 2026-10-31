@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { GitBranch, Maximize2, Minus, Plus, Scan } from "lucide-react";
+import { Crosshair, GitBranch, Maximize2, Minus, Plus, Scan } from "lucide-react";
 import type { Task, WorkingSet } from "@/lib/types";
 import {
   buildLineage, COL, DOC_SIZE, TASK_R,
@@ -20,6 +20,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 
 const MIN_K = 0.3;
 const MAX_K = 2;
+/** The zoom the graph always opens at: the text at a comfortable reading
+ *  size, whatever the size of the lineage. Fit is a button away. */
+const READ_K = 1.15;
 
 // Labels are cut to the width they have, not to a character count: a title in
 // capitals or bold is far wider than the same number of lowercase letters.
@@ -54,6 +57,28 @@ function whenOf(t: Task): string {
 
 type View = { k: number; tx: number; ty: number };
 
+/** The opening view: at reading zoom, with the task being edited near the
+ *  left edge — just after what it depends on, when it depends on anything —
+ *  so the work that came of it reads off to its right. Vertically the task
+ *  with its dependencies and files is centred when it fits, and starts at
+ *  the top when it does not. */
+function focusView(lin: Lineage, w: number, h: number): View {
+  const k = READ_K;
+  const focus = lin.nodes.find((n): n is LineageTaskNode => n.kind !== "doc" && n.id === lin.focusId);
+  if (!focus) return fitView(lin, w, h);
+  const shelfTop = focus.y - TASK_R - 24;
+  // Its own files, and what it depends on with their files, to its left.
+  const deps = focus.shelf?.items ?? [];
+  const docs = lin.nodes.filter((n) => n.kind === "doc" && n.id.startsWith(`${focus.id}:`));
+  const bottom = Math.max(focus.y + 28, ...deps.map((d) => d.y + 28), ...docs.map((d) => d.y + DOC_SIZE));
+  const band = (bottom - shelfTop) * k;
+  const ty = band <= h - 24 ? (h - band) / 2 - shelfTop * k : 12 - shelfTop * k;
+  // When it depends on others, their column comes into view with it.
+  const left = deps.length ? deps[0].x : focus.x;
+  const tx = 20 - (left - TASK_R) * k;
+  return { k, tx, ty };
+}
+
 /** Scale and offset that fit the drawing in the frame, never enlarging it,
  *  and that keep the focused task on screen when the drawing is wider. */
 function fitView(lin: Lineage, w: number, h: number): View {
@@ -70,15 +95,11 @@ export function LineageGraph({
   lineage,
   onOpenTask,
   height,
-  wheelZoom = false,
 }: {
   lineage: Lineage;
   onOpenTask?: (id: string) => void;
   /** Fixed frame height; fills the parent when omitted. */
   height?: number;
-  /** Plain wheel zooms. Off inline, so scrolling the dialog past the graph
-   *  still scrolls; ctrl/⌘ + wheel zooms either way. */
-  wheelZoom?: boolean;
 }) {
   const frame = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -95,15 +116,15 @@ export function LineageGraph({
     return () => ro.disconnect();
   }, []);
 
-  // Fit when the frame first has a size, and again whenever the drawing is
-  // for a different task — jumping along the lineage re-centres on the new one.
-  // Adjusted during render rather than in an effect, so the first paint is
-  // already fitted instead of flashing the unfitted drawing.
+  // Open on the task when the frame first has a size, and again whenever the
+  // drawing is for a different task — jumping along the lineage moves to the
+  // new one. Adjusted during render rather than in an effect, so the first
+  // paint is already placed instead of flashing an unplaced drawing.
   const fitKey = `${lineage.focusId}:${lineage.nodes.length}`;
   const [fittedFor, setFittedFor] = useState("");
   if (size.w > 0 && fittedFor !== fitKey) {
     setFittedFor(fitKey);
-    setView(fitView(lineage, size.w, size.h));
+    setView(focusView(lineage, size.w, size.h));
     setHover(null);
   }
   const shown = view;
@@ -116,20 +137,20 @@ export function LineageGraph({
       return { k, tx: cx - (cx - v.tx) * f, ty: cy - (cy - v.ty) * f };
     }), []);
 
-  // A native listener, because React's wheel handler is passive and cannot
-  // stop the page from scrolling underneath the zoom.
+  // The wheel zooms, around the pointer. A native listener, because React's
+  // wheel handler is passive and cannot stop the page from scrolling
+  // underneath the zoom.
   useEffect(() => {
     const el = frame.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (!wheelZoom && !e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       const r = el.getBoundingClientRect();
       zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [wheelZoom, zoomAt]);
+  }, [zoomAt]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (!shown || (e.target as Element).closest("[data-node], button")) return;
@@ -204,7 +225,8 @@ export function LineageGraph({
         <ToolBtn label="Zoom out" onClick={() => zoomAt(1 / 1.25, size.w / 2, size.h / 2)}><Minus className="size-3.5" /></ToolBtn>
         <span className="text-muted-foreground w-9 text-center font-mono text-[10.5px]">{Math.round(k * 100)}%</span>
         <ToolBtn label="Zoom in" onClick={() => zoomAt(1.25, size.w / 2, size.h / 2)}><Plus className="size-3.5" /></ToolBtn>
-        <ToolBtn label="Fit" onClick={() => setView(fitView(lineage, size.w, size.h))}><Scan className="size-3.5" /></ToolBtn>
+        <ToolBtn label="Back to this task" onClick={() => setView(focusView(lineage, size.w, size.h))}><Crosshair className="size-3.5" /></ToolBtn>
+        <ToolBtn label="Fit everything" onClick={() => setView(fitView(lineage, size.w, size.h))}><Scan className="size-3.5" /></ToolBtn>
       </div>
     </div>
   );
@@ -297,8 +319,8 @@ function TaskMark({
  *  greyed out. */
 const depMet = (d: ResolvedDep) => (d.type === "task" || d.type === "ext") && !d.blocked;
 
-/** What a task depends on, drawn above it as task-sized circles: greyed out
- *  until it is done, checked off once it is. */
+/** What a task depends on, drawn to its left as task-sized circles: greyed
+ *  out until it is done, checked off once it is. */
 function Shelf({ shelf, onOpen }: { shelf: LineageShelf; onOpen?: (id: string) => void }) {
   const r = TASK_R;
   return (
@@ -319,7 +341,7 @@ function Shelf({ shelf, onOpen }: { shelf: LineageShelf; onOpen?: (id: string) =
             onKeyDown={(e) => { if (openable && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onOpen!(taskId!); } }}
           >
             <title>{`Depends on: ${dep.name} · ${dep.scope} · ${met ? "done" : "not done yet"}`}</title>
-            <rect x={x - r - 4} y={y - r - 4} width={COL - 40} height={r * 2 + 8} fill="transparent" />
+            <rect x={x - r - 4} y={y - r - 18} width={COL - 40} height={r * 2 + 36} fill="transparent" />
             <circle
               cx={x}
               cy={y}
@@ -335,15 +357,17 @@ function Shelf({ shelf, onOpen }: { shelf: LineageShelf; onOpen?: (id: string) =
                 fill="none" stroke="white" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
               />
             )}
-            <text x={lx} y={y - 3} fontSize={8.5} fontWeight={600} letterSpacing={0.5} fill="var(--muted-foreground)">
-              DEPENDS ON
+            {/* Laid out like a task's label — name above the line, status
+                below it — so the line into the task runs between them. */}
+            <text x={lx} y={y + 18} fontSize={8.5} fontWeight={600} letterSpacing={0.5} fill="var(--muted-foreground)">
+              {met ? "DEPENDS ON · DONE" : "DEPENDS ON"}
             </text>
             <text
-              x={lx} y={y + 10} fontSize={11.5}
+              x={lx} y={y - 8} fontSize={11.5}
               fill={met ? "var(--muted-foreground)" : "color-mix(in oklch, var(--ink-soft) 70%, transparent)"}
               textDecoration={met ? "line-through" : undefined}
             >
-              {fit(dep.name, COL - 116, `400 11.5px ${FONT}`)}
+              {fit(dep.name, COL - 76, `400 11.5px ${FONT}`)}
             </text>
           </g>
         );
@@ -450,8 +474,8 @@ function Legend() {
       <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full border-[1.5px] border-[var(--hue-backlog)]" />Subtask</span>
       <span className="inline-flex items-center gap-1"><span className="size-2.5 rounded-[3px] border-[1.5px] border-[var(--ink-soft)]" />File</span>
       <span className="inline-flex items-center gap-1"><span className="size-2.5 rounded-full border-[1.5px] border-dashed border-[color-mix(in_oklch,var(--ink-soft)_45%,transparent)] bg-[color-mix(in_oklch,var(--ink-soft)_10%,var(--panel))]" />Depends on · not done</span>
-      <span>↓ follow-ups</span>
-      <span>→ subtasks</span>
+      <span>older ← → newer</span>
+      <span>scroll to zoom · drag to pan</span>
     </div>
   );
 }
@@ -459,9 +483,14 @@ function Legend() {
 /** The lineage as a section of the task editor: a compact, pannable view
  *  with a way out to a large one. Renders nothing when the task stands alone. */
 /** A task's dependencies as the graph shows them. Milestone links are left
- *  out: they predate milestones deciding nothing and no longer gate work. */
+ *  out: they predate milestones deciding nothing and no longer gate work.
+ *  Links to tasks that have since been deleted are left out too. */
 export function lineageDeps(t: Task, ws: Pick<WorkingSet, "tasks" | "products" | "externals">): ResolvedDep[] {
-  const deps = (t.deps ?? []).filter((d) => (d.type as string) !== "milestone");
+  const deps = (t.deps ?? []).filter(
+    (d) =>
+      (d.type as string) !== "milestone" &&
+      !(d.type === "task" && !ws.tasks.some((x) => x.id === d.refId)),
+  );
   return depsOf({ ...t, deps }, ws);
 }
 
@@ -517,7 +546,6 @@ export function LineageSection({
           <div className="min-h-0 flex-1">
             <LineageGraph
               lineage={lineage}
-              wheelZoom
               onOpenTask={(id) => { setBig(false); onOpenTask(id); }}
             />
           </div>

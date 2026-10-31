@@ -401,6 +401,7 @@ export function ListView({
         ws={ws}
         tasks={flat}
         onEdit={onEdit}
+        onToggleDone={toggleDone}
         showDueIn={sortBy === "deadline"}
         emptyLabel="Nothing matches the current filters."
       />
@@ -809,9 +810,10 @@ export function ListView({
 // ── "Sequence" flat view ─────────────────────────────────────────────────────
 
 function SequenceList({
-  ws, tasks, onEdit, showDueIn = false, emptyLabel = "No tasks match the current filters.",
+  ws, tasks, onEdit, onToggleDone, showDueIn = false, emptyLabel = "No tasks match the current filters.",
 }: {
   ws: WorkingSet; tasks: Task[]; onEdit: (t: Task | null) => void;
+  onToggleDone: (t: Task) => void;
   /** Adds a "Due in" column — how long until (or since) each end date. */
   showDueIn?: boolean;
   emptyLabel?: string;
@@ -828,7 +830,7 @@ function SequenceList({
       <table className="w-full table-fixed text-[14.5px]">
         <thead>
           <tr className="border-b bg-[var(--paper-2)] text-left">
-            <th className="w-12 py-4 pl-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">#</th>
+            <th className="w-20 py-4 pl-3 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">#</th>
             <th className="w-[46%] py-4 pr-6 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">Task name</th>
             <th className="w-36 py-4 pr-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">Track</th>
             <th className="w-36 py-4 pr-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-soft)]">Depends on</th>
@@ -852,12 +854,17 @@ function SequenceList({
                 key={t.id}
                 onClick={() => onEdit(t)}
                 className={cn(
-                  "cursor-pointer border-b border-[var(--line)] transition last:border-0 hover:bg-[var(--paper-2)]",
+                  "group/row cursor-pointer border-b border-[var(--line)] transition last:border-0 hover:bg-[var(--paper-2)]",
                   blocked && "bg-[color-mix(in_oklch,var(--t-red)_5%,transparent)]",
                 )}
                 title={blocked ? "Dependency block" : undefined}
               >
-                <td className="text-muted-foreground py-4 pl-4 font-mono text-[13px]">{i + 1}</td>
+                <td className="text-muted-foreground py-4 pl-3 font-mono text-[13px]">
+                  <span className="flex items-center gap-2.5">
+                    <DoneCheckbox done={t.status === "done"} onToggle={() => onToggleDone(t)} />
+                    {i + 1}
+                  </span>
+                </td>
                 <td className="py-4 pr-6">
                   <span className="flex items-center gap-3">
                     <span className="size-2.5 shrink-0 rounded-full" style={{ background: statusVar(t.status) }} />
@@ -876,7 +883,7 @@ function SequenceList({
                       );
                     })()}
                     {t.priority && <PriorityDot />}
-                    <span className="font-medium">{t.title}</span>
+                    <DoneTitle title={t.title} done={t.status === "done"} />
                     {blocked && <span className="text-[11px] font-bold text-[var(--t-red)]" title="Dependency block">⛔</span>}
                   </span>
                 </td>
@@ -956,6 +963,48 @@ function PriorityDot() {
   return <span className="size-2 shrink-0 rounded-full bg-[var(--t-red)]" title="Priority" aria-label="Priority" />;
 }
 
+/** Check off in place. Hidden until the row is hovered so the list stays
+ *  quiet, but always shown once ticked — done is worth seeing. */
+function DoneCheckbox({ done, onToggle }: { done: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={done}
+      aria-label={done ? "Mark as not done" : "Mark as done"}
+      title={done ? "Mark as not done" : "Mark as done"}
+      onClick={(e) => { e.stopPropagation(); onToggle(); }}
+      onDoubleClick={(e) => e.stopPropagation()}
+      className={cn(
+        "flex size-4 shrink-0 items-center justify-center rounded-[4px] border-[1.5px] transition",
+        done
+          ? "border-[var(--t-green)] bg-[var(--t-green)] text-white"
+          : "border-[var(--ink-soft)] opacity-0 hover:border-foreground focus-visible:opacity-100 group-hover/row:opacity-100",
+      )}
+    >
+      {done && <Check className="size-3" strokeWidth={3} />}
+    </button>
+  );
+}
+
+/** The title, with a line run through it when it is checked off. It is a
+ *  width transition, so it only animates on the change — a task that was
+ *  already done loads with the line in place. */
+function DoneTitle({ title, done }: { title: string; done: boolean }) {
+  return (
+    <span className={cn("relative leading-snug font-medium transition-colors duration-500", done && "text-muted-foreground")}>
+      {title}
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute top-1/2 left-0 h-[1.5px] bg-current transition-[width] duration-500 ease-out",
+          done ? "w-full" : "w-0",
+        )}
+      />
+    </span>
+  );
+}
+
 function TaskRow({
   seq, originSeq, task, ws, blocked, hasSubtasks, subsOpen, doneCount, totalCount,
   onToggleSubs, onEdit, onDelete, indent,
@@ -998,26 +1047,8 @@ function TaskRow({
     >
       <td className="w-20 py-4 pl-2">
         <div className="flex items-center">
-          {/* Check off in place. Hidden until the row is hovered so the list
-              stays quiet, but always shown once ticked — done is worth seeing. */}
-          <button
-            type="button"
-            role="checkbox"
-            aria-checked={done}
-            aria-label={done ? "Mark as not done" : "Mark as done"}
-            title={done ? "Mark as not done" : "Mark as done"}
-            onClick={(e) => { e.stopPropagation(); onToggleDone(); }}
-            onDoubleClick={(e) => e.stopPropagation()}
-            className={cn(
-              "mr-1.5 flex size-4 shrink-0 items-center justify-center rounded-[4px] border-[1.5px] transition",
-              done
-                ? "border-[var(--t-green)] bg-[var(--t-green)] text-white"
-                : "border-[var(--ink-soft)] opacity-0 hover:border-foreground focus-visible:opacity-100 group-hover/row:opacity-100",
-            )}
-          >
-            {done && <Check className="size-3" strokeWidth={3} />}
-          </button>
-          <span className="flex size-4 shrink-0 items-center justify-center">
+          <DoneCheckbox done={done} onToggle={onToggleDone} />
+          <span className="ml-1.5 flex size-4 shrink-0 items-center justify-center">
             <GripVertical className="text-muted-foreground/30 size-4 cursor-grab opacity-0 group-hover:opacity-100" />
           </span>
           {indent === 0 ? (
@@ -1035,19 +1066,7 @@ function TaskRow({
       <td className="relative py-4 pr-6">
         <div className={cn("flex items-center gap-3", indent > 0 && "text-[13.5px]")}>
           {task.priority && <PriorityDot />}
-          {/* The line runs through the title when it is checked off. It is a
-              width transition, so it only animates on the change — a task
-              that was already done loads with the line in place. */}
-          <span className={cn("relative leading-snug font-medium transition-colors duration-500", done && "text-muted-foreground")}>
-            {task.title}
-            <span
-              aria-hidden
-              className={cn(
-                "pointer-events-none absolute top-1/2 left-0 h-[1.5px] bg-current transition-[width] duration-500 ease-out",
-                done ? "w-full" : "w-0",
-              )}
-            />
-          </span>
+          <DoneTitle title={task.title} done={done} />
           {originSeq !== null && originSeq !== undefined && (
             <button
               onClick={(e) => { e.stopPropagation(); if (followupOf) onJumpTo(followupOf); }}

@@ -74,21 +74,28 @@ function mentions(text: string, title: string): boolean {
   return text.includes(title.length > 57 ? title.slice(0, 57) : title);
 }
 
-export function buildDigest({
+/**
+ * Every event from `from` (a local YYYY-MM-DD) up to now, recorded and
+ * derived merged, newest day first. The front page and the full history both
+ * read from this, so the two can never disagree about what happened.
+ */
+export function collectEvents({
   activity,
   tasks,
   milestones,
   categories,
+  from,
   now = new Date(),
 }: {
   activity: ActivityRow[];
   tasks: Task[];
   milestones: Milestone[];
   categories: Category[];
+  from: string;
   now?: Date;
-}): { today: DigestEvent[]; week: DigestEvent[] } {
+}): DigestEvent[] {
   const today = localDay(now);
-  const weekFrom = localDay(weekStart(now));
+  const weekFrom = from;
 
   const byId = new Map(tasks.map((t) => [t.id, t]));
 
@@ -180,7 +187,7 @@ export function buildDigest({
     }
   }
 
-  const all = [...recorded, ...derived.filter((d) => !covered.has(d.id))].sort(
+  return [...recorded, ...derived.filter((d) => !covered.has(d.id))].sort(
     (a, b) => {
       const dayA = localDay(new Date(a.ts));
       const dayB = localDay(new Date(b.ts));
@@ -190,7 +197,24 @@ export function buildDigest({
       return +new Date(b.ts) - +new Date(a.ts);
     },
   );
+}
 
+export function buildDigest({
+  activity,
+  tasks,
+  milestones,
+  categories,
+  now = new Date(),
+}: {
+  activity: ActivityRow[];
+  tasks: Task[];
+  milestones: Milestone[];
+  categories: Category[];
+  now?: Date;
+}): { today: DigestEvent[]; week: DigestEvent[] } {
+  const today = localDay(now);
+  const weekFrom = localDay(weekStart(now));
+  const all = collectEvents({ activity, tasks, milestones, categories, from: weekFrom, now });
   return {
     today: all.filter((e) => localDay(new Date(e.ts)) === today),
     week: all.filter((e) => {

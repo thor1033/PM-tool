@@ -29,15 +29,25 @@ export type MachineScope = "read" | "write";
 
 export interface MachineContext {
   orgId: string;
-  /** Human-readable name for the caller, used as the audit-trail actor. */
+  /** Human-readable name for the caller, used as the audit-trail actor when
+   *  no person stands behind it. */
   label: string;
   scopes: MachineScope[];
+  /** The person behind the call, when there is one — matched to a project
+   *  stakeholder at write time, so the trail names them as the project does. */
+  person?: { name?: string | null; email?: string | null };
+  /** How the person reached us, appended to their name in the trail
+   *  ("Thor Bøje Simonsen (via MCP)"), so an agent edit stays recognisable. */
+  via?: string;
 }
 
 interface TokenEntry {
   org?: string;
   label?: string;
   scopes?: string[];
+  /** Email or name of the person this token belongs to, when it is a
+   *  personal token rather than a shared service one. */
+  person?: string;
 }
 
 const UUID_RE =
@@ -121,10 +131,16 @@ export async function authenticateMachine(
       console.warn(`[mcp] token maps to unknown org "${entry.org}" — denying.`);
       return null;
     }
+    const label = entry.label?.trim() || "AI Hub";
+    const person = entry.person?.trim();
     return {
       orgId,
-      label: entry.label?.trim() || "AI Hub",
+      label,
       scopes: parseScopes(entry.scopes),
+      ...(person && {
+        person: person.includes("@") ? { email: person } : { name: person },
+        via: label,
+      }),
     };
   } catch (err) {
     // A DB outage must not turn into an auth bypass.

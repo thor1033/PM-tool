@@ -1,12 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { format, isToday, isYesterday, parseISO, isThisWeek } from "date-fns";
 import {
   Check, Plus, Trash2, RotateCcw, PencilLine, BotMessageSquare,
-  Zap, Bell, History, ChevronDown, ChevronRight,
+  Zap, Bell, History, ChevronDown, ChevronRight, Flag,
 } from "lucide-react";
-import { useAudit } from "@/lib/api/hooks";
+import { useAudit, useProject } from "@/lib/api/hooks";
+import { collectEvents, localDay, type DigestEvent } from "@/lib/digest";
 import { ModuleHeader } from "@/components/project/ui";
 import { cn } from "@/lib/utils";
 
@@ -14,15 +16,17 @@ import { cn } from "@/lib/utils";
  * grouped by day, every entry in place. There is no search box — you don't
  * search a history to find out what happened yesterday, you scroll to
  * yesterday. Filtering is by kind of change instead, which is the question
- * people actually arrive with ("what got deleted?"). */
+ * people actually arrive with ("what got deleted?").
+ *
+ * The entries are the same ones the front page's "Today" shows: the recorded
+ * log plus what can be read off the tasks' own dates (a completion date, a
+ * creation time). Those reconstructed entries know the day but not always the
+ * hour, so they show no time. */
 
-interface ActivityEntry {
-  id: string;
-  ts: string;
-  kind: string;
-  text: string;
-  actor: string;
-}
+type ActivityEntry = DigestEvent;
+
+/** How far back the trail is kept — matches the pruning in the audit route. */
+const KEPT_DAYS = 35;
 
 // ── kinds ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +42,7 @@ const KIND_META: Record<string, { label: string; icon: typeof Check; tone: strin
   import: { label: "Plan update", icon: BotMessageSquare, tone: "var(--accent-c)" },
   automation: { label: "Automation", icon: Zap, tone: "var(--t-amber)" },
   reminder: { label: "Reminder", icon: Bell, tone: "var(--t-blue)" },
+  milestone: { label: "Milestone", icon: Flag, tone: "var(--accent-c)" },
 };
 
 function kindMeta(kind: string) {
@@ -55,14 +60,25 @@ function dayLabel(ts: string): string {
 
 // ── rows ─────────────────────────────────────────────────────────────────────
 
-function EntryRow({ entry }: { entry: ActivityEntry }) {
+function EntryRow({ entry, onOpen }: { entry: ActivityEntry; onOpen: (taskId: string) => void }) {
   const meta = kindMeta(entry.kind);
   const Icon = meta.icon;
+  const taskId = entry.taskId;
 
   return (
-    <li className="group flex items-baseline gap-3 py-[7px] pl-1 pr-2 transition hover:bg-[var(--paper-2)]">
-      <span className="text-muted-foreground w-[42px] shrink-0 text-right font-mono text-[11px] tabular-nums">
-        {format(parseISO(entry.ts), "HH:mm")}
+    <li
+      className={cn(
+        "group flex items-baseline gap-3 py-[7px] pl-1 pr-2 transition hover:bg-[var(--paper-2)]",
+        taskId && "cursor-pointer",
+      )}
+      onClick={taskId ? () => onOpen(taskId) : undefined}
+      title={taskId ? "Open the task" : undefined}
+    >
+      <span
+        className="text-muted-foreground w-[42px] shrink-0 text-right font-mono text-[11px] tabular-nums"
+        title={entry.exact ? undefined : "Read off the task's dates: the day is known, the time is not"}
+      >
+        {entry.exact ? format(parseISO(entry.ts), "HH:mm") : "—"}
       </span>
       <span
         className="flex size-[18px] shrink-0 translate-y-[3px] items-center justify-center rounded-full"
@@ -71,7 +87,14 @@ function EntryRow({ entry }: { entry: ActivityEntry }) {
       >
         <Icon className="size-[11px]" style={{ color: meta.tone }} />
       </span>
-      <span className="min-w-0 flex-1 text-[13px] leading-snug">{entry.text}</span>
+      <span
+        className={cn(
+          "min-w-0 flex-1 text-[13px] leading-snug",
+          taskId && "group-hover:underline decoration-[var(--line-strong)] underline-offset-2",
+        )}
+      >
+        {entry.text}
+      </span>
       {entry.actor && (
         <span className="text-muted-foreground hidden shrink-0 text-[11.5px] sm:block">
           {entry.actor}
@@ -82,9 +105,9 @@ function EntryRow({ entry }: { entry: ActivityEntry }) {
 }
 
 function DaySection({
-  label, entries, defaultOpen,
+  label, entries, defaultOpen, onOpen,
 }: {
-  label: string; entries: ActivityEntry[]; defaultOpen: boolean;
+  label: string; entries: ActivityEntry[]; defaultOpen: boolean; onOpen: (taskId: string) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -105,7 +128,7 @@ function DaySection({
         </span>
         <span className="ml-1 h-px flex-1 bg-[var(--line)]" />
       </button>
-      {open && <ul className="mb-2 ml-1 border-l pl-2">{entries.map((e) => <EntryRow key={e.id} entry={e} />)}</ul>}
+      {open && <ul className="mb-2 ml-1 border-l pl-2">{entries.map((e) => <EntryRow key={e.id} entry={e} onOpen={onOpen} />)}</ul>}
     </section>
   );
 }
@@ -113,8 +136,25 @@ function DaySection({
 // ── module ───────────────────────────────────────────────────────────────────
 
 export function AuditModule({ projectId }: { projectId: string }) {
-  const { data: entries = [], isLoading } = useAudit(projectId);
+  const { data: activity, isLoading } = useAudit(projectId);
+  const { data: project } = useProject(projectId);
+  const router = useRouter();
   const [kinds, setKinds] = useState<string[]>([]);
+
+  const entries = useMemo(() => {
+    const from = new Date();
+    from.setDate(from.getDate() - KEPT_DAYS);
+    return collectEvents({
+      activity: activity ?? [],
+      tasks: project?.tasks ?? [],
+      milestones: project?.milestones ?? [],
+      categories: project?.categories ?? [],
+      from: localDay(from),
+    });
+  }, [activity, project]);
+
+  // The task opens where it lives, as it does from the front page.
+  const openTask = (taskId: string) => router.push(`/projects/${projectId}/actions?task=${taskId}`);
 
   // Only offer filters for kinds actually present, so the control never
   // advertises a category this project has never produced.
@@ -131,15 +171,13 @@ export function AuditModule({ projectId }: { projectId: string }) {
 
   const days = useMemo(() => {
     const map = new Map<string, ActivityEntry[]>();
-    // The API returns newest first; keep that order within each day too.
-    [...shown]
-      .sort((a, b) => +parseISO(b.ts) - +parseISO(a.ts))
-      .forEach((e) => {
-        const label = dayLabel(e.ts);
-        const arr = map.get(label) ?? [];
-        arr.push(e);
-        map.set(label, arr);
-      });
+    // Already newest day first, timed entries above reconstructed ones.
+    shown.forEach((e) => {
+      const label = dayLabel(e.ts);
+      const arr = map.get(label) ?? [];
+      arr.push(e);
+      map.set(label, arr);
+    });
     return [...map.entries()];
   }, [shown]);
 
@@ -151,7 +189,7 @@ export function AuditModule({ projectId }: { projectId: string }) {
     <div>
       <ModuleHeader
         title="Audit trail"
-        description="Every recorded change, newest first and grouped by day. Kept for five weeks."
+        description="Every change, newest first and grouped by day. Click one to open its task. Kept for five weeks."
       />
 
       {present.length > 0 && (
@@ -211,7 +249,7 @@ export function AuditModule({ projectId }: { projectId: string }) {
       {days.map(([label, list], i) => (
         // Recent days open, older ones collapsed — the same shape a browser
         // history takes, so a long trail stays scannable.
-        <DaySection key={label} label={label} entries={list} defaultOpen={i < 3} />
+        <DaySection key={label} label={label} entries={list} defaultOpen={i < 3} onOpen={openTask} />
       ))}
     </div>
   );

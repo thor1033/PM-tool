@@ -188,12 +188,14 @@ function TrackSelect({
 // ── header Filter popover ───────────────────────────────────────────────────
 
 function FilterPopover({
-  ws, fCat, setFCat, fWho, setFWho, fStatus, setFStatus, showStatus = true,
+  ws, fCat, setFCat, fWho, setFWho, fStatus, setFStatus, fNoEnd, setFNoEnd, showStatus = true,
 }: {
   ws: Pick<WorkingSet, "categories" | "stakeholders" | "tasks">;
   fCat: string[]; setFCat: (v: string[]) => void;
   fWho: string[]; setFWho: (v: string[]) => void;
   fStatus: string[]; setFStatus: (v: string[]) => void;
+  /** Only tasks with no planned end date — the work nobody has put a date on yet. */
+  fNoEnd: boolean; setFNoEnd: (v: boolean) => void;
   /** Hidden on Kanban, where status is the board's columns. */
   showStatus?: boolean;
 }) {
@@ -209,7 +211,7 @@ function FilterPopover({
   // a setting differs from its default — hiding Done by default still hides
   // work, and that should be visible rather than silent.
   const statusHides = fStatus.length > 0 && fStatus.length < STATUS_FILTERS.length;
-  const count = fCat.length + fWho.length + (showStatus && statusHides ? 1 : 0);
+  const count = fCat.length + fWho.length + (showStatus && statusHides ? 1 : 0) + (fNoEnd ? 1 : 0);
   const toggleWho = (id: string) => setFWho(fWho.includes(id) ? fWho.filter((x) => x !== id) : [...fWho, id]);
   const toggleStatus = (id: string) =>
     setFStatus(fStatus.includes(id) ? fStatus.filter((x) => x !== id) : [...fStatus, id]);
@@ -230,7 +232,7 @@ function FilterPopover({
           <div className="mb-2 flex items-center justify-between">
             <p className="eyebrow">Assigned to</p>
             {count > 0 && (
-              <button onClick={() => { setFCat([]); setFWho([]); setFStatus(DEFAULT_STATUS_FILTER); }} className="text-muted-foreground hover:text-foreground text-[12px] font-medium">
+              <button onClick={() => { setFCat([]); setFWho([]); setFStatus(DEFAULT_STATUS_FILTER); setFNoEnd(false); }} className="text-muted-foreground hover:text-foreground text-[12px] font-medium">
                 Clear
               </button>
             )}
@@ -295,6 +297,18 @@ function FilterPopover({
               </button>
             ))}
           </div>}
+          <p className="eyebrow mb-2">End date</p>
+          <div className="mb-4 flex flex-wrap gap-2">
+            <button
+              onClick={() => setFNoEnd(!fNoEnd)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition",
+                fNoEnd ? "bg-foreground text-background border-foreground" : "hover:bg-muted",
+              )}
+            >
+              <span className="bg-ink-ghost size-2 rounded-full" />No end date
+            </button>
+          </div>
           <p className="eyebrow mb-2">Track</p>
           <TrackSelect ws={ws} fCat={fCat} setFCat={setFCat} />
         </div>
@@ -368,6 +382,7 @@ export function ActionsModule({ projectId }: { projectId: string }) {
   const [fCat, setFCat] = useState<string[]>([]);
   const [fWho, setFWho] = useState<string[]>([]);
   const [fStatus, setFStatus] = useState<string[]>(DEFAULT_STATUS_FILTER);
+  const [fNoEnd, setFNoEnd] = useState(false);
   const [query, setQuery] = useState("");
   const [timelineFilters, setTimelineFilters] = useState<TimelineFilters>(EMPTY_TIMELINE_FILTERS);
   const [timelineSort, setTimelineSort] = useState<TimelineSortMode>("track");
@@ -455,8 +470,8 @@ export function ActionsModule({ projectId }: { projectId: string }) {
   // board's whole point is the status columns, so hiding Done there would
   // empty a column rather than reduce noise.
   const filteredNoStatus = useMemo(
-    () => tasks.filter((t) => taskMatchesFilter(t, fCat, fWho) && matchesQuery(t)),
-    [tasks, fCat, fWho, matchesQuery],
+    () => tasks.filter((t) => taskMatchesFilter(t, fCat, fWho) && matchesQuery(t) && (!fNoEnd || !t.end)),
+    [tasks, fCat, fWho, fNoEnd, matchesQuery],
   );
   const filtered = useMemo(
     () => filteredNoStatus.filter((t) => fStatus.length === 0 || fStatus.includes(t.status)),
@@ -579,6 +594,7 @@ export function ActionsModule({ projectId }: { projectId: string }) {
             <FilterPopover
               ws={ws} fCat={fCat} setFCat={setFCat} fWho={fWho} setFWho={setFWho}
               fStatus={fStatus} setFStatus={setFStatus}
+              fNoEnd={fNoEnd} setFNoEnd={setFNoEnd}
               showStatus={view !== "kanban"}
             />
           )}

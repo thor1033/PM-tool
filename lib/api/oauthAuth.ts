@@ -116,6 +116,8 @@ async function contextForUser(
     // Recorded as the actor on every write, so an agent edit made on someone's
     // behalf reads as theirs while staying recognisably an MCP edit.
     label: `${user.name || user.email} (via MCP)`,
+    person: { name: user.name, email: user.email },
+    via: "MCP",
     // A signed-in person can already read and edit their projects in the UI;
     // the MCP grants exactly that, no more.
     scopes: ["read", "write"],

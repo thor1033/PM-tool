@@ -11,6 +11,7 @@ import { entityConfig } from "@/lib/entities";
 import type { MachineContext } from "@/lib/api/machineAuth";
 import type { Task, Risk, Milestone } from "@/lib/db/schema";
 import { checkTask, milestoneLeftBehind } from "@/lib/hierarchy";
+import { resolveActor, type StakeholderLike } from "@/lib/actor";
 
 /*
  * The tools the AI Hub sees on this workspace.
@@ -272,11 +273,21 @@ const projectStatusTool: ToolDef = {
 // Every write records its own audit entry. The browser writes the trail from
 // the client after an edit; an agent that skipped it would mutate a client's
 // delivery record invisibly, which is exactly the thing the trail exists to
-// prevent. `actor` is the token's label, so an agent edit reads as one.
+// prevent. When a person stands behind the call, `actor` is that person
+// as the project's stakeholder list names them, marked as an MCP edit;
+// otherwise it is the token's label, so a service edit reads as one.
 
 async function requireProject(ctx: MachineContext, projectId: string) {
   const ws = await getWorkingSet(ctx.orgId, projectId);
   return ws;
+}
+
+function actorFor(ctx: MachineContext, stakeholders: StakeholderLike[]): string {
+  if (!ctx.person) return ctx.label;
+  const who = resolveActor(ctx.person, stakeholders);
+  // An address that matches no one gives no name to show; the label does.
+  if (!who.matched && !ctx.person.name?.trim()) return ctx.label;
+  return `${who.name} (via ${ctx.via ?? "MCP"})`;
 }
 
 const createTaskTool: ToolDef = {
@@ -330,7 +341,7 @@ const createTaskTool: ToolDef = {
     await recordActivity(ctx.orgId, projectId, {
       kind: "create",
       text: `Added task "${draft.title}"`,
-      actor: ctx.label,
+      actor: actorFor(ctx, ws.stakeholders),
     });
     return json(row);
   },
@@ -412,7 +423,7 @@ const updateTaskTool: ToolDef = {
       text: movedToDone
         ? `Completed "${existing.title}"`
         : `Updated ${changed.join(", ")} on "${existing.title}"`,
-      actor: ctx.label,
+      actor: actorFor(ctx, ws.stakeholders),
     });
     return json(row);
   },
@@ -455,7 +466,7 @@ const addNoteTool: ToolDef = {
     await recordActivity(ctx.orgId, projectId, {
       kind: "create",
       text: `Added note "${draft.title}"`,
-      actor: ctx.label,
+      actor: actorFor(ctx, ws.stakeholders),
     });
     return json(row);
   },
