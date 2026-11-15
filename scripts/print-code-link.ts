@@ -1,6 +1,6 @@
-// Prints a T3 Code prompt link for one sample task, to open by hand.
-//   npx tsx scripts/print-t3-link.ts
-import { taskBrief, t3PromptLink } from "../lib/code-handoff";
+// Prints a Teqneo Code prompt link for one sample task, to open by hand.
+//   npx tsx scripts/print-code-link.ts
+import { taskBrief, codePromptLink } from "../lib/code-handoff";
 
 const brief = taskBrief(
   {
@@ -14,4 +14,4 @@ const brief = taskBrief(
   },
   { projectId: "ca4749f1-624f-437c-9552-6031da90c5f9", projectName: "Teqneo", trackLabel: "PM tool", subtasks: [], dependsOn: [] },
 );
-console.log(t3PromptLink(brief, { repo: "thor1033/PM-tool" }));
+console.log(codePromptLink(brief, { repo: "thor1033/PM-tool" }));

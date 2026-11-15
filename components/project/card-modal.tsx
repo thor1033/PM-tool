@@ -27,7 +27,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { useConfirm } from "@/components/project/confirm";
 import { ViewSettingsButton, useViewSettings } from "@/components/project/view-settings";
 import { LineageSection, lineageDeps } from "@/components/project/lineage-graph";
-import { dependencyTitles, isCodeWork, repoForTrack, t3PromptLink, taskBrief } from "@/lib/code-handoff";
+import { codePromptLink, dependencyTitles, isCodeWork, repoForTrack, taskBrief } from "@/lib/code-handoff";
 
 // ── status segmented control ────────────────────────────────────────────────
 
@@ -547,12 +547,12 @@ function TaskFiles({
 }
 
 // ── handing the task to a coding agent ──────────────────────────────────────
-// Opens the task as a draft in T3 Code (lib/code-handoff.ts): the brief lands
+// Opens the task as a draft in Teqneo Code (lib/code-handoff.ts): the brief lands
 // in the composer, in the track's repository, and nothing runs until the
 // person reads it and presses Send. Built from the form, not the saved task,
 // so an edit made a second ago is in the brief.
 
-function StartInT3({
+function StartInCode({
   ws, projectId, task, form,
 }: {
   ws: WorkingSet; projectId: string; task: Task;
@@ -561,7 +561,7 @@ function StartInT3({
   const trackId = form.category === "none" ? null : form.category;
   const track = ws.categories.find((c) => c.id === trackId) ?? null;
   const repo = repoForTrack(ws.project.settings, trackId);
-  const href = t3PromptLink(
+  const href = codePromptLink(
     taskBrief(
       {
         id: task.id,
@@ -586,11 +586,12 @@ function StartInT3({
       asChild
       size="sm"
       variant="outline"
-      title={repo ? `Opens a draft in T3 Code, in ${repo}. Nothing runs until you press Send.` : "Opens a draft in T3 Code. Set a repository for this track in the track editor to open it in the right project."}
+      title={repo ? `Opens a draft in Teqneo Code, in ${repo}. Nothing runs until you press Send.` : "Opens a draft in Teqneo Code. Set a repository for this track in the track editor to open it in the right project."}
     >
-      <a href={href} target="_blank" rel="noopener noreferrer">
+      {/* An app link, not a page: no new tab, the browser hands it to the app. */}
+      <a href={href}>
         <Code2 className="size-3.5" />
-        Start in T3 Code
+        Start in Teqneo Code
         {!repo && <span className="text-muted-foreground text-[11px] font-normal">· no repo</span>}
       </a>
     </Button>
@@ -1435,7 +1436,7 @@ export function CardModal({
               <span className="text-muted-foreground text-[12.5px]">
                 Changes save automatically
               </span>
-              {isCodeWork({ kind: form.kind }) && <StartInT3 ws={ws} projectId={projectId} task={activeTask} form={form} />}
+              {isCodeWork({ kind: form.kind }) && <StartInCode ws={ws} projectId={projectId} task={activeTask} form={form} />}
             </div>
           ) : (
             <Button onClick={save} disabled={create.isPending}>

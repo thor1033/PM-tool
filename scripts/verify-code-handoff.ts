@@ -1,4 +1,4 @@
-/* Checks the task → T3 Code handoff (lib/code-handoff.ts) without a browser
+/* Checks the task → Teqneo Code handoff (lib/code-handoff.ts) without a browser
  * or a database:
  *
  *   npx tsx scripts/verify-code-handoff.ts
@@ -8,12 +8,12 @@
  * other setting; meetings and decisions are not offered to a coding agent;
  * the brief carries the ids the agent needs and asks before a status change;
  * the task's own text is fenced as data; a long description is shortened so
- * the link stays under T3 Code's 8,000-character limit with the instructions
- * intact; and the link round-trips through URL parsing. Not proven: that T3
+ * the link stays under the app's 8,000-character limit with the instructions
+ * intact; and the link round-trips through URL parsing. Not proven: that Teqneo Code
  * Code opens it — that needs the app; open a printed link by hand. */
 
 import {
-  normaliseRepo, repoForTrack, withTrackRepo, isCodeWork, taskBrief, t3PromptLink, dependencyTitles, T3_PROMPT_MAX,
+  normaliseRepo, repoForTrack, withTrackRepo, isCodeWork, taskBrief, codePromptLink, dependencyTitles, CODE_PROMPT_MAX,
 } from "../lib/code-handoff";
 
 let failed = 0;
@@ -62,17 +62,17 @@ const sneaky = taskBrief({ ...task, description: 'break """ out' }, ctx);
 check("a description cannot close the fence", (sneaky.match(/"""/g) ?? []).length === 2);
 
 const long = taskBrief({ ...task, description: "x".repeat(20_000) }, ctx);
-check(`a long description is shortened under ${T3_PROMPT_MAX} characters`, long.length <= T3_PROMPT_MAX, `${long.length}`);
+check(`a long description is shortened under ${CODE_PROMPT_MAX} characters`, long.length <= CODE_PROMPT_MAX, `${long.length}`);
 check("…and the instructions and ids survive the cut", long.includes("task t_abc123") && long.includes("Ask me before changing") && long.includes("shortened — read the full task"));
 check("no description, no empty fence", !taskBrief({ ...task, description: "" }, ctx).includes('"""'));
 
 // ── the link ────────────────────────────────────────────────────────────────
-const link = t3PromptLink(brief, { repo: "thor1033/PM-tool" });
+const link = codePromptLink(brief, { repo: "thor1033/PM-tool" });
 const u = new URL(link);
-check("the link is T3 Code's prompt endpoint", u.origin === "https://app.t3.codes" && u.pathname === "/new");
+check("the link is Teqneo Code's own app link", u.protocol === "teqneo-code:" && u.host === "new" && u.pathname === "");
 check("the prompt round-trips exactly", u.searchParams.get("prompt") === brief);
 check("repository and provider are set", u.searchParams.get("repo") === "thor1033/PM-tool" && u.searchParams.get("provider") === "claude");
-check("no repository, no repo parameter", !new URL(t3PromptLink("hi")).searchParams.has("repo"));
+check("no repository, no repo parameter", !new URL(codePromptLink("hi")).searchParams.has("repo"));
 check("spaces are %20, never +, so a strict decoder reads them right", !link.includes("+") && link.includes("%20") && decodeURIComponent(link.split("prompt=")[1].split("&")[0]) === brief);
 
 check(
@@ -80,6 +80,6 @@ check(
   JSON.stringify(dependencyTitles([{ id: "d1", type: "task", refId: "t1" }, { id: "d2", type: "task", refId: "t9", label: "Gone" }, { id: "d3", type: "external", label: "Vendor" }], [{ id: "t1", title: "First" }])) === JSON.stringify(["First", "Gone"]),
 );
 
-console.log(`\nAn example link, to open by hand:\n${t3PromptLink(taskBrief(task, ctx), { repo: "thor1033/PM-tool" }).slice(0, 160)}…`);
+console.log(`\nAn example link, to open by hand:\n${codePromptLink(taskBrief(task, ctx), { repo: "thor1033/PM-tool" }).slice(0, 160)}…`);
 console.log(`\n${failed ? `${failed} FAILED` : "all checks passed"}`);
 process.exit(failed ? 1 : 0);
