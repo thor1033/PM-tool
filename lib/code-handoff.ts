@@ -84,6 +84,15 @@ export interface BriefContext {
 const STATUS_LABEL: Record<string, string> = { backlog: "Backlog", inprogress: "In progress", done: "Done" };
 
 /**
+ * The pull-request description line the AI Hub reads when a pull request
+ * merges (hub: lib/github/mergedPr.ts). Its format is a contract between the
+ * two apps: change it in both or neither.
+ */
+export function taskTrailer(projectId: string, taskId: string): string {
+  return `PM-Task: ${projectId}/${taskId}`;
+}
+
+/**
  * The brief the coding agent starts from. Written for the agent, but read by
  * the person first — it is a draft in their composer — so it says plainly
  * what it asks for, including the one thing it may write back (a note), and
@@ -112,7 +121,9 @@ export function taskBrief(task: Pick<Task, "id" | "title" | "description" | "sta
     `How to work:`,
     `- The task lives in the PM tool: project ${ctx.projectId}, task ${task.id} ("${ctx.projectName}"). Read it there with the pm-tool tools for the latest details and comments.`,
     `- Company context, decisions and conventions are in the Teqneo AI Hub. Search it (hub_search_knowledge) before deciding anything this repository does not answer.`,
-    `- Work on a branch and open a pull request when done.`,
+    `- Work on a branch and open a pull request when done. Put this line, on its own, in the pull request's description:`,
+    `  ${taskTrailer(ctx.projectId, task.id)}`,
+    `  When the pull request merges, the hub proposes closing this task, for a person to approve.`,
     `- Then add a note to the task with the pull request link and what changed (pm_add_note). Ask me before changing the task's status.`,
   ];
 
