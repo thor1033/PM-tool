@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import {
   useProject,
+  useUpdateProject,
   useCreateEntity,
   useUpdateEntity,
   useDeleteEntity,
@@ -28,6 +29,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/project/confirm";
+import { normaliseRepo, repoForTrack, withTrackRepo } from "@/lib/code-handoff";
 
 /* The track editor. Mirrors the task editor's shape — one modal, editable
  * fields on the left, read-only context on the right — but a track is a
@@ -43,6 +45,56 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
         style={tone ? { color: `color-mix(in oklch, ${tone} 76%, var(--ink))` } : undefined}
       >
         {value}
+      </p>
+    </div>
+  );
+}
+
+/* Where this track's code lives, so "Start in T3 Code" on its tasks opens in
+ * the right repository. Kept in the project's settings (lib/code-handoff.ts),
+ * saved when the field loses focus; anything that is not a GitHub repository
+ * is refused in words rather than saved and silently ignored. */
+function RepoField({ projectId, trackId, settings }: { projectId: string; trackId: string; settings: unknown }) {
+  const updateProject = useUpdateProject(projectId);
+  const saved = repoForTrack(settings, trackId) ?? "";
+  const [value, setValue] = useState(saved);
+  const [error, setError] = useState<string | null>(null);
+  const [seededFor, setSeededFor] = useState(trackId);
+  if (seededFor !== trackId) {
+    setSeededFor(trackId);
+    setValue(saved);
+    setError(null);
+  }
+
+  function commit() {
+    const raw = value.trim();
+    const repo = raw ? normaliseRepo(raw) : null;
+    if (raw && !repo) {
+      setError("Use owner/name, or paste the repository's GitHub URL.");
+      return;
+    }
+    setError(null);
+    if ((repo ?? "") === saved) return;
+    setValue(repo ?? "");
+    updateProject.mutate(
+      { settings: withTrackRepo(settings, trackId, repo) },
+      { onError: (e) => toast.error((e as Error).message) },
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <Label>Repository</Label>
+      <Input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); }}
+        placeholder="owner/name, e.g. thor1033/ai-consultancy-hub"
+        aria-invalid={!!error}
+      />
+      <p className={cn("text-[11.5px]", error ? "text-[var(--t-red)]" : "text-muted-foreground")}>
+        {error ?? "Where this track's code lives. Start in T3 Code on its tasks opens here."}
       </p>
     </div>
   );
@@ -267,6 +319,8 @@ export function TrackModal({
                 </p>
               )}
             </div>
+
+            {track && <RepoField projectId={projectId} trackId={track.id} settings={ws.project.settings} />}
 
             <div className="space-y-1.5">
               <Label>Colour</Label>

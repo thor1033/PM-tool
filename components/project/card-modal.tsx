@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Plus, X, Trash2, MessageSquare, TriangleAlert, Link2, Target, Package, GitBranch, ListChecks, Check, Users,
-  ExternalLink, Files as FilesIcon,
+  ExternalLink, Files as FilesIcon, Code2,
 } from "lucide-react";
 import {
   useCreateEntity, useUpdateEntity, useDeleteEntity,
@@ -27,6 +27,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { useConfirm } from "@/components/project/confirm";
 import { ViewSettingsButton, useViewSettings } from "@/components/project/view-settings";
 import { LineageSection, lineageDeps } from "@/components/project/lineage-graph";
+import { dependencyTitles, isCodeWork, repoForTrack, t3PromptLink, taskBrief } from "@/lib/code-handoff";
 
 // ── status segmented control ────────────────────────────────────────────────
 
@@ -542,6 +543,57 @@ function TaskFiles({
         </div>
       )}
     </div>
+  );
+}
+
+// ── handing the task to a coding agent ──────────────────────────────────────
+// Opens the task as a draft in T3 Code (lib/code-handoff.ts): the brief lands
+// in the composer, in the track's repository, and nothing runs until the
+// person reads it and presses Send. Built from the form, not the saved task,
+// so an edit made a second ago is in the brief.
+
+function StartInT3({
+  ws, projectId, task, form,
+}: {
+  ws: WorkingSet; projectId: string; task: Task;
+  form: { title: string; description: string; status: string; end: string; assignees: string; category: string };
+}) {
+  const trackId = form.category === "none" ? null : form.category;
+  const track = ws.categories.find((c) => c.id === trackId) ?? null;
+  const repo = repoForTrack(ws.project.settings, trackId);
+  const href = t3PromptLink(
+    taskBrief(
+      {
+        id: task.id,
+        title: form.title,
+        description: form.description,
+        status: form.status,
+        end: form.end,
+        assignees: form.assignees.split(",").map((s) => s.trim()).filter(Boolean),
+      },
+      {
+        projectId,
+        projectName: ws.project.name,
+        trackLabel: track?.label ?? null,
+        subtasks: ws.tasks.filter((t) => t.parentId === task.id),
+        dependsOn: dependencyTitles(task.deps, ws.tasks),
+      },
+    ),
+    { repo },
+  );
+  return (
+    <Button
+      asChild
+      size="sm"
+      variant="outline"
+      title={repo ? `Opens a draft in T3 Code, in ${repo}. Nothing runs until you press Send.` : "Opens a draft in T3 Code. Set a repository for this track in the track editor to open it in the right project."}
+    >
+      <a href={href} target="_blank" rel="noopener noreferrer">
+        <Code2 className="size-3.5" />
+        Start in T3 Code
+        {!repo && <span className="text-muted-foreground text-[11px] font-normal">· no repo</span>}
+      </a>
+    </Button>
   );
 }
 
@@ -1379,9 +1431,12 @@ export function CardModal({
             </Button>
           ) : <span />}
           {activeTask ? (
-            <span className="text-muted-foreground text-[12.5px]">
-              Changes save automatically
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-muted-foreground text-[12.5px]">
+                Changes save automatically
+              </span>
+              {isCodeWork({ kind: form.kind }) && <StartInT3 ws={ws} projectId={projectId} task={activeTask} form={form} />}
+            </div>
           ) : (
             <Button onClick={save} disabled={create.isPending}>
               Add task
