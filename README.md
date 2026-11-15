@@ -167,9 +167,12 @@ Fails closed at every step: unset, malformed, unknown token, unknown org, or a
 DB error while resolving ⇒ `401`.
 
 **Tools.** Reads: `pm_list_projects`, `pm_project_status`, `pm_get_project`,
-`pm_list_tasks`, `pm_list_risks`. Writes: `pm_create_task`, `pm_update_task`,
-`pm_add_note` — each records its own audit-trail entry attributed to the token's
-label, so an agent edit is visibly an agent edit.
+`pm_list_tasks`, `pm_list_risks` (`pm_get_project` with `sections: ["tracks"]`
+gives the track ids the writes need). Writes: `pm_create_task`,
+`pm_update_task`, `pm_add_note`, `pm_create_milestone` — each records its own
+audit-trail entry attributed to the token's label, so an agent edit is visibly
+an agent edit. Teqneo Code's BMAD Scrum Master uses `pm_create_milestone` for
+each epic and `pm_create_task` (with its `milestoneId`) for each story.
 
 All tools go through `lib/db/queries.ts`; none issue their own SQL. That layer
 owns tenant scoping and entity validation.

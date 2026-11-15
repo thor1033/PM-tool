@@ -10,7 +10,7 @@ import {
 import { entityConfig } from "@/lib/entities";
 import type { MachineContext } from "@/lib/api/machineAuth";
 import type { Task, Risk, Milestone } from "@/lib/db/schema";
-import { checkTask, milestoneLeftBehind } from "@/lib/hierarchy";
+import { checkMilestone, checkTask, milestoneLeftBehind } from "@/lib/hierarchy";
 import { resolveActor, type StakeholderLike } from "@/lib/actor";
 
 /*
@@ -109,6 +109,7 @@ const listProjectsTool: ToolDef = {
 };
 
 const SECTIONS = [
+  "tracks",
   "tasks",
   "risks",
   "stakeholders",
@@ -143,6 +144,8 @@ const getProjectTool: ToolDef = {
       (args.sections as string[] | undefined) ?? ["tasks", "risks", "milestones"],
     );
     const out: Record<string, unknown> = { project: ws.project };
+    // The ids pm_create_task and pm_create_milestone need for `track`.
+    if (wanted.has("tracks")) out.tracks = ws.categories.map((c) => ({ id: c.id, label: c.label }));
     if (wanted.has("tasks")) out.tasks = ws.tasks.map(taskView);
     if (wanted.has("risks")) out.risks = ws.risks.map(riskView);
     if (wanted.has("milestones")) out.milestones = ws.milestones.map(milestoneView);
@@ -472,6 +475,62 @@ const addNoteTool: ToolDef = {
   },
 };
 
+// A milestone is an outcome on a track's timeline, the parent tasks hang
+// under. Delivery methods that plan in epics (BMAD's Scrum Master in Teqneo
+// Code) create one per epic, then its stories as tasks with this milestoneId.
+const createMilestoneTool: ToolDef = {
+  name: "pm_create_milestone",
+  description:
+    "Add a milestone to a project's track, for tasks to sit under (pm_create_task's milestoneId). Records an audit-trail entry.",
+  write: true,
+  inputSchema: {
+    projectId: z.string(),
+    title: z.string().min(1),
+    track: z.string().describe("Track/category id the milestone belongs to. Every milestone sits in a track."),
+    date: z.string().optional().describe("Planned date, ISO (YYYY-MM-DD)."),
+    note: z.string().optional(),
+    gate: z
+      .boolean()
+      .optional()
+      .describe("A gate (a decision point the work must pass) rather than a plain milestone. Defaults to no."),
+  },
+  handler: async (args, ctx) => {
+    const projectId = String(args.projectId ?? "");
+    const ws = await requireProject(ctx, projectId);
+    if (!ws) return fail(`No project "${projectId}" in this workspace.`);
+
+    const track = String(args.track ?? "");
+    // An id the model made up would create a milestone no lane shows.
+    if (!ws.categories.some((c) => c.id === track)) {
+      return fail(`No track "${track}" in project "${projectId}". Read the tracks with pm_get_project.`);
+    }
+    const draft = {
+      title: String(args.title).trim(),
+      type: args.gate === true ? "gate" : "milestone",
+      date: (args.date as string) ?? "",
+      category: track,
+      note: (args.note as string) ?? "",
+      reachedOn: "",
+    };
+    if (draft.date && !/^\d{4}-\d{2}-\d{2}$/.test(draft.date)) {
+      return fail(`Invalid date "${draft.date}": use YYYY-MM-DD.`);
+    }
+    const parsed = entityConfig.milestones.schema.safeParse(draft);
+    if (!parsed.success) return fail(`Invalid milestone: ${parsed.error.message}`);
+    const issue = checkMilestone(draft, true);
+    if (issue) return fail(issue.error);
+
+    const row = await createEntity(ctx.orgId, projectId, "milestones", parsed.data);
+    if (!row) return fail(`Could not create the milestone in project "${projectId}".`);
+    await recordActivity(ctx.orgId, projectId, {
+      kind: "create",
+      text: `Added ${draft.type === "gate" ? "gate" : "milestone"} "${draft.title}"`,
+      actor: actorFor(ctx, ws.stakeholders),
+    });
+    return json(row);
+  },
+};
+
 export const TOOLS: ToolDef[] = [
   listProjectsTool,
   getProjectTool,
@@ -481,6 +540,7 @@ export const TOOLS: ToolDef[] = [
   createTaskTool,
   updateTaskTool,
   addNoteTool,
+  createMilestoneTool,
 ];
 
 /** The tools a given token may see — writes are omitted without the scope. */
