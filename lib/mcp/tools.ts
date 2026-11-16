@@ -65,8 +65,22 @@ function taskView(t: Task) {
     completedOn: t.completedOn || null,
     overdue: t.status !== "done" && isPast(t.end),
     description: t.description || null,
+    agent: taskAgent(t),
   };
 }
+
+/**
+ * The agent a task is meant for: a hub agent's slug, or "code". Kept in the
+ * task's custom fields (custom.agent), so it needs no column and shows in
+ * the task window with the other custom fields.
+ */
+function taskAgent(t: Pick<Task, "custom">): string | null {
+  const agent = (t.custom as Record<string, unknown> | null)?.agent;
+  return typeof agent === "string" && agent.trim() ? agent.trim() : null;
+}
+
+/** A slug as the hub writes them, or "code": lower case, digits and dashes. */
+const AGENT_SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 const riskView = (r: Risk) => ({
   id: r.id,
@@ -308,6 +322,7 @@ const createTaskTool: ToolDef = {
     owner: z.string().optional().describe("Person's name, as it appears on the project."),
     track: z.string().describe("Track/category id this task sits in. Every task sits in a track."),
     priority: z.boolean().optional().describe("Whether the task takes priority. Defaults to no."),
+    agent: z.string().optional().describe("Who should do the work, when it is an agent: a hub agent's slug (e.g. project-manager), or \"code\" for work done in a code editor. Shown on the task; \"\" clears it."),
     milestoneId: z
       .string()
       .optional()
@@ -319,6 +334,8 @@ const createTaskTool: ToolDef = {
     if (!ws) return fail(`No project "${projectId}" in this workspace.`);
 
     const owner = args.owner as string | undefined;
+    const agent = ((args.agent as string | undefined) ?? "").trim();
+    if (agent && !AGENT_SLUG.test(agent)) return fail(`"${agent}" is not an agent's slug (lower case, digits, dashes) or "code".`);
     const draft = {
       title: String(args.title),
       status: (args.status as string) ?? "backlog",
@@ -330,6 +347,7 @@ const createTaskTool: ToolDef = {
       milestoneId: (args.milestoneId as string) ?? null,
       priority: (args.priority as boolean) ?? false,
       position: ws.tasks.length,
+      ...(agent ? { custom: { agent } } : {}),
     };
 
     // Validate against the same schema the REST routes use, so a tool can never
@@ -353,7 +371,7 @@ const createTaskTool: ToolDef = {
 const updateTaskTool: ToolDef = {
   name: "pm_update_task",
   description:
-    "Update an existing task — status, dates, owner, title or description. Only the fields you pass are changed. Records an audit-trail entry attributed to the AI hub.",
+    "Update an existing task — status, dates, owner, agent, title or description. Only the fields you pass are changed. Records an audit-trail entry attributed to the AI hub.",
   write: true,
   inputSchema: {
     projectId: z.string(),
@@ -366,6 +384,7 @@ const updateTaskTool: ToolDef = {
     owner: z.string().optional(),
     track: z.string().optional().describe("Move the task to another track."),
     priority: z.boolean().optional().describe("Whether the task takes priority."),
+    agent: z.string().optional().describe("Who should do the work, when it is an agent: a hub agent's slug (e.g. project-manager), or \"code\" for work done in a code editor. Shown on the task; \"\" clears it."),
     milestoneId: z
       .string()
       .optional()
@@ -387,6 +406,15 @@ const updateTaskTool: ToolDef = {
     if (args.owner !== undefined) patch.assignees = args.owner ? [args.owner] : [];
     if (args.track !== undefined) patch.category = args.track;
     if (patch.milestoneId === "") patch.milestoneId = null;
+    if (args.agent !== undefined) {
+      const agent = String(args.agent).trim();
+      if (agent && !AGENT_SLUG.test(agent)) return fail(`"${agent}" is not an agent's slug (lower case, digits, dashes) or "code".`);
+      // Only the agent changes; the task's other custom fields are kept.
+      const custom = { ...((existing.custom as Record<string, unknown> | null) ?? {}) };
+      if (agent) custom.agent = agent;
+      else delete custom.agent;
+      patch.custom = custom;
+    }
 
     const issue = checkTask(patch, false, ws, existing);
     if (issue) return fail(issue.error);
@@ -420,7 +448,9 @@ const updateTaskTool: ToolDef = {
     if (!row) return fail(`Could not update task "${taskId}".`);
 
     const movedToDone = patch.status === "done" && existing.status !== "done";
-    const changed = Object.keys(patch).filter((k) => k !== "completedOn");
+    const changed = Object.keys(patch)
+      .filter((k) => k !== "completedOn")
+      .map((k) => (k === "custom" ? "agent" : k));
     await recordActivity(ctx.orgId, projectId, {
       kind: movedToDone ? "done" : "edit",
       text: movedToDone

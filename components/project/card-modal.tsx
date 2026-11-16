@@ -636,6 +636,7 @@ export function CardModal({
     title: activeTask?.title ?? "",
     description: activeTask?.description ?? "",
     occurrence: (activeTask?.custom as Record<string, unknown> | undefined)?.occurrence as string ?? "",
+    agent: (activeTask?.custom as Record<string, unknown> | undefined)?.agent as string ?? "",
     status: activeTask?.status ?? defaultStatus ?? "backlog",
     category: activeTask?.category ?? defaultCategoryId ?? ws.categories[0]?.id ?? "none",
     assignees: (activeTask?.assignees ?? []).join(", "),
@@ -664,6 +665,7 @@ export function CardModal({
       title: activeTask?.title ?? "",
       description: activeTask?.description ?? "",
       occurrence: (activeTask?.custom as Record<string, unknown> | undefined)?.occurrence as string ?? "",
+      agent: (activeTask?.custom as Record<string, unknown> | undefined)?.agent as string ?? "",
       status: activeTask?.status ?? defaultStatus ?? "backlog",
       category: activeTask?.category ?? defaultCategoryId ?? ws.categories[0]?.id ?? "none",
       assignees: (activeTask?.assignees ?? []).join(", "),
@@ -789,6 +791,10 @@ export function CardModal({
         const next = { ...(activeTask?.custom as Record<string, unknown> ?? {}) };
         if (form.occurrence.trim()) next.occurrence = form.occurrence.trim();
         else delete next.occurrence;
+        // The agent the work is meant for (a hub agent's slug, or "code").
+        const agent = form.agent.trim().toLowerCase();
+        if (agent) next.agent = agent;
+        else delete next.agent;
         return next;
       })(),
     };
@@ -1255,13 +1261,24 @@ export function CardModal({
               )}
             </div>
 
-            {/* custom fields — "occurrence" has its own dedicated field above */}
-            {activeTask && shows("customFields") && Object.entries(activeTask.custom ?? {}).filter(([k]) => k !== "occurrence").length > 0 && (
+            {/* The agent the work is meant for. The hub's Secretary sets it when
+                it files a task from a meeting; Teqneo Code groups the board by it. */}
+            <div className="space-y-1.5">
+              <Label>Agent</Label>
+              <Input
+                value={form.agent}
+                onChange={(e) => set("agent", e.target.value)}
+                placeholder="A hub agent's slug, or code"
+              />
+            </div>
+
+            {/* custom fields — "occurrence" and "agent" have their own fields above */}
+            {activeTask && shows("customFields") && Object.entries(activeTask.custom ?? {}).filter(([k]) => k !== "occurrence" && k !== "agent").length > 0 && (
               <div className="space-y-1.5 border-t pt-4">
                 <Label>Custom fields</Label>
                 <div className="space-y-1">
                   {Object.entries(activeTask.custom as Record<string, unknown>)
-                    .filter(([k]) => k !== "occurrence")
+                    .filter(([k]) => k !== "occurrence" && k !== "agent")
                     .map(([k, v]) => (
                       <div key={k} className="flex items-center justify-between rounded-[var(--radius-sm)] bg-[var(--paper-2)] px-2.5 py-1.5 text-xs">
                         <span className="text-muted-foreground font-medium">{k}</span>

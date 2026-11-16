@@ -185,6 +185,36 @@ async function main() {
       }),
     );
     check("pm_update_task moves the task", updated?.status === "done");
+
+    // ── the agent a task is meant for ───────────────────────────────────────
+    const withAgent = payload(
+      await client.callTool({
+        name: "pm_update_task",
+        arguments: { projectId: temp.id, taskId: created.id, agent: "project-manager" },
+      }),
+    );
+    check("pm_update_task sets the task's agent", withAgent?.custom?.agent === "project-manager");
+    const agentListed = payload(
+      await client.callTool({ name: "pm_list_tasks", arguments: { projectId: temp.id } }),
+    );
+    check(
+      "the agent reads back on the task list",
+      agentListed?.tasks?.find((t: { id: string }) => t.id === created.id)?.agent === "project-manager",
+    );
+    const badAgent = payload(
+      await client.callTool({
+        name: "pm_update_task",
+        arguments: { projectId: temp.id, taskId: created.id, agent: "Not A Slug!" },
+      }),
+    );
+    check("an agent that is not a slug is refused", typeof badAgent === "string" && badAgent.startsWith("Error:"), String(badAgent).slice(0, 60));
+    const cleared = payload(
+      await client.callTool({
+        name: "pm_update_task",
+        arguments: { projectId: temp.id, taskId: created.id, agent: "" },
+      }),
+    );
+    check("an empty agent clears it", cleared?.custom?.agent === undefined);
     check(
       "completing a task stamps completedOn, as the board does",
       typeof updated?.completedOn === "string" && updated.completedOn.length === 10,
