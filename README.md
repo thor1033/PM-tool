@@ -167,8 +167,11 @@ Fails closed at every step: unset, malformed, unknown token, unknown org, or a
 DB error while resolving ⇒ `401`.
 
 **Tools.** Reads: `pm_list_projects`, `pm_project_status`, `pm_get_project`,
-`pm_list_tasks`, `pm_list_risks` (`pm_get_project` with `sections: ["tracks"]`
-gives the track ids the writes need). Writes: `pm_create_task`,
+`pm_list_tasks`, `pm_task_brief`, `pm_list_risks` (`pm_get_project` with `sections: ["tracks"]`
+gives the track ids the writes need; a listed task also carries its track's name
+and repository). `pm_task_brief` is the brief a task is started from, for a coding
+agent or one of the hub's agents: it is written here, so every app that starts
+work on a task opens with the same words. Writes: `pm_create_task`,
 `pm_update_task`, `pm_add_note`, `pm_create_milestone` — each records its own
 audit-trail entry attributed to the token's label, so an agent edit is visibly
 an agent edit. Teqneo Code's BMAD Scrum Master uses `pm_create_milestone` for

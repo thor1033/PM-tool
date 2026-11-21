@@ -84,6 +84,9 @@ export interface BriefContext {
   dependsOn: string[];
 }
 
+/** Who a brief is written for: a coding agent in a repository, or one of the hub's agents. */
+export type BriefReader = "code" | "agent";
+
 const STATUS_LABEL: Record<string, string> = { backlog: "Backlog", inprogress: "In progress", done: "Done" };
 
 /**
@@ -104,8 +107,16 @@ export function taskTrailer(projectId: string, taskId: string): string {
  * The task's own text is fenced as data: a task description is written by
  * whoever edits the board, and must not read as instructions about how the
  * agent should behave.
+ *
+ * `reader` is who does the work: a coding agent in a repository ("code"), or
+ * one of the hub's agents ("agent"), which has no repository and no pull
+ * request, and whose changes to the board wait for a person's approval.
  */
-export function taskBrief(task: Pick<Task, "id" | "title" | "description" | "status" | "end" | "assignees">, ctx: BriefContext): string {
+export function taskBrief(
+  task: Pick<Task, "id" | "title" | "description" | "status" | "end" | "assignees">,
+  ctx: BriefContext,
+  reader: BriefReader = "code",
+): string {
   const facts = [
     ctx.trackLabel && `Track: ${ctx.trackLabel}`,
     task.assignees?.length && `Owner: ${task.assignees.join(", ")}`,
@@ -114,12 +125,19 @@ export function taskBrief(task: Pick<Task, "id" | "title" | "description" | "sta
   ].filter(Boolean);
 
   const head = [
-    `Work on this task from the Teqneo PM tool.`,
+    reader === "agent" ? `Take this task from the Teqneo PM tool.` : `Work on this task from the Teqneo PM tool.`,
     ``,
     `Task: ${task.title || "(untitled)"}`,
     `${facts.join(" · ")}`,
   ];
-  const tail = [
+  const where = `- The task lives in the PM tool: project ${ctx.projectId}, task ${task.id} ("${ctx.projectName}"). Read it there with the pm-tool tools for the latest details and comments.`;
+  const tail = reader === "agent" ? [
+    ``,
+    `How to work:`,
+    where,
+    `- Do the part of this task that is yours, then say what you did and what is left for a person.`,
+    `- Anything you change on the board is a proposal: it waits for a person's approval. Do not approve it for me.`,
+  ] : [
     ``,
     `How to work:`,
     `- The task lives in the PM tool: project ${ctx.projectId}, task ${task.id} ("${ctx.projectName}"). Read it there with the pm-tool tools for the latest details and comments.`,

@@ -103,7 +103,7 @@ async function main() {
   check("initialize + tools/list over Streamable HTTP", names.length > 0, names.join(", "));
   check(
     "read tools present",
-    ["pm_list_projects", "pm_get_project", "pm_list_tasks", "pm_list_risks", "pm_project_status"]
+    ["pm_list_projects", "pm_get_project", "pm_list_tasks", "pm_task_brief", "pm_list_risks", "pm_project_status"]
       .every((n) => names.includes(n)),
   );
   check(
@@ -173,6 +173,25 @@ async function main() {
       await client.callTool({ name: "pm_list_tasks", arguments: { projectId: temp.id } }),
     );
     check("the new task reads back", listed?.tasks?.[0]?.id === created?.id);
+    check(
+      "a listed task says what its track is called and where its code lives",
+      "trackName" in (listed?.tasks?.[0] ?? {}) && "repo" in (listed?.tasks?.[0] ?? {}),
+    );
+
+    // ── the brief a task is started from ───────────────────────────────────
+    const briefed = payload(
+      await client.callTool({ name: "pm_task_brief", arguments: { projectId: temp.id, taskId: created.id } }),
+    );
+    check(
+      "pm_task_brief writes the brief, with the line the hub reads on merge",
+      typeof briefed?.brief === "string" && briefed.brief.includes(`PM-Task: ${temp.id}/${created.id}`),
+    );
+    const briefedAgent = payload(
+      await client.callTool({ name: "pm_task_brief", arguments: { projectId: temp.id, taskId: created.id, reader: "agent" } }),
+    );
+    check("for a hub agent it asks for no pull request", typeof briefedAgent?.brief === "string" && !/PM-Task/.test(briefedAgent.brief));
+    const noTask = await client.callTool({ name: "pm_task_brief", arguments: { projectId: temp.id, taskId: "nope" } });
+    check("an unknown task is refused in words", noTask.isError === true);
     check(
       "overdue is computed from the planned end date",
       listed?.tasks?.[0]?.overdue === true,

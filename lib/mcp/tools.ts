@@ -12,6 +12,7 @@ import type { MachineContext } from "@/lib/api/machineAuth";
 import type { Task, Risk, Milestone } from "@/lib/db/schema";
 import { checkMilestone, checkTask, milestoneLeftBehind } from "@/lib/hierarchy";
 import { resolveActor, type StakeholderLike } from "@/lib/actor";
+import { dependencyTitles, isCodeWork, repoForTrack, taskBrief } from "@/lib/code-handoff";
 
 /*
  * The tools the AI Hub sees on this workspace.
@@ -50,13 +51,26 @@ const isPast = (date: string) => date !== "" && date < today();
 // columns (deps, comments, custom) that would burn the agent's context without
 // telling it anything it asked for.
 
-function taskView(t: Task) {
+/** What a task's track is called and where its code lives, which only the project knows. */
+interface Board {
+  categories: { id: string; label: string }[];
+  project: { settings?: unknown };
+}
+
+function taskView(t: Task, board?: Board) {
   return {
     id: t.id,
     title: t.title,
     status: t.status,
     kind: t.kind,
     track: t.category,
+    // The track's name and repository, so a reader need not map ids itself.
+    ...(board
+      ? {
+          trackName: board.categories.find((c) => c.id === t.category)?.label ?? null,
+          repo: repoForTrack(board.project.settings, t.category),
+        }
+      : {}),
     milestoneId: t.milestoneId,
     priority: t.priority,
     owner: (Array.isArray(t.assignees) ? t.assignees : [])[0] ?? null,
@@ -160,7 +174,7 @@ const getProjectTool: ToolDef = {
     const out: Record<string, unknown> = { project: ws.project };
     // The ids pm_create_task and pm_create_milestone need for `track`.
     if (wanted.has("tracks")) out.tracks = ws.categories.map((c) => ({ id: c.id, label: c.label }));
-    if (wanted.has("tasks")) out.tasks = ws.tasks.map(taskView);
+    if (wanted.has("tasks")) out.tasks = ws.tasks.map((t) => taskView(t, ws));
     if (wanted.has("risks")) out.risks = ws.risks.map(riskView);
     if (wanted.has("milestones")) out.milestones = ws.milestones.map(milestoneView);
     if (wanted.has("stakeholders")) out.stakeholders = ws.stakeholders;
@@ -194,7 +208,7 @@ const listTasksTool: ToolDef = {
     if (!ws) return fail(`No project "${projectId}" in this workspace.`);
 
     const owner = (args.owner as string | undefined)?.trim().toLowerCase();
-    const tasks = ws.tasks.map(taskView).filter((t) => {
+    const tasks = ws.tasks.map((t) => taskView(t, ws)).filter((t) => {
       if (args.status && t.status !== args.status) return false;
       if (args.milestoneId && t.milestoneId !== args.milestoneId) return false;
       if (args.overdueOnly && !t.overdue) return false;
@@ -202,6 +216,50 @@ const listTasksTool: ToolDef = {
       return true;
     });
     return json({ projectId, count: tasks.length, tasks });
+  },
+};
+
+const taskBriefTool: ToolDef = {
+  name: "pm_task_brief",
+  description:
+    "The brief a task is started from: what it asks for, its subtasks and dependencies, and how to report back. " +
+    "Written here so every app that starts work on a task opens with the same words. " +
+    "`reader` is who does the work: \"code\" (a coding agent in the task's repository, the default) or \"agent\" (one of the hub's agents).",
+  inputSchema: {
+    projectId: z.string(),
+    taskId: z.string(),
+    reader: z.enum(["code", "agent"]).optional(),
+  },
+  handler: async (args, ctx) => {
+    const projectId = String(args.projectId ?? "");
+    const ws = await getWorkingSet(ctx.orgId, projectId);
+    if (!ws) return fail(`No project "${projectId}" in this workspace.`);
+    const task = ws.tasks.find((t) => t.id === String(args.taskId ?? ""));
+    if (!task) return fail(`No task "${String(args.taskId ?? "")}" in project "${projectId}".`);
+
+    const reader = args.reader === "agent" ? "agent" : "code";
+    const trackName = ws.categories.find((c) => c.id === task.category)?.label ?? null;
+    return json({
+      projectId,
+      taskId: task.id,
+      title: task.title,
+      agent: taskAgent(task),
+      // Meetings and decisions are not done in a code editor.
+      codeWork: isCodeWork(task),
+      trackName,
+      repo: repoForTrack(ws.project.settings, task.category),
+      brief: taskBrief(
+        task,
+        {
+          projectId,
+          projectName: ws.project.name,
+          trackLabel: trackName,
+          subtasks: ws.tasks.filter((t) => t.parentId === task.id),
+          dependsOn: dependencyTitles(task.deps, ws.tasks),
+        },
+        reader,
+      ),
+    });
   },
 };
 
@@ -249,7 +307,7 @@ const projectStatusTool: ToolDef = {
       .slice(0, 10);
     const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
 
-    const tasks = ws.tasks.map(taskView);
+    const tasks = ws.tasks.map((t) => taskView(t));
     const byStatus = Object.fromEntries(
       TASK_STATUSES.map((s) => [s, tasks.filter((t) => t.status === s).length]),
     );
@@ -565,6 +623,7 @@ export const TOOLS: ToolDef[] = [
   listProjectsTool,
   getProjectTool,
   listTasksTool,
+  taskBriefTool,
   listRisksTool,
   projectStatusTool,
   createTaskTool,
