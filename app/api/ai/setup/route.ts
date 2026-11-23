@@ -3,7 +3,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { requireApiAuth } from "@/lib/api/guard";
 import { withTenant } from "@/lib/db/tenant";
-import { insertWorkspace } from "@/lib/import/atlas";
+import { insertWorkspace } from "@/lib/import/workspace";
 import { buildAiProject } from "@/lib/ai/setup";
 import { schema } from "@/lib/db/client";
 

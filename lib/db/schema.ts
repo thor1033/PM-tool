@@ -1,5 +1,5 @@
 /* ============================================================
-   Drizzle schema — Atlas PM Hub
+   Drizzle schema — Teqneo Projects
    Multi-tenant: every project belongs to an organization.
    Core list-like entities are normalized into tables keyed by
    (project_id, id) where `id` is the app-level string id (e.g.
@@ -95,6 +95,17 @@ export const tasks = pgTable(
     position: integer("position").default(0).notNull(),
     tags: jsonb("tags").$type<string[]>().default([]).notNull(),
     assignees: jsonb("assignees").$type<string[]>().default([]).notNull(),
+    /** People who take part in the task without owning it. `assignees` says
+     *  who does the work (capacity is spread across it); this says who needs
+     *  to be kept in the picture, so a task shows up for them too. */
+    involved: jsonb("involved").$type<string[]>().default([]).notNull(),
+    /** What each involved person is there for, keyed by name ("Thor": "checks
+     *  the schema before it ships"). Without it "involved" is a list of names
+     *  nobody can act on. Names with no entry here are simply listed. */
+    involvedRoles: jsonb("involved_roles").$type<Record<string, string>>().default({}).notNull(),
+    /** What exists when the task is done: the output someone can point at. A
+     *  title says what to do; this says what "done" looks like. */
+    deliverable: text("deliverable").default("").notNull(),
     deps: jsonb("deps").$type<TaskDep[]>().default([]).notNull(),
     parentId: text("parent_id"),
     comments: jsonb("comments").$type<TaskComment[]>().default([]).notNull(),

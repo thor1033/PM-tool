@@ -1,0 +1,1 @@
+ALTER TABLE "tasks" ADD COLUMN "involved" jsonb DEFAULT '[]'::jsonb NOT NULL;

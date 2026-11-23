@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirm } from "@/components/project/confirm";
 
-const GROUP_KEY = "atlas.notes.groupBy";
+const GROUP_KEY = "teqneo.notes.groupBy";
 
 type GroupBy = "track" | "task" | "date";
 

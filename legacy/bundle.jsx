@@ -364,7 +364,7 @@
 
   // ----- sync helpers -----
   function importRoot(next) {
-    if (!next || next.version !== 2 || !Array.isArray(next.projects)) throw new Error("Not a valid Atlas workspace file.");
+    if (!next || next.version !== 2 || !Array.isArray(next.projects)) throw new Error("Not a valid TeqneoProjects workspace file.");
     root = { version: 2, activeId: null, projects: next.projects, rev: next.rev || 0, savedAt: next.savedAt || Date.now() };
     persist(); emit();
   }
@@ -1155,9 +1155,9 @@ const toISO = (d) => d.toISOString().slice(0, 10);
 const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / DAY);
 
 function Actions() {
-  const [mode, setMode] = useA(localStorage.getItem("atlas.actions.mode") || "list");
+  const [mode, setMode] = useA(localStorage.getItem("teqneo.actions.mode") || "list");
   const [showTax, setShowTax] = useA(false);
-  const setM = (m) => { setMode(m); localStorage.setItem("atlas.actions.mode", m); };
+  const setM = (m) => { setMode(m); localStorage.setItem("teqneo.actions.mode", m); };
   return (
     <>
       <div className="filterbar no-print" style={{ justifyContent: "space-between" }}>
@@ -2304,7 +2304,7 @@ function AddLinkModal({ onClose }) {
       <div className="modal-hd">
         <div className="grow">
           <div className="cm-title" style={{ fontSize: 20 }}>Link from shared drive</div>
-          <div className="muted" style={{ fontSize: 13 }}>Paste a URL from SharePoint, OneDrive, Google Drive, or any web link. The file stays on the drive — Atlas just links to it.</div>
+          <div className="muted" style={{ fontSize: 13 }}>Paste a URL from SharePoint, OneDrive, Google Drive, or any web link. The file stays on the drive — TeqneoProjects just links to it.</div>
         </div>
         <button className="btn btn-icon btn-ghost" onClick={onClose}><Icon name="x" /></button>
       </div>
@@ -4309,7 +4309,7 @@ function SyncPanel({ onClose }) {
       const pkg = active ? await buildProjectExport(Store.getRoot().activeId, withFiles) : await buildWorkspace(withFiles);
       const filename = active
         ? "atlas-" + (active.meta?.project || "project").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + new Date().toISOString().slice(0, 10) + ".json"
-        : "atlas-workspace-" + new Date().toISOString().slice(0, 10) + ".json";
+        : "teqneo-workspace-" + new Date().toISOString().slice(0, 10) + ".json";
       const blob = new Blob([JSON.stringify(pkg)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = url; a.download = filename;
@@ -4325,7 +4325,7 @@ function SyncPanel({ onClose }) {
       const pkg = await buildWorkspace(withFiles);
       const blob = new Blob([JSON.stringify(pkg)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = "atlas-workspace-" + new Date().toISOString().slice(0, 10) + ".json";
+      const a = document.createElement("a"); a.href = url; a.download = "teqneo-workspace-" + new Date().toISOString().slice(0, 10) + ".json";
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       setNote({ ok: true, msg: "Whole workspace downloaded." });
@@ -4627,7 +4627,7 @@ function ProjectsHome() {
             <div className="brand" style={{ padding: 0 }}>
               <div className="brand-mark" style={{ width: 40, height: 40 }}><Icon name="layers" size={22} /></div>
               <div>
-                <div className="brand-name" style={{ fontSize: 24 }}>Atlas</div>
+                <div className="brand-name" style={{ fontSize: 24 }}>TeqneoProjects</div>
                 <div className="brand-sub">Project portfolio</div>
               </div>
             </div>
@@ -4809,7 +4809,7 @@ function Dashboard({ go }) {
   const [openTask, setOpenTask] = useD(null);
   const [showAI, setShowAI] = useD(false);
 
-  const VKEY = "atlas.view." + s.id;
+  const VKEY = "teqneo.view." + s.id;
   const [who, setWho] = useD(() => {
     const saved = localStorage.getItem(VKEY) || "";
     return saved;
@@ -5219,7 +5219,7 @@ sections</span>
         </header>
         <div className="print-head print-only">
           <div className="print-head-l">
-            <span className="print-brand">Atlas</span>
+            <span className="print-brand">TeqneoProjects</span>
             <span className="print-proj">{parent ? parent.meta?.project + " / " : ""}{s.meta?.project}</span>
           </div>
           <div className="print-head-r">

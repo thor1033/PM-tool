@@ -40,6 +40,9 @@ const NAMED_FIELDS: Record<string, string> = {
   start: "rescheduled",
   end: "rescheduled",
   assignees: "reassigned",
+  involved: "changed who is involved in",
+  involvedRoles: "changed what people do in",
+  deliverable: "changed the deliverable of",
   category: "moved",
   description: "updated the description of",
 };

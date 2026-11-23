@@ -33,8 +33,8 @@ function unauthorized(request: Request) {
   // Tells a spec-compliant MCP client this endpoint wants a bearer token and,
   // when OAuth is configured, where to discover how to get one.
   const challenge = authkitIssuer()
-    ? `Bearer realm="atlas-pm", error="unauthorized", resource_metadata="${protectedResourceMetadataUrl(request)}"`
-    : 'Bearer realm="atlas-pm"';
+    ? `Bearer realm="teqneo-projects", error="unauthorized", resource_metadata="${protectedResourceMetadataUrl(request)}"`
+    : 'Bearer realm="teqneo-projects"';
   return Response.json(
     { error: "Unauthorized" },
     { status: 401, headers: { "WWW-Authenticate": challenge } },

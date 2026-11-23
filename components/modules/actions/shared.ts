@@ -13,13 +13,13 @@ export type ActionsView = "list" | "kanban" | "timeline" | "calendar";
  *  persisted value can be recognised and migrated on first load. */
 export type LegacySortMode = "category" | "upcoming" | "status" | "owner";
 
-export const VIEW_STORAGE_KEY = "atlas.actions.mode";
-export const SORT_STORAGE_KEY = "atlas.actions.sort";
-export const COLLAPSE_STORAGE_KEY_PREFIX = "atlas.actions.expanded.";
+export const VIEW_STORAGE_KEY = "teqneo.actions.mode";
+export const SORT_STORAGE_KEY = "teqneo.actions.sort";
+export const COLLAPSE_STORAGE_KEY_PREFIX = "teqneo.actions.expanded.";
 /** Per-milestone fold state. Only deliberate choices are stored — a reached
  *  milestone folds by default without needing an entry of its own. */
-export const MS_FOLD_STORAGE_KEY_PREFIX = "atlas.actions.msfold.";
-export const OPEN_SUBS_STORAGE_KEY_PREFIX = "atlas.actions.opensubs.";
+export const MS_FOLD_STORAGE_KEY_PREFIX = "teqneo.actions.msfold.";
+export const OPEN_SUBS_STORAGE_KEY_PREFIX = "teqneo.actions.opensubs.";
 
 /** A track group used by the List view, plus the two pinned synthetic groups
  *  (Communications / Change management) the reference app always shows last. */

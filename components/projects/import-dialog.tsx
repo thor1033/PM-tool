@@ -63,9 +63,9 @@ export function ImportDialog() {
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Import an Atlas workspace</DialogTitle>
+          <DialogTitle>Import a workspace</DialogTitle>
           <DialogDescription>
-            Upload or paste an Atlas export (<code>.json</code>) from the legacy
+            Upload or paste a workspace export (<code>.json</code>) from the legacy
             app. Projects are added to your workspace — nothing is overwritten.
           </DialogDescription>
         </DialogHeader>
@@ -87,7 +87,7 @@ export function ImportDialog() {
               value={text}
               onChange={(e) => setText(e.target.value)}
               rows={6}
-              placeholder='{"atlas":true,"version":2,"projects":[…]}'
+              placeholder='{"version":2,"projects":[…]}'
               className="font-mono text-xs"
             />
           </div>

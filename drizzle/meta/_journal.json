@@ -113,6 +113,20 @@
       "when": 1792870546804,
       "tag": "0015_fearless_moon_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1795376235179,
+      "tag": "0016_task_involved",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795465034642,
+      "tag": "0017_task_deliverable_roles",
+      "breakpoints": true
     }
   ]
 }

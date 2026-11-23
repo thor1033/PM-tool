@@ -1,6 +1,6 @@
 /* Extract the seeded sample projects (Helios, Migration, Intranet) from the
-   legacy Atlas bundle's store module by evaluating just that IIFE in Node with
-   minimal browser stubs. Writes scripts/seed-projects.json in Atlas export
+   legacy bundle's store module by evaluating just that IIFE in Node with
+   minimal browser stubs. Writes scripts/seed-projects.json in workspace export
    shape: { version: 2, projects: [...] }. Run: node scripts/extract-seed.mjs */
 import fs from "node:fs";
 import path from "node:path";
@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const bundle = fs.readFileSync(
-  path.join(root, "legacy", "atlas-bundle.jsx"),
+  path.join(root, "legacy", "bundle.jsx"),
   "utf8",
 );
 
@@ -39,7 +39,7 @@ vm.runInContext(storeSrc, sandbox);
 const Store = sandbox.window.Store;
 if (!Store) throw new Error("window.Store not defined after eval");
 const root2 = Store.getRoot();
-const out = { atlas: true, version: 2, projects: root2.projects };
+const out = { version: 2, projects: root2.projects };
 const dest = path.join(root, "scripts", "seed-projects.json");
 fs.writeFileSync(dest, JSON.stringify(out, null, 2));
 console.log(

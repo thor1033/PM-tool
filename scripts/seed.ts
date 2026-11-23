@@ -3,15 +3,15 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import { db, pool, schema } from "@/lib/db/client";
-import { importWorkspaceForOrg, type AtlasWorkspace } from "@/lib/import/atlas";
+import { importWorkspaceForOrg, type ImportWorkspace } from "@/lib/import/workspace";
 
 const DEMO_ORG_NAME = "Demo Consultancy";
 const DEMO_WORKOS_ORG = "org_demo_seed";
-const DEMO_USER_EMAIL = "demo@atlas.local";
+const DEMO_USER_EMAIL = "demo@teqneo.local";
 const DEMO_WORKOS_USER = "user_demo_seed";
 
 async function main() {
-  const ws: AtlasWorkspace = JSON.parse(
+  const ws: ImportWorkspace = JSON.parse(
     readFileSync(resolve("scripts/seed-projects.json"), "utf8"),
   );
 

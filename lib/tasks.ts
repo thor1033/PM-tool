@@ -57,6 +57,52 @@ export function assigneesOf(t: Pick<Task, "assignees">): string[] {
   return Array.isArray(t.assignees) ? t.assignees : [];
 }
 
+/** People who take part in a task without owning it. */
+export function involvedOf(t: Partial<Pick<Task, "involved">>): string[] {
+  return Array.isArray(t.involved) ? t.involved : [];
+}
+
+/** Everyone a task concerns: the people doing it and the people kept in the
+ *  picture. This is what "my tasks" and the person filter match against —
+ *  capacity still reads `assignees` alone, so being involved never adds load. */
+export function concernsOf(t: Pick<Task, "assignees"> & Partial<Pick<Task, "involved">>): string[] {
+  return [...new Set([...assigneesOf(t), ...involvedOf(t)])];
+}
+
+/** What each involved person is there for, keyed by name. */
+export function rolesOf(t: Partial<Pick<Task, "involvedRoles">>): Record<string, string> {
+  const r = t.involvedRoles;
+  return r && typeof r === "object" && !Array.isArray(r) ? (r as Record<string, string>) : {};
+}
+
+type Naming = Pick<Task, "assignees"> & Partial<Pick<Task, "involved" | "involvedRoles">>;
+
+/** The task's people fields with one person taken off it, roles included. */
+export function withoutPerson(t: Naming, name: string) {
+  const roles = { ...rolesOf(t) };
+  delete roles[name];
+  return {
+    assignees: assigneesOf(t).filter((a) => a !== name),
+    involved: involvedOf(t).filter((a) => a !== name),
+    involvedRoles: roles,
+  };
+}
+
+/** The task's people fields after a person is renamed, roles included. */
+export function withRenamedPerson(t: Naming, from: string, to: string) {
+  const roles = { ...rolesOf(t) };
+  if (from in roles) {
+    roles[to] = roles[from];
+    delete roles[from];
+  }
+  const swap = (a: string) => (a === from ? to : a);
+  return {
+    assignees: assigneesOf(t).map(swap),
+    involved: involvedOf(t).map(swap),
+    involvedRoles: roles,
+  };
+}
+
 export function daysBetween(a: string, b: string): number {
   return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86_400_000);
 }
@@ -101,7 +147,7 @@ export function taskMatchesFilter(t: Task, fCat: string[], fWho: string[]): bool
     if (!ok) return false;
   }
   if (fWho.length) {
-    const who = assigneesOf(t);
+    const who = concernsOf(t);
     const ok = fWho.some((w) => (w === "__unassigned" ? who.length === 0 : who.includes(w)));
     if (!ok) return false;
   }

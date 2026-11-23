@@ -10,7 +10,7 @@ import {
   useCreateEntity, useUpdateEntity, useDeleteEntity,
 } from "@/lib/api/hooks";
 import { FileTypeIcon, inferType } from "@/lib/file-types";
-import { resolveDep, wouldConflict, initials, followupChainOf, fmtD, daysBetween, subtaskDefaults, followupDefaults, filesToInherit, todayISO, type ResolvedDep } from "@/lib/tasks";
+import { resolveDep, wouldConflict, initials, rolesOf, followupChainOf, fmtD, daysBetween, subtaskDefaults, followupDefaults, filesToInherit, todayISO, type ResolvedDep } from "@/lib/tasks";
 import { TASK_KINDS, DEFAULT_KIND, meetingTimeRange } from "@/lib/task-kinds";
 import { milestonesForTask } from "@/lib/milestone-grouping";
 import { peopleOf } from "@/lib/people";
@@ -586,6 +586,9 @@ export function CardModal({
     status: activeTask?.status ?? defaultStatus ?? "backlog",
     category: activeTask?.category ?? defaultCategoryId ?? ws.categories[0]?.id ?? "none",
     assignees: (activeTask?.assignees ?? []).join(", "),
+    involved: (activeTask?.involved ?? []) as string[],
+    involvedRoles: { ...rolesOf(activeTask ?? {}) } as Record<string, string>,
+    deliverable: activeTask?.deliverable ?? "",
     start: defaultStart(activeTask),
     end: activeTask?.end ?? "",
     deps: activeTask?.deps ?? ([] as TaskDep[]),
@@ -614,6 +617,9 @@ export function CardModal({
       status: activeTask?.status ?? defaultStatus ?? "backlog",
       category: activeTask?.category ?? defaultCategoryId ?? ws.categories[0]?.id ?? "none",
       assignees: (activeTask?.assignees ?? []).join(", "),
+      involved: (activeTask?.involved ?? []) as string[],
+      involvedRoles: { ...rolesOf(activeTask ?? {}) } as Record<string, string>,
+      deliverable: activeTask?.deliverable ?? "",
       start: defaultStart(activeTask),
       end: activeTask?.end ?? "",
       deps: activeTask?.deps ?? ([] as TaskDep[]),
@@ -716,6 +722,16 @@ export function CardModal({
       // whatever the task already had so save doesn't wipe them.
       phase: activeTask?.phase ?? null,
       assignees: form.assignees.split(",").map((s) => s.trim()).filter(Boolean),
+      // The owner is already on the task, so naming them again as involved
+      // would only be noise.
+      involved: form.involved.filter((n) => n !== ownerName),
+      // Only keep a role for someone still on the task.
+      involvedRoles: Object.fromEntries(
+        Object.entries(form.involvedRoles).filter(
+          ([n, r]) => r.trim() && form.involved.includes(n) && n !== ownerName,
+        ),
+      ),
+      deliverable: form.deliverable,
       start: form.start, end: form.end, tags: activeTask?.tags ?? [], deps: form.deps,
       kind: form.kind,
       priority: form.priority,
@@ -885,9 +901,23 @@ export function CardModal({
             {shows("description") && (
               <div className="space-y-1.5">
                 <Label>Description</Label>
-                <Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={3} />
+                <Textarea
+                  value={form.description}
+                  onChange={(e) => set("description", e.target.value)}
+                  rows={3}
+                  placeholder="What this is and why it matters"
+                />
               </div>
             )}
+            <div className="space-y-1.5">
+              <Label>Deliverable</Label>
+              <Textarea
+                value={form.deliverable}
+                onChange={(e) => set("deliverable", e.target.value)}
+                rows={2}
+                placeholder="What exists when this is done"
+              />
+            </div>
             {/* Only meaningful on a task that was actually spun off another —
                 on a standalone task it's a field with nothing to explain. */}
             {isFollowup && shows("followupReason") && (
@@ -1201,6 +1231,78 @@ export function CardModal({
                 </p>
               )}
             </div>
+
+            {/* Involved: part of the task without owning it. The task shows up
+                in their view too, but it adds nothing to their capacity. */}
+            {peopleOf(ws).filter((p) => p.name !== ownerName).length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Involved</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {peopleOf(ws)
+                    .filter((p) => p.name !== ownerName)
+                    .map((person) => {
+                      const on = form.involved.includes(person.name);
+                      return (
+                        <button
+                          key={person.id}
+                          type="button"
+                          aria-pressed={on}
+                          onClick={() =>
+                            set(
+                              "involved",
+                              on
+                                ? form.involved.filter((n) => n !== person.name)
+                                : [...form.involved, person.name],
+                            )
+                          }
+                          className={cn(
+                            "rounded-full border px-2.5 py-1 text-[12.5px] transition-colors",
+                            on
+                              ? "border-[var(--ink)] bg-[var(--ink)] text-[var(--paper)]"
+                              : "text-muted-foreground hover:bg-[var(--paper-2)]",
+                          )}
+                        >
+                          {person.name}
+                        </button>
+                      );
+                    })}
+                  {/* A name already on the task that is not on the list —
+                      kept so opening and saving never silently drops it. */}
+                  {form.involved
+                    .filter((n) => !peopleOf(ws).some((p) => p.name === n))
+                    .map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        aria-pressed
+                        onClick={() => set("involved", form.involved.filter((x) => x !== n))}
+                        className="rounded-full border border-[var(--ink)] bg-[var(--ink)] px-2.5 py-1 text-[12.5px] text-[var(--paper)]"
+                      >
+                        {n}
+                      </button>
+                    ))}
+                </div>
+                {/* What each involved person is there for. */}
+                {form.involved.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    {form.involved.map((n) => (
+                      <div key={n} className="flex items-center gap-2">
+                        <span className="w-28 shrink-0 truncate text-[12.5px]">{n}</span>
+                        <Input
+                          value={form.involvedRoles[n] ?? ""}
+                          onChange={(e) =>
+                            set("involvedRoles", { ...form.involvedRoles, [n]: e.target.value })
+                          }
+                          placeholder="What do they do here?"
+                          aria-label={`What ${n} does on this task`}
+                          className="h-8 text-[12.5px]"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* custom fields — "occurrence" has its own dedicated field above */}
             {activeTask && shows("customFields") && Object.entries(activeTask.custom ?? {}).filter(([k]) => k !== "occurrence").length > 0 && (

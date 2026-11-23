@@ -12,7 +12,7 @@ import { useProject, useUpdateEntity } from "@/lib/api/hooks";
 import type { Task, WorkingSet } from "@/lib/types";
 import type { TaskComment } from "@/lib/db/schema";
 import { accent, accentVar } from "@/lib/colors";
-import { initials, fmtD, daysBetween, followupChainOf } from "@/lib/tasks";
+import { initials, fmtD, daysBetween, followupChainOf, concernsOf } from "@/lib/tasks";
 import { cn } from "@/lib/utils";
 import { peopleOf } from "@/lib/people";
 import { ModuleHeader } from "@/components/project/ui";
@@ -22,8 +22,8 @@ import { Button } from "@/components/ui/button";
 
 // ── constants ────────────────────────────────────────────────────────────────
 
-const WHO_KEY = "atlas.view";      // per-project: atlas.view.<projectId>
-const MODE_KEY = "atlas.ws.mode";  // global
+const WHO_KEY = "teqneo.view";      // per-project: teqneo.view.<projectId>
+const MODE_KEY = "teqneo.ws.mode";  // global
 
 const EVERYONE = "__everyone";
 
@@ -937,7 +937,7 @@ export function WorkspaceModule({ projectId }: { projectId: string }) {
 
     const names = new Set(peopleOf(ws).map((m) => m.name));
     const hasTasks = (name: string) =>
-      ws.tasks.some((t) => !t.parentId && (t.assignees ?? []).includes(name));
+      ws.tasks.some((t) => !t.parentId && concernsOf(t).includes(name));
 
     // saved person → "You" if they actually have tasks → Everyone. A saved
     // person who has since lost all their tasks falls through too, so a
@@ -970,7 +970,7 @@ export function WorkspaceModule({ projectId }: { projectId: string }) {
   const myTasks = useMemo(() => {
     if (!ws) return [];
     const top = ws.tasks.filter((t) => !t.parentId);
-    return everyone ? top : top.filter((t) => (t.assignees ?? []).includes(activeWho));
+    return everyone ? top : top.filter((t) => concernsOf(t).includes(activeWho));
   }, [ws, activeWho, everyone]);
 
   if (!ws) return null;

@@ -31,7 +31,7 @@ const RANGE_OPTIONS = [
   { id: "all", label: "All history", months: null },
 ] as const;
 type RangeId = (typeof RANGE_OPTIONS)[number]["id"];
-const RANGE_KEY = "atlas.actions.timelineRange";
+const RANGE_KEY = "teqneo.actions.timelineRange";
 
 export type TimelineSortMode = "track" | "sequence" | "deadline";
 const SORT_OPTIONS: { id: TimelineSortMode; label: string }[] = [
@@ -74,7 +74,7 @@ export const LAYER_OPTIONS: { id: keyof TimelineLayers; label: string; hint: str
   { id: "subtasks", label: "Subtask bars", hint: "Nested bars under their parent" },
   { id: "today", label: "Today line", hint: "The vertical marker on today" },
 ];
-export const TIMELINE_LAYERS_KEY = "atlas.actions.timelineLayers";
+export const TIMELINE_LAYERS_KEY = "teqneo.actions.timelineLayers";
 
 function useClickOutside(onOutside: () => void) {
   const ref = useRef<HTMLDivElement>(null);

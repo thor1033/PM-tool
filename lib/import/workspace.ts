@@ -1,5 +1,5 @@
 /* ============================================================
-   Atlas workspace → Postgres importer.
+   Workspace export → Postgres importer.
    Maps a project object in the legacy app shape (meta, tasks,
    risks, …, tags/phases/categories) into normalized rows +
    JSONB document columns. Shared by the seed script and the
@@ -27,7 +27,7 @@ const {
 
 // Permissive shape — import data originates outside our control.
 type Any = Record<string, unknown>;
-export interface AtlasProject {
+export interface ImportProject {
   id?: string;
   meta?: { project?: string; code?: string };
   color?: string;
@@ -59,9 +59,9 @@ export interface AtlasProject {
   settings?: unknown;
 }
 
-export interface AtlasWorkspace {
+export interface ImportWorkspace {
   version?: number;
-  projects?: AtlasProject[];
+  projects?: ImportProject[];
 }
 
 const arr = (v: unknown): Any[] => (Array.isArray(v) ? (v as Any[]) : []);
@@ -79,9 +79,9 @@ type Tx = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
 export async function insertWorkspace(
   tx: Tx,
   orgId: string,
-  ws: AtlasWorkspace,
+  ws: ImportWorkspace,
 ): Promise<{ idMap: Record<string, string>; count: number }> {
-  const list = arr(ws.projects) as AtlasProject[];
+  const list = arr(ws.projects) as ImportProject[];
   const idMap: Record<string, string> = {};
 
   // Pass 1 — create project rows (parent set in pass 2).
@@ -136,7 +136,7 @@ async function insertChildren(
   tx: Tx,
   orgId: string,
   projectId: string,
-  p: AtlasProject,
+  p: ImportProject,
 ) {
   const base = { orgId, projectId };
 
@@ -278,7 +278,7 @@ async function insertChildren(
 /** Convenience: import a workspace for an org in its own tenant transaction. */
 export async function importWorkspaceForOrg(
   orgId: string,
-  ws: AtlasWorkspace,
+  ws: ImportWorkspace,
 ) {
   return withTenant(orgId, (tx) => insertWorkspace(tx, orgId, ws));
 }

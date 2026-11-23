@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { toolsFor } from "@/lib/mcp/tools";
 import type { MachineContext } from "@/lib/api/machineAuth";
 
-export const MCP_SERVER_NAME = "atlas-pm";
+export const MCP_SERVER_NAME = "teqneo-projects";
 export const MCP_SERVER_VERSION = "0.1.0";
 
 /**

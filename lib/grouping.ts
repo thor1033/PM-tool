@@ -29,8 +29,8 @@ export const SORT_OPTIONS: { id: SortMode; label: string }[] = [
   { id: "title", label: "Title" },
 ];
 
-export const GROUP_STORAGE_KEY = "atlas.actions.groupBy";
-export const SORT_STORAGE_KEY = "atlas.actions.sortBy";
+export const GROUP_STORAGE_KEY = "teqneo.actions.groupBy";
+export const SORT_STORAGE_KEY = "teqneo.actions.sortBy";
 
 const STATUS_RANK: Record<string, number> = { inprogress: 0, backlog: 1, done: 2 };
 const STATUS_LABEL: Record<string, string> = {

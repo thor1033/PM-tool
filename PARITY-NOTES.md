@@ -1,4 +1,4 @@
-# Parity Notes — Atlas HTML → PM-tool
+# Parity Notes — reference HTML prototype → PM-tool
 
 Tracks new dependencies, deviations, and phase completion status.
 
@@ -78,12 +78,12 @@ building:
      Y-position per track) but reorders tasks *within* each track by `sequenceTasks`, and
      reorders the track rows themselves by each track's earliest task date — so the whole
      chart reads top-to-bottom in delivery order instead of category-creation order.
-5. **localStorage keys renamed to match the spec exactly**: `atlas.actions.view` →
-   `atlas.actions.mode`; added `atlas.actions.sort`; the per-project collapse-state key changed
-   from `atlas.actions.collapsed.<id>` to `atlas.actions.expanded.<id>`; added
-   `atlas.actions.opensubs.<id>` for the subtask open/closed set, which previously reset on
+5. **localStorage keys renamed to match the spec exactly**: `teqneo.actions.view` →
+   `teqneo.actions.mode`; added `teqneo.actions.sort`; the per-project collapse-state key changed
+   from `teqneo.actions.collapsed.<id>` to `teqneo.actions.expanded.<id>`; added
+   `teqneo.actions.opensubs.<id>` for the subtask open/closed set, which previously reset on
    every page load (component-local `useState({})`) — it's now a genuine persisted feature per
-   spec ("open set persisted, atlas.actions.opensubs").
+   spec ("open set persisted, teqneo.actions.opensubs").
 6. **"Add category" quick-add restored** in List's toolbar (inline name input + Add button)
    alongside the spec's exact hint copy — "Drag actions between categories to re-bucket them ·
    order top-to-bottom = sequence" — which had been dropped when the header "Categories" button
@@ -110,7 +110,7 @@ just the per-track strip/inline-gate-bar inside List).
 - **Categories default expanded** (`list-view.tsx`): flipped `collapsed[g.key] ?? true` →
   `?? false` in both the render check and the toggle handler. A group only collapses once
   the user explicitly closes it — that choice is still persisted to `localStorage`
-  (`atlas.actions.collapsed.<projectId>`) exactly as before, so a user's manual collapses
+  (`teqneo.actions.collapsed.<projectId>`) exactly as before, so a user's manual collapses
   survive reloads; only the *default* for never-touched groups changed.
 - **"Undefined category" replaces "Uncategorised"** — a task with no category is a data
   problem now that categories are mandatory (from the prior session's change), not a normal
@@ -288,7 +288,7 @@ same visual system, substantially more real functionality.
 **Schema changes** (migrations `0003_dry_dark_phoenix`, `0004_hesitant_marten_broadcloak`):
 - New `externals` table (registered external inputs: title/party/owner/due/status/note),
   wired into `lib/entities.ts`, `lib/types.ts` (`WorkingSet.externals`), `getWorkingSet`,
-  and the Atlas JSON importer (`lib/import/atlas.ts`) — with RLS `tenant_isolation` policy
+  and the workspace JSON importer (`lib/import/workspace.ts`) — with RLS `tenant_isolation` policy
   applied the same way as every other entity table (see migration file; `activity` is the
   only table that intentionally skips this, since it's append-only via its own route, not
   the generic entity route).
@@ -350,7 +350,7 @@ existing convention):**
 - `shared.ts` — the `ActionsView` type and localStorage key names shared across files.
 
 **View switcher**: List · Sequence · Timeline · Calendar · Kanban as one segmented control;
-the choice persists to `localStorage` (`atlas.actions.view`) and restores on reload, per
+the choice persists to `localStorage` (`teqneo.actions.view`) and restores on reload, per
 spec. Kanban intentionally stayed a *view inside* Actions rather than a separate nav tab —
 the repo already redirects the legacy `board` slug to `ActionsModule`, so this keeps that
 precedent instead of adding nav surface for something the spec said could go either way.
@@ -368,7 +368,7 @@ current view is filtered down to a subset — filtering only changes what's rend
 - Everything else in the functional handoff (dependency model, List/Sequence/Timeline/
   Calendar/Kanban behavior, baseline, critical path) was built in full — no other cuts.
 
-## Actions & timeline — full rebuild to Atlas visual + dependency spec
+## Actions & timeline — full rebuild to the prototype visual + dependency spec
 Rebuilt `components/modules/actions.tsx` against `reference-html/bundle.jsx` (`function
 Kanban`, `function Timeline`, `function CalendarView`, `resolveDep`) and `components.css`
 (`.kcard`/`.kcol`/`.gantt-*`), following a functional handoff prompt covering dependency
@@ -414,23 +414,23 @@ visualization and Kanban design in detail.
     (which scoped Timeline to: axis, today line, bars, dependency connectors + blocked
     state, gates/milestones, legend). Flagging in case that's expected next.
 - **Table**: mono-uppercase column heads, status-dot + priority-pip inline (matches the rest
-  of the Atlas system rather than the old colored-badge style), a ⚠ inline on any row whose
+  of the Teqneo system rather than the old colored-badge style), a ⚠ inline on any row whose
   task has a dependency block.
-- **Calendar**: unchanged structure, retoned to Atlas tokens (mono day headers, serif month
+- **Calendar**: unchanged structure, retoned to Teqneo tokens (mono day headers, serif month
   label, today = primary-filled circle, overdue tasks get a red chip instead of track color).
 - Kept the existing entity-hook wiring (`useCreateEntity`/`useUpdateEntity`/`useDeleteEntity`)
   and comments/optional-fields work from P6 — this was a visual + dependency-feature rebuild,
   not a data-layer change. No new dependencies added.
 
-## Visual design system — Atlas parity restyle
-Applied `design_handoff_atlas_parity/DESIGN-SPEC.md` (note: this file only exists in the
-`Documents\design_handoff_atlas_parity` copy of the handover packet, not the `Skrivebord`
-one — use the Documents copy as source of truth going forward).
+## Visual design system — parity restyle
+Applied the handover packet's `DESIGN-SPEC.md` (note: this file only exists in the
+`Documents` copy of the handover packet, not the `Skrivebord` one — use the Documents
+copy as source of truth going forward).
 
 - **Fonts** (`app/layout.tsx`): swapped Geist/Geist Mono for `next/font/google` `Newsreader`
   (→ `--font-serif`), `Hanken Grotesk` (→ `--font-sans`), `Spline Sans Mono` (→ `--font-mono`).
 - **Theme tokens** (`app/globals.css`): replaced the generic radix-nova neutral palette with
-  the Atlas token set verbatim from `reference-html/styles.css` (`--paper*`, `--ink*`,
+  the Teqneo token set verbatim from `reference-html/styles.css` (`--paper*`, `--ink*`,
   `--line*`, `--t-*` 8-hue palette, `--sh-*` shadows), both `:root` and a new hand-authored
   `.dark` block (the prototype has no dark mode — dark values are extrapolated to preserve
   the same hue/contrast relationships). `--radius` set to `0.6rem` per spec §2.

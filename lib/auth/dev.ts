@@ -3,7 +3,7 @@
  * WorkOS account while developing locally. HARD-GUARDED: only active when NOT
  * in production AND `DEV_AUTH=true`. Never enable in a deployed environment.
  */
-export const DEV_COOKIE = "atlas_dev_session";
+export const DEV_COOKIE = "teqneo_dev_session";
 
 export function devAuthEnabled(): boolean {
   return process.env.NODE_ENV !== "production" && process.env.DEV_AUTH === "true";
@@ -13,6 +13,6 @@ export function devAuthEnabled(): boolean {
 export const DEV_ORG = { workosOrgId: "org_demo_seed", name: "Demo Consultancy" };
 export const DEV_USER = {
   workosUserId: "user_demo_seed",
-  email: "demo@atlas.local",
+  email: "demo@teqneo.local",
   name: "Demo User",
 };

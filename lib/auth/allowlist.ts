@@ -1,5 +1,5 @@
 /**
- * Email allowlist. While Atlas is single-user, only these Google accounts may
+ * Email allowlist. While Teqneo Projects is single-user, only these Google accounts may
  * sign in — every other authenticated WorkOS identity is rejected at the auth
  * context gate (see `lib/auth/context.ts`).
  *

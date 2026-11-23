@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-query";
 import { apiFetch } from "./client";
 import type { EntityName } from "@/lib/entities";
+import { concernsOf, withoutPerson, withRenamedPerson } from "@/lib/tasks";
 import {
   describeCreate,
   describeUpdate,
@@ -144,6 +145,9 @@ function record(projectId: string, ev: DescribedEvent | null) {
 const ARRAY_DEFAULTS = {
   tags: [],
   assignees: [],
+  involved: [],
+  deliverable: "",
+  involvedRoles: {},
   deps: [],
   taskIds: [],
 } as const;
@@ -301,8 +305,8 @@ export function useDeleteMember(projectId: string) {
         ...ws,
         members: ws.members.filter((m) => m.id !== id),
         tasks: ws.tasks.map((t) =>
-          (t.assignees ?? []).includes(name)
-            ? { ...t, assignees: t.assignees.filter((a) => a !== name) }
+          concernsOf(t).includes(name)
+            ? { ...t, ...withoutPerson(t, name) }
             : t,
         ),
       }));
@@ -316,11 +320,11 @@ export function useDeleteMember(projectId: string) {
       // cascade to server: patch any tasks that still have this member name
       const ws = qc.getQueryData<WorkingSet>(projectKey(projectId));
       if (!ws) return;
-      const affected = ws.tasks.filter((t) => (t.assignees ?? []).includes(name));
+      const affected = ws.tasks.filter((t) => concernsOf(t).includes(name));
       affected.forEach((t) => {
         apiFetch(`/api/projects/${projectId}/tasks/${t.id}`, {
           method: "PATCH",
-          body: JSON.stringify({ assignees: t.assignees.filter((a) => a !== name) }),
+          body: JSON.stringify(withoutPerson(t, name)),
         }).catch(() => {});
       });
     },
@@ -345,8 +349,8 @@ export function useUpdateMember(projectId: string) {
         members: ws.members.map((m) => (m.id === id ? { ...m, ...data } : m)),
         tasks: newName !== oldName
           ? ws.tasks.map((t) =>
-              (t.assignees ?? []).includes(oldName)
-                ? { ...t, assignees: t.assignees.map((a) => (a === oldName ? newName : a)) }
+              concernsOf(t).includes(oldName)
+                ? { ...t, ...withRenamedPerson(t, oldName, newName) }
                 : t,
             )
           : ws.tasks,
@@ -361,13 +365,11 @@ export function useUpdateMember(projectId: string) {
       if (!newName || newName === oldName) return;
       const ws = qc.getQueryData<WorkingSet>(projectKey(projectId));
       if (!ws) return;
-      const affected = ws.tasks.filter((t) => (t.assignees ?? []).includes(oldName));
+      const affected = ws.tasks.filter((t) => concernsOf(t).includes(oldName));
       affected.forEach((t) => {
         apiFetch(`/api/projects/${projectId}/tasks/${t.id}`, {
           method: "PATCH",
-          body: JSON.stringify({
-            assignees: t.assignees.map((a) => (a === oldName ? newName : a)),
-          }),
+          body: JSON.stringify(withRenamedPerson(t, oldName, newName)),
         }).catch(() => {});
       });
     },

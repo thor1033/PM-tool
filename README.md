@@ -1,13 +1,13 @@
-# Atlas — Project Management Hub
+# Teqneo Projects — Project Management Hub
 
 An AI-native project delivery hub for a boutique consultancy. Every client
 engagement gets one workspace: kanban board, business case, scope, pre-analysis,
 risks, stakeholders, org chart, product catalogue, comms & change plans, KPIs,
 taxonomy and glossary — with Claude able to draft the whole thing from a brief.
 
-This is a ground-up rewrite of the original single-file "Atlas" HTML app (kept
-for reference in [`legacy/`](./legacy)) into a production, multi-tenant,
-Vercel-deployable application.
+Teqneo Projects started as a single-file HTML app (kept for reference in
+[`legacy/`](./legacy)). This is a ground-up rewrite of it into a production,
+multi-tenant, Vercel-deployable application.
 
 ## Stack
 
@@ -98,13 +98,13 @@ See the architecture map at the bottom.
 The app builds to a standalone server (`output: "standalone"`):
 
 ```bash
-docker build -t atlas-hub .
-docker run -p 3000:3000 --env-file .env.local atlas-hub
+docker build -t teqneo-projects .
+docker run -p 3000:3000 --env-file .env.local teqneo-projects
 ```
 
 ## MCP endpoint (`/api/mcp`)
 
-Atlas exposes its project data to the **AI Hub** as an MCP server, so an agent
+Teqneo Projects exposes its project data to the **AI Hub** as an MCP server, so an agent
 can read delivery status and (optionally) write back. Full design notes live in
 the hub repo at `docs/pm-tool-integration.md`.
 
@@ -181,10 +181,10 @@ npm run dev          # terminal 1
 npm run verify:mcp   # terminal 2 — 20 checks, cleans up after itself
 ```
 
-## Importing legacy Atlas data
+## Importing legacy data
 
 Existing workspaces from the original app export to JSON
-(`{ atlas: true, version: 2, projects: [...] }`). On the **Projects** page use
+(`{ version: 2, projects: [...] }`). On the **Projects** page use
 **Import** to upload/paste an export — projects are added to your tenant with no
 overwrite. (The `POST /api/import` route backs this.)
 
@@ -200,13 +200,13 @@ app/
   api/
     projects/…                 REST: project + generic entity CRUD (RLS-scoped)
     ai/setup/                  Claude-drafted project generation
-    import/                    Atlas export importer
+    import/                    Workspace export importer
 proxy.ts                       AuthKit session + route protection (Next 16 proxy)
 lib/
   db/       schema · client (Neon pool) · tenant (RLS) · queries
   auth/     WorkOS context + org/user provisioning
   ai/       Anthropic client + setup orchestration
-  import/   Atlas JSON → normalized rows
+  import/   Workspace JSON → normalized rows
   entities.ts · nav.ts · colors.ts · templates.ts
 components/
   modules/  the 13 project modules (board, risks, business-case, …)

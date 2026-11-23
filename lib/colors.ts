@@ -1,7 +1,7 @@
 /* Accent color names used across the app (tags, phases, members, projects,
    org nodes, tracks) → Tailwind utility classes.
 
-   Values are wired to the Atlas 8-hue track palette (`--t-*` custom
+   Values are wired to the Teqneo 8-hue track palette (`--t-*` custom
    properties set in app/globals.css, oklch L≈.64 C≈.10-.16, one hue per
    name) via Tailwind v4 arbitrary values, so `accent(name)` renders the
    exact hues from the reference design system rather than generic

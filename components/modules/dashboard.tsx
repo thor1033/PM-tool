@@ -20,6 +20,7 @@ import { useProject, useUpdateProject } from "@/lib/api/hooks";
 import { accentVar } from "@/lib/colors";
 import { computeHealth, attentionList, blockedOverflow } from "@/lib/project-health";
 import { peopleNames } from "@/lib/people";
+import { concernsOf } from "@/lib/tasks";
 import { cn } from "@/lib/utils";
 import type { Task, WorkingSet } from "@/lib/types";
 import { DigestFeed } from "@/components/modules/dashboard-digest";
@@ -52,7 +53,7 @@ function fmtD(d: string) {
 }
 
 function assigneesOf(t: Task): string[] {
-  return t.assignees ?? [];
+  return concernsOf(t);
 }
 
 // ── stat helper for dependency chips ─────────────────────────────────────────

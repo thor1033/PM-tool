@@ -1,4 +1,4 @@
-# Atlas — real two-way team sync with a Vercel server + database
+# TeqneoProjects — real two-way team sync with a Vercel server + database
 
 This replaces the flaky npoint setup with a proper backend running on **your own Vercel
 project**. It gives you real read+write sync for a small team, with no third-party limits
@@ -6,8 +6,8 @@ and no CORS headaches.
 
 You'll do three things:
 1. Add a free Redis database to your Vercel project (Upstash, 1-click).
-2. Redeploy Atlas (the API route is already in the project, in `api/workspace.js`).
-3. In Atlas, click **"Use this site's server"** once. Done.
+2. Redeploy TeqneoProjects (the API route is already in the project, in `api/workspace.js`).
+3. In TeqneoProjects, click **"Use this site's server"** once. Done.
 
 Total time: ~10 minutes.
 
@@ -33,19 +33,19 @@ That connection automatically adds two environment variables to your project:
 
 ---
 
-## Step 2 — Redeploy Atlas with the API route
+## Step 2 — Redeploy TeqneoProjects with the API route
 
 The project now contains `api/workspace.js` — Vercel automatically turns any file in an
 `api/` folder into a serverless function. You just need to push the latest files.
 
-From the folder where you deploy (e.g. `C:\Atlas`), make sure these are present:
+From the folder where you deploy (e.g. `C:\TeqneoProjects`), make sure these are present:
 `index.html`, `styles.css`, `components.css`, `print.css`, `vercel.json`,
 `src/bundle.jsx`, and the **`api/workspace.js`** file.
 
 Then redeploy:
 
 ```
-cd C:\Atlas
+cd C:\TeqneoProjects
 vercel --prod
 ```
 
@@ -61,7 +61,7 @@ https://atlas-wheat-mu.vercel.app/api/workspace
 
 ---
 
-## Step 3 — Connect Atlas to its own server
+## Step 3 — Connect TeqneoProjects to its own server
 
 1. Open `https://atlas-wheat-mu.vercel.app`
 2. **Backup & sync → Team sync**
@@ -109,12 +109,12 @@ Everyone using `room=teamA` shares one workspace; `room=teamB` is a separate one
   storage. Keep shared files on your shared drive (SharePoint/OneDrive/Drive) and paste
   the link in the **Product catalogue** (links DO sync).
 
-## Updating Atlas later
+## Updating TeqneoProjects later
 
 Whenever the app files change, redeploy:
 
 ```
-cd C:\Atlas
+cd C:\TeqneoProjects
 vercel --prod
 ```
 

@@ -24,7 +24,7 @@ export function protectedResourceMetadata(request: Request): Response {
       resource: mcpResourceUrl(request),
       authorization_servers: [issuer],
       bearer_methods_supported: ["header"],
-      resource_name: "Atlas PM",
+      resource_name: "Teqneo Projects",
     },
     { headers: { ...CORS, "Cache-Control": "public, max-age=3600" } },
   );

@@ -1,7 +1,7 @@
 import "server-only";
 import { askJSON } from "./anthropic";
 import { blankBusinessCase, blankScope } from "@/lib/templates";
-import type { AtlasProject } from "@/lib/import/atlas";
+import type { ImportProject } from "@/lib/import/workspace";
 
 export interface AiSetupForm {
   name: string;
@@ -60,12 +60,12 @@ function isoAdd(iso: string, days: number): string {
 
 /**
  * Run the AI interview (business case, tasks, people, risks) and assemble a
- * project in the legacy Atlas shape, ready to be persisted via the importer.
+ * project in the workspace export shape, ready to be persisted via the importer.
  * Returns null only if every AI call failed.
  */
 export async function buildAiProject(
   form: AiSetupForm,
-): Promise<{ project: AtlasProject; produced: string[] } | null> {
+): Promise<{ project: ImportProject; produced: string[] } | null> {
   const teamNames = (form.team ?? "")
     .split("\n")
     .map((l) => l.split(/[—–\-:]/)[0].trim())
@@ -237,7 +237,7 @@ export async function buildAiProject(
 
   if (produced.length === 0) return null;
 
-  const project: AtlasProject = {
+  const project: ImportProject = {
     id: uid("aiprj"),
     meta: { project: form.name.trim() || "Untitled project", code: "" },
     color: form.color ?? "indigo",

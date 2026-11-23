@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireApiAuth } from "@/lib/api/guard";
-import { importWorkspaceForOrg, type AtlasWorkspace } from "@/lib/import/atlas";
+import { importWorkspaceForOrg, type ImportWorkspace } from "@/lib/import/workspace";
 
 export const maxDuration = 60;
 
@@ -8,10 +8,10 @@ export async function POST(req: NextRequest) {
   const ctx = await requireApiAuth();
   if (ctx instanceof NextResponse) return ctx;
 
-  const body = (await req.json().catch(() => null)) as AtlasWorkspace | null;
+  const body = (await req.json().catch(() => null)) as ImportWorkspace | null;
   if (!body || !Array.isArray(body.projects)) {
     return NextResponse.json(
-      { error: "Not a valid Atlas workspace file (expected { projects: [...] })." },
+      { error: "Not a valid Teqneo Projects workspace file (expected { projects: [...] })." },
       { status: 400 },
     );
   }

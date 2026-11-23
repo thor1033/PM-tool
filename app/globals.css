@@ -50,7 +50,7 @@
 }
 
 :root {
-  /* Atlas surfaces / ink / lines (cool near-neutral, hue 285) */
+  /* Teqneo surfaces / ink / lines (cool near-neutral, hue 285) */
   --paper: oklch(0.992 0.003 285);
   --paper-2: oklch(0.978 0.004 285);
   --panel: oklch(1 0 0);
@@ -90,7 +90,7 @@
   --sh-lg: 0 12px 32px oklch(0.3 0.02 285 / 0.14), 0 4px 10px oklch(0.3 0.02 285 / 0.08);
   --sh-xl: 0 24px 64px oklch(0.25 0.02 285 / 0.22), 0 8px 20px oklch(0.25 0.02 285 / 0.1);
 
-  /* shadcn theme, mapped onto the Atlas tokens above */
+  /* shadcn theme, mapped onto the Teqneo tokens above */
   --background: var(--paper);
   --foreground: var(--ink);
   --card: var(--panel);
