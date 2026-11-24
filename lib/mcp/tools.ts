@@ -10,7 +10,7 @@ import {
 import { entityConfig } from "@/lib/entities";
 import type { MachineContext } from "@/lib/api/machineAuth";
 import type { Task, Risk, Milestone } from "@/lib/db/schema";
-import { checkTask, milestoneLeftBehind } from "@/lib/hierarchy";
+import { checkMilestone, checkTask, milestoneLeftBehind } from "@/lib/hierarchy";
 import { resolveActor, type StakeholderLike } from "@/lib/actor";
 import { similarToAny, overlappingPairs } from "@/lib/similarity";
 
@@ -80,8 +80,22 @@ function taskView(t: Task) {
     completedOn: t.completedOn || null,
     overdue: t.status !== "done" && isPast(t.end),
     description: t.description || null,
+    agent: taskAgent(t),
   };
 }
+
+/**
+ * The agent a task is meant for: a hub agent's slug, or "code". Kept in the
+ * task's custom fields (custom.agent), so it needs no column and shows in
+ * the task window with the other custom fields.
+ */
+function taskAgent(t: Pick<Task, "custom">): string | null {
+  const agent = (t.custom as Record<string, unknown> | null)?.agent;
+  return typeof agent === "string" && agent.trim() ? agent.trim() : null;
+}
+
+/** A slug as the hub writes them, or "code": lower case, digits and dashes. */
+const AGENT_SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 const riskView = (r: Risk) => ({
   id: r.id,
@@ -124,6 +138,7 @@ const listProjectsTool: ToolDef = {
 };
 
 const SECTIONS = [
+  "tracks",
   "tasks",
   "risks",
   "stakeholders",
@@ -158,6 +173,8 @@ const getProjectTool: ToolDef = {
       (args.sections as string[] | undefined) ?? ["tasks", "risks", "milestones"],
     );
     const out: Record<string, unknown> = { project: ws.project };
+    // The ids pm_create_task and pm_create_milestone need for `track`.
+    if (wanted.has("tracks")) out.tracks = ws.categories.map((c) => ({ id: c.id, label: c.label }));
     if (wanted.has("tasks")) out.tasks = ws.tasks.map(taskView);
     if (wanted.has("risks")) out.risks = ws.risks.map(riskView);
     if (wanted.has("milestones")) out.milestones = ws.milestones.map(milestoneView);
@@ -391,6 +408,10 @@ async function createTask(args: Record<string, unknown>, ctx: MachineContext) {
   if (!ws) return fail(`No project "${projectId}" in this workspace.`);
 
   const owner = (args.owner as string | undefined) || undefined;
+  const agent = ((args.agent as string | undefined) ?? "").trim();
+  if (agent && !AGENT_SLUG.test(agent)) {
+    return fail(`"${agent}" is not an agent's slug (lower case, digits, dashes) or "code".`);
+  }
   const draft = {
     title: String(args.title),
     status: (args.status as string) ?? "backlog",
@@ -404,6 +425,7 @@ async function createTask(args: Record<string, unknown>, ctx: MachineContext) {
     milestoneId: (args.milestoneId as string) ?? null,
     priority: (args.priority as boolean) ?? false,
     position: ws.tasks.length,
+    ...(agent ? { custom: { agent } } : {}),
   };
 
   // Validate against the same schema the REST routes use, so a tool can never
@@ -458,6 +480,7 @@ const createTaskTool: ToolDef = {
       .describe("Other people who take part without owning it: a name, or { name, role } saying what they do."),
     track: z.string().describe("Track/category id this task sits in. Every task sits in a track."),
     priority: z.boolean().optional().describe("Whether the task takes priority. Defaults to no."),
+    agent: z.string().optional().describe("Who should do the work, when it is an agent: a hub agent's slug (e.g. project-manager), or \"code\" for work done in a code editor. Shown on the task; \"\" clears it."),
     milestoneId: z
       .string()
       .optional()
@@ -519,6 +542,7 @@ const createTaskFromTranscriptTool: ToolDef = {
       .describe("Everyone else who takes part, each with what they contribute. Empty if it is a one-person task."),
     track: z.string().describe("Track/category id this task sits in. Every task sits in a track."),
     priority: z.boolean().optional().describe("Whether the task takes priority. Defaults to no."),
+    agent: z.string().optional().describe("Who should do the work, when it is an agent: a hub agent's slug (e.g. project-manager), or \"code\" for work done in a code editor."),
     milestoneId: z
       .string()
       .optional()
@@ -530,7 +554,7 @@ const createTaskFromTranscriptTool: ToolDef = {
 const updateTaskTool: ToolDef = {
   name: "pm_update_task",
   description:
-    "Update an existing task: status, dates, owner, who is involved (optionally with what each does), title, description or deliverable. Only the fields you pass are changed. Records an audit-trail entry attributed to the AI hub.",
+    "Update an existing task: status, dates, owner, agent, who is involved (optionally with what each does), title, description or deliverable. Only the fields you pass are changed. Records an audit-trail entry attributed to the AI hub.",
   write: true,
   inputSchema: {
     projectId: z.string(),
@@ -549,6 +573,7 @@ const updateTaskTool: ToolDef = {
       ),
     track: z.string().optional().describe("Move the task to another track."),
     priority: z.boolean().optional().describe("Whether the task takes priority."),
+    agent: z.string().optional().describe("Who should do the work, when it is an agent: a hub agent's slug (e.g. project-manager), or \"code\" for work done in a code editor. Shown on the task; \"\" clears it."),
     milestoneId: z
       .string()
       .optional()
@@ -578,6 +603,15 @@ const updateTaskTool: ToolDef = {
     }
     if (args.track !== undefined) patch.category = args.track;
     if (patch.milestoneId === "") patch.milestoneId = null;
+    if (args.agent !== undefined) {
+      const agent = String(args.agent).trim();
+      if (agent && !AGENT_SLUG.test(agent)) return fail(`"${agent}" is not an agent's slug (lower case, digits, dashes) or "code".`);
+      // Only the agent changes; the task's other custom fields are kept.
+      const custom = { ...((existing.custom as Record<string, unknown> | null) ?? {}) };
+      if (agent) custom.agent = agent;
+      else delete custom.agent;
+      patch.custom = custom;
+    }
 
     const issue = checkTask(patch, false, ws, existing);
     if (issue) return fail(issue.error);
@@ -611,7 +645,9 @@ const updateTaskTool: ToolDef = {
     if (!row) return fail(`Could not update task "${taskId}".`);
 
     const movedToDone = patch.status === "done" && existing.status !== "done";
-    const changed = Object.keys(patch).filter((k) => k !== "completedOn");
+    const changed = Object.keys(patch)
+      .filter((k) => k !== "completedOn")
+      .map((k) => (k === "custom" ? "agent" : k));
     await recordActivity(ctx.orgId, projectId, {
       kind: movedToDone ? "done" : "edit",
       text: movedToDone
@@ -666,6 +702,62 @@ const addNoteTool: ToolDef = {
   },
 };
 
+// A milestone is an outcome on a track's timeline, the parent tasks hang
+// under. Delivery methods that plan in epics (BMAD's Scrum Master in Teqneo
+// Code) create one per epic, then its stories as tasks with this milestoneId.
+const createMilestoneTool: ToolDef = {
+  name: "pm_create_milestone",
+  description:
+    "Add a milestone to a project's track, for tasks to sit under (pm_create_task's milestoneId). Records an audit-trail entry.",
+  write: true,
+  inputSchema: {
+    projectId: z.string(),
+    title: z.string().min(1),
+    track: z.string().describe("Track/category id the milestone belongs to. Every milestone sits in a track."),
+    date: z.string().optional().describe("Planned date, ISO (YYYY-MM-DD)."),
+    note: z.string().optional(),
+    gate: z
+      .boolean()
+      .optional()
+      .describe("A gate (a decision point the work must pass) rather than a plain milestone. Defaults to no."),
+  },
+  handler: async (args, ctx) => {
+    const projectId = String(args.projectId ?? "");
+    const ws = await requireProject(ctx, projectId);
+    if (!ws) return fail(`No project "${projectId}" in this workspace.`);
+
+    const track = String(args.track ?? "");
+    // An id the model made up would create a milestone no lane shows.
+    if (!ws.categories.some((c) => c.id === track)) {
+      return fail(`No track "${track}" in project "${projectId}". Read the tracks with pm_get_project.`);
+    }
+    const draft = {
+      title: String(args.title).trim(),
+      type: args.gate === true ? "gate" : "milestone",
+      date: (args.date as string) ?? "",
+      category: track,
+      note: (args.note as string) ?? "",
+      reachedOn: "",
+    };
+    if (draft.date && !/^\d{4}-\d{2}-\d{2}$/.test(draft.date)) {
+      return fail(`Invalid date "${draft.date}": use YYYY-MM-DD.`);
+    }
+    const parsed = entityConfig.milestones.schema.safeParse(draft);
+    if (!parsed.success) return fail(`Invalid milestone: ${parsed.error.message}`);
+    const issue = checkMilestone(draft, true);
+    if (issue) return fail(issue.error);
+
+    const row = await createEntity(ctx.orgId, projectId, "milestones", parsed.data);
+    if (!row) return fail(`Could not create the milestone in project "${projectId}".`);
+    await recordActivity(ctx.orgId, projectId, {
+      kind: "create",
+      text: `Added ${draft.type === "gate" ? "gate" : "milestone"} "${draft.title}"`,
+      actor: actorFor(ctx, ws.stakeholders),
+    });
+    return json(row);
+  },
+};
+
 export const TOOLS: ToolDef[] = [
   listProjectsTool,
   getProjectTool,
@@ -677,6 +769,7 @@ export const TOOLS: ToolDef[] = [
   createTaskFromTranscriptTool,
   updateTaskTool,
   addNoteTool,
+  createMilestoneTool,
 ];
 
 /** The tools a given token may see — writes are omitted without the scope. */

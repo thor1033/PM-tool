@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Plus, X, Trash2, MessageSquare, TriangleAlert, Link2, Target, Package, GitBranch, ListChecks, Check, Users,
-  ExternalLink, Files as FilesIcon,
+  ExternalLink, Files as FilesIcon, Code2,
 } from "lucide-react";
 import {
   useCreateEntity, useUpdateEntity, useDeleteEntity,
@@ -27,6 +27,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { useConfirm } from "@/components/project/confirm";
 import { ViewSettingsButton, useViewSettings } from "@/components/project/view-settings";
 import { LineageSection, lineageDeps } from "@/components/project/lineage-graph";
+import { codePromptLink, dependencyTitles, isCodeWork, repoForTrack, taskBrief } from "@/lib/code-handoff";
 
 // ── status segmented control ────────────────────────────────────────────────
 
@@ -545,6 +546,58 @@ function TaskFiles({
   );
 }
 
+// ── handing the task to a coding agent ──────────────────────────────────────
+// Opens the task as a draft in Teqneo Code (lib/code-handoff.ts): the brief lands
+// in the composer, in the track's repository, and nothing runs until the
+// person reads it and presses Send. Built from the form, not the saved task,
+// so an edit made a second ago is in the brief.
+
+function StartInCode({
+  ws, projectId, task, form,
+}: {
+  ws: WorkingSet; projectId: string; task: Task;
+  form: { title: string; description: string; status: string; end: string; assignees: string; category: string };
+}) {
+  const trackId = form.category === "none" ? null : form.category;
+  const track = ws.categories.find((c) => c.id === trackId) ?? null;
+  const repo = repoForTrack(ws.project.settings, trackId);
+  const href = codePromptLink(
+    taskBrief(
+      {
+        id: task.id,
+        title: form.title,
+        description: form.description,
+        status: form.status,
+        end: form.end,
+        assignees: form.assignees.split(",").map((s) => s.trim()).filter(Boolean),
+      },
+      {
+        projectId,
+        projectName: ws.project.name,
+        trackLabel: track?.label ?? null,
+        subtasks: ws.tasks.filter((t) => t.parentId === task.id),
+        dependsOn: dependencyTitles(task.deps, ws.tasks),
+      },
+    ),
+    { repo },
+  );
+  return (
+    <Button
+      asChild
+      size="sm"
+      variant="outline"
+      title={repo ? `Opens a draft in Teqneo Code, in ${repo}. Nothing runs until you press Send.` : "Opens a draft in Teqneo Code. Set a repository for this track in the track editor to open it in the right project."}
+    >
+      {/* An app link, not a page: no new tab, the browser hands it to the app. */}
+      <a href={href}>
+        <Code2 className="size-3.5" />
+        Start in Teqneo Code
+        {!repo && <span className="text-muted-foreground text-[11px] font-normal">· no repo</span>}
+      </a>
+    </Button>
+  );
+}
+
 export function CardModal({
   ws, projectId, task, defaultCategoryId, defaultMilestoneId, defaultStatus, open, onOpenChange,
 }: {
@@ -583,6 +636,7 @@ export function CardModal({
     title: activeTask?.title ?? "",
     description: activeTask?.description ?? "",
     occurrence: (activeTask?.custom as Record<string, unknown> | undefined)?.occurrence as string ?? "",
+    agent: (activeTask?.custom as Record<string, unknown> | undefined)?.agent as string ?? "",
     status: activeTask?.status ?? defaultStatus ?? "backlog",
     category: activeTask?.category ?? defaultCategoryId ?? ws.categories[0]?.id ?? "none",
     assignees: (activeTask?.assignees ?? []).join(", "),
@@ -614,6 +668,7 @@ export function CardModal({
       title: activeTask?.title ?? "",
       description: activeTask?.description ?? "",
       occurrence: (activeTask?.custom as Record<string, unknown> | undefined)?.occurrence as string ?? "",
+      agent: (activeTask?.custom as Record<string, unknown> | undefined)?.agent as string ?? "",
       status: activeTask?.status ?? defaultStatus ?? "backlog",
       category: activeTask?.category ?? defaultCategoryId ?? ws.categories[0]?.id ?? "none",
       assignees: (activeTask?.assignees ?? []).join(", "),
@@ -752,6 +807,10 @@ export function CardModal({
         const next = { ...(activeTask?.custom as Record<string, unknown> ?? {}) };
         if (form.occurrence.trim()) next.occurrence = form.occurrence.trim();
         else delete next.occurrence;
+        // The agent the work is meant for (a hub agent's slug, or "code").
+        const agent = form.agent.trim().toLowerCase();
+        if (agent) next.agent = agent;
+        else delete next.agent;
         return next;
       })(),
     };
@@ -1304,13 +1363,24 @@ export function CardModal({
               </div>
             )}
 
-            {/* custom fields — "occurrence" has its own dedicated field above */}
-            {activeTask && shows("customFields") && Object.entries(activeTask.custom ?? {}).filter(([k]) => k !== "occurrence").length > 0 && (
+            {/* The agent the work is meant for. The hub's Secretary sets it when
+                it files a task from a meeting; Teqneo Code groups the board by it. */}
+            <div className="space-y-1.5">
+              <Label>Agent</Label>
+              <Input
+                value={form.agent}
+                onChange={(e) => set("agent", e.target.value)}
+                placeholder="A hub agent's slug, or code"
+              />
+            </div>
+
+            {/* custom fields — "occurrence" and "agent" have their own fields above */}
+            {activeTask && shows("customFields") && Object.entries(activeTask.custom ?? {}).filter(([k]) => k !== "occurrence" && k !== "agent").length > 0 && (
               <div className="space-y-1.5 border-t pt-4">
                 <Label>Custom fields</Label>
                 <div className="space-y-1">
                   {Object.entries(activeTask.custom as Record<string, unknown>)
-                    .filter(([k]) => k !== "occurrence")
+                    .filter(([k]) => k !== "occurrence" && k !== "agent")
                     .map(([k, v]) => (
                       <div key={k} className="flex items-center justify-between rounded-[var(--radius-sm)] bg-[var(--paper-2)] px-2.5 py-1.5 text-xs">
                         <span className="text-muted-foreground font-medium">{k}</span>
@@ -1481,9 +1551,12 @@ export function CardModal({
             </Button>
           ) : <span />}
           {activeTask ? (
-            <span className="text-muted-foreground text-[12.5px]">
-              Changes save automatically
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-muted-foreground text-[12.5px]">
+                Changes save automatically
+              </span>
+              {isCodeWork({ kind: form.kind }) && <StartInCode ws={ws} projectId={projectId} task={activeTask} form={form} />}
+            </div>
           ) : (
             <Button onClick={save} disabled={create.isPending}>
               Add task

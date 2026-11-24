@@ -185,11 +185,73 @@ async function main() {
       }),
     );
     check("pm_update_task moves the task", updated?.status === "done");
+
+    // ── the agent a task is meant for ───────────────────────────────────────
+    const withAgent = payload(
+      await client.callTool({
+        name: "pm_update_task",
+        arguments: { projectId: temp.id, taskId: created.id, agent: "project-manager" },
+      }),
+    );
+    check("pm_update_task sets the task's agent", withAgent?.custom?.agent === "project-manager");
+    const agentListed = payload(
+      await client.callTool({ name: "pm_list_tasks", arguments: { projectId: temp.id } }),
+    );
+    check(
+      "the agent reads back on the task list",
+      agentListed?.tasks?.find((t: { id: string }) => t.id === created.id)?.agent === "project-manager",
+    );
+    const badAgent = payload(
+      await client.callTool({
+        name: "pm_update_task",
+        arguments: { projectId: temp.id, taskId: created.id, agent: "Not A Slug!" },
+      }),
+    );
+    check("an agent that is not a slug is refused", typeof badAgent === "string" && badAgent.startsWith("Error:"), String(badAgent).slice(0, 60));
+    const cleared = payload(
+      await client.callTool({
+        name: "pm_update_task",
+        arguments: { projectId: temp.id, taskId: created.id, agent: "" },
+      }),
+    );
+    check("an empty agent clears it", cleared?.custom?.agent === undefined);
     check(
       "completing a task stamps completedOn, as the board does",
       typeof updated?.completedOn === "string" && updated.completedOn.length === 10,
       updated?.completedOn,
     );
+
+    // ── tracks and milestones (BMAD's epics) ────────────────────────────────
+    const withTracks = payload(
+      await client.callTool({
+        name: "pm_get_project",
+        arguments: { projectId: temp.id, sections: ["tracks"] },
+      }),
+    );
+    check("pm_get_project lists the tracks", Array.isArray(withTracks?.tracks));
+    const refused = payload(
+      await client.callTool({
+        name: "pm_create_milestone",
+        arguments: { projectId: temp.id, title: "Epic 1", track: "no-such-track" },
+      }),
+    );
+    check(
+      "pm_create_milestone refuses a track the project does not have",
+      typeof refused === "string" && refused.includes("No track"),
+      String(refused).slice(0, 60),
+    );
+    const track = withTracks?.tracks?.[0]?.id;
+    if (track) {
+      const milestone = payload(
+        await client.callTool({
+          name: "pm_create_milestone",
+          arguments: { projectId: temp.id, title: "Epic 1: verify", track, date: "2030-01-01" },
+        }),
+      );
+      check("pm_create_milestone creates one in the track", milestone?.category === track, milestone?.id);
+    } else {
+      console.log("  … the throwaway project has no tracks; creating a milestone was not exercised");
+    }
 
     // ── the audit trail must show the agent's edits ──────────────────────────
     const status = payload(
